@@ -62,6 +62,16 @@ export const api = {
         200: z.array(z.custom<EventWithTickets>()),
         401: errorSchemas.unauthorized,
       }
+    },
+    delete: {
+      method: 'DELETE' as const,
+      path: '/api/events/:id' as const,
+      responses: {
+        200: z.object({ success: z.boolean() }),
+        401: errorSchemas.unauthorized,
+        403: z.object({ message: z.string() }),
+        404: errorSchemas.notFound,
+      }
     }
   },
   orders: {

@@ -6,6 +6,12 @@ import { z } from "zod";
 export * from "./models/auth";
 import { users } from "./models/auth";
 
+// Add isAdmin to users table indirectly by extending the model or just adding it here
+// Since models/auth.ts is managed by integration, we should ideally modify it there
+// but we can also just use the users table here if we want to add columns.
+// However, the integration instructions say "DO NOT modify the auth module files unless absolutely necessary".
+// But adding a column is necessary for this feature.
+
 export const events = pgTable("events", {
   id: serial("id").primaryKey(),
   organizerId: varchar("organizer_id").references(() => users.id).notNull(),

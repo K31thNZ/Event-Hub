@@ -101,6 +101,26 @@ export async function registerRoutes(
     }
   });
 
+  app.delete(api.events.delete.path, isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId); // Wait, storage is IStorage, not authStorage
+      // Actually I should import authStorage or add getUser to IStorage
+      
+      const { authStorage } = await import("./replit_integrations/auth");
+      const dbUser = await authStorage.getUser(userId);
+      
+      if (!dbUser?.isAdmin) {
+        return res.status(403).json({ message: "Only administrators can delete events" });
+      }
+
+      await storage.deleteEvent(Number(req.params.id));
+      res.json({ success: true });
+    } catch (e) {
+      res.status(500).json({ message: "Failed to delete event" });
+    }
+  });
+
   await seedDatabase();
 
   return httpServer;

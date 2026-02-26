@@ -19,9 +19,27 @@ export interface IStorage {
   getOrdersByAttendee(attendeeId: string): Promise<OrderWithDetails[]>;
   getOrder(id: number): Promise<OrderWithDetails | undefined>;
   createOrder(attendeeId: string, orderData: CreateOrderRequest): Promise<OrderWithDetails>;
+  deleteEvent(id: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
+  async deleteEvent(id: number): Promise<void> {
+    await db.transaction(async (tx) => {
+      // Delete orders associated with this event
+      const eventOrders = await tx.select().from(orders).where(eq(orders.eventId, id));
+      for (const order of eventOrders) {
+        await tx.delete(orderTickets).where(eq(orderTickets.orderId, order.id));
+      }
+      await tx.delete(orders).where(eq(orders.eventId, id));
+      
+      // Delete ticket types
+      await tx.delete(ticketTypes).where(eq(ticketTypes.eventId, id));
+      
+      // Delete the event
+      await tx.delete(events).where(eq(events.id, id));
+    });
+  }
+
   async getEvents(params?: { search?: string, category?: string, city?: string }): Promise<EventWithTickets[]> {
     const results = await db.query.events.findMany({
       with: { ticketTypes: true },

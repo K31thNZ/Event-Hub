@@ -1,10 +1,45 @@
 import { Link } from "wouter";
 import { type EventWithTickets } from "@shared/schema";
 import { format } from "date-fns";
-import { MapPin, Ticket } from "lucide-react";
+import { MapPin, Ticket, Trash2 } from "lucide-react";
 import { motion } from "framer-motion";
+import { useAuth } from "@/hooks/use-auth";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { api, buildUrl } from "@shared/routes";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { Button } from "@/components/ui/button";
 
 export function EventCard({ event, index = 0 }: { event: EventWithTickets, index?: number }) {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("DELETE", buildUrl(api.events.delete.path, { id: event.id }));
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/events"] });
+      toast({ title: "Success", description: "Event deleted successfully" });
+    },
+    onError: (error: Error) => {
+      toast({ 
+        title: "Error", 
+        description: error.message || "Failed to delete event",
+        variant: "destructive" 
+      });
+    }
+  });
+
+  const handleDelete = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (confirm("Are you sure you want to delete this event?")) {
+      deleteMutation.mutate();
+    }
+  };
+
   const minPrice = event.ticketTypes.length 
     ? Math.min(...event.ticketTypes.map(t => t.price)) 
     : 0;
@@ -34,8 +69,21 @@ export function EventCard({ event, index = 0 }: { event: EventWithTickets, index
           </div>
 
           {/* Category Pill */}
-          <div className="absolute top-4 right-4 bg-black/40 backdrop-blur-md text-white text-xs font-semibold px-3 py-1.5 rounded-full border border-white/20">
-            {event.category}
+          <div className="absolute top-4 right-4 flex gap-2">
+            {user?.isAdmin && (
+              <Button
+                size="icon"
+                variant="destructive"
+                className="h-8 w-8 rounded-full shadow-lg"
+                onClick={handleDelete}
+                disabled={deleteMutation.isPending}
+              >
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            )}
+            <div className="bg-black/40 backdrop-blur-md text-white text-xs font-semibold px-3 py-1.5 rounded-full border border-white/20">
+              {event.category}
+            </div>
           </div>
         </div>
 
