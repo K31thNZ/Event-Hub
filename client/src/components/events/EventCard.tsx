@@ -70,7 +70,7 @@ export function EventCard({ event, index = 0 }: { event: EventWithTickets, index
 
           {/* Category Pill */}
           <div className="absolute top-4 right-4 flex gap-2">
-            {user?.isAdmin && (
+            {(user?.isAdmin || (user && event.organizerId === user.id)) && (
               <Button
                 size="icon"
                 variant="destructive"

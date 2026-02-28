@@ -109,9 +109,14 @@ export async function registerRoutes(
       
       const { authStorage } = await import("./replit_integrations/auth");
       const dbUser = await authStorage.getUser(userId);
-      
-      if (!dbUser?.isAdmin) {
-        return res.status(403).json({ message: "Only administrators can delete events" });
+      const event = await storage.getEvent(Number(req.params.id));
+
+      if (!event) {
+        return res.status(404).json({ message: "Event not found" });
+      }
+
+      if (!dbUser?.isAdmin && event.organizerId !== userId) {
+        return res.status(403).json({ message: "Only administrators or the event organizer can delete events" });
       }
 
       await storage.deleteEvent(Number(req.params.id));
