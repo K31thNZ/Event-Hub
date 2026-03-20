@@ -3,10 +3,10 @@
   "outputDirectory": "dist/public",
   "routes": [
     { "handle": "filesystem" },
-    { "src": "/api/auth/(.*)",         "dest": "https://YOUR-RAILWAY-URL.up.railway.app/api/auth/$1" },
-    { "src": "/api/user(.*)",          "dest": "https://YOUR-RAILWAY-URL.up.railway.app/api/user$1" },
-    { "src": "/api/notifications(.*)", "dest": "https://YOUR-RAILWAY-URL.up.railway.app/api/notifications$1" },
-    { "src": "/api/availability(.*)",  "dest": "https://YOUR-RAILWAY-URL.up.railway.app/api/availability$1" },
-    { "src": "/api/(.*)",              "dest": "https://YOUR-RAILWAY-URL.up.railway.app/api/$1" }
+    { "src": "/api/auth/(.*)",         "dest": "https://event-hub-nrgx.onrender.com/api/auth/$1" },
+    { "src": "/api/user(.*)",          "dest": "https://event-hub-nrgx.onrender.com/api/user$1" },
+    { "src": "/api/notifications(.*)", "dest": "https://event-hub-nrgx.onrender.com/api/notifications$1" },
+    { "src": "/api/availability(.*)",  "dest": "https://event-hub-nrgx.onrender.com/api/availability$1" },
+    { "src": "/api/(.*)",              "dest": "https://event-hub-nrgx.onrender.com/api/$1" }
   ]
 }
