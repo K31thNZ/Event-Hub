@@ -84,7 +84,10 @@ app.use((req, res, next) => {
     const { setupVite } = await import("./vite");
     await setupVite(httpServer, app);
   }
-app.get("/ping", (_req, res) => res.send("OK"));
+  
+  // Keep-alive ping for Render.com free tier
+  app.get("/ping", (_req, res) => res.send("OK"));
+  
   // ALWAYS serve the app on the port specified in the environment variable PORT
   // Other ports are firewalled. Default to 5000 if not specified.
   // this serves both the API and the client.
