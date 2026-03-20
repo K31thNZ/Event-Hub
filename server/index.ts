@@ -1,5 +1,5 @@
 import express, { type Request, Response, NextFunction } from "express";
-import cors from "cors";                                          
+import cors from "cors";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
@@ -13,15 +13,19 @@ declare module "http" {
   }
 }
 
-app.set("trust proxy", 1);                                        
+// ── Trust Render's reverse proxy ──────────────────────────────────────────
+app.set("trust proxy", 1);
 
-app.use(cors({                                                    
-  origin: [                                                       
-    process.env.APP_URL ?? "https://event-hub-frontend.onrender.com", 
-    "http://localhost:5173",                                      
-  ],                                                              
-  credentials: true,                                             
-}));                                                              
+// ── CORS — allow meh-auth and the frontend to call this API ───────────────
+app.use(cors({
+  origin: [
+    process.env.AUTH_SERVICE_URL ?? "https://meh-auth.onrender.com",
+    process.env.APP_URL ?? "https://event-hub-frontend.onrender.com",
+    "http://localhost:5173",
+    "http://localhost:5000",
+  ],
+  credentials: true,
+}));
 
 app.use(
   express.json({
@@ -64,7 +68,6 @@ app.use((req, res, next) => {
       log(logLine);
     }
   });
-
   next();
 });
 
@@ -81,6 +84,11 @@ app.use((req, res, next) => {
     return res.status(status).json({ message });
   });
 
+  // Keep-alive ping — must be registered BEFORE serveStatic
+  // serveStatic adds a catch-all that would swallow /ping in production
+  app.get("/ping", (_req, res) => res.send("OK"));
+
+  // Static file serving / Vite dev server — always last
   if (process.env.NODE_ENV === "production") {
     serveStatic(app);
   } else {
@@ -88,78 +96,6 @@ app.use((req, res, next) => {
     await setupVite(httpServer, app);
   }
 
-  // Keep-alive ping for Render.com free tier
-  app.get("/ping", (_req, res) => res.send("OK"));
-
-  const port = parseInt(process.env.PORT || "5000", 10);
-  httpServer.listen(
-    {
-      port,
-      host: "0.0.0.0",
-      reusePort: true,
-    },
-    () => {
-      log(`serving on port ${port}`);
-    },
-  );
-})();  const start = Date.now();
-  const path = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
-
-  const originalResJson = res.json;
-  res.json = function (bodyJson, ...args) {
-    capturedJsonResponse = bodyJson;
-    return originalResJson.apply(res, [bodyJson, ...args]);
-  };
-
-  res.on("finish", () => {
-    const duration = Date.now() - start;
-    if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
-
-      log(logLine);
-    }
-  });
-
-  next();
-});
-
-(async () => {
-  await registerRoutes(httpServer, app);
-
-  app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
-
-    console.error("Internal Server Error:", err);
-
-    if (res.headersSent) {
-      return next(err);
-    }
-
-    return res.status(status).json({ message });
-  });
-
-  // importantly only setup vite in development and after
-  // setting up all the other routes so the catch-all route
-  // doesn't interfere with the other routes
-  if (process.env.NODE_ENV === "production") {
-    serveStatic(app);
-  } else {
-    const { setupVite } = await import("./vite");
-    await setupVite(httpServer, app);
-  }
-  
-  // Keep-alive ping for Render.com free tier
-  app.get("/ping", (_req, res) => res.send("OK"));
-  
-  // ALWAYS serve the app on the port specified in the environment variable PORT
-  // Other ports are firewalled. Default to 5000 if not specified.
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
   const port = parseInt(process.env.PORT || "5000", 10);
   httpServer.listen(
     {
