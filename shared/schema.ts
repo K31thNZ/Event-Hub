@@ -17,7 +17,7 @@ export const events = pgTable("events", {
   organizerId: varchar("organizer_id").references(() => users.id).notNull(),
   title: text("title").notNull(),
   description: text("description").notNull(),
-  category: text("category").notNull(),
+  category: text("category").notNull().default("social"),
   date: timestamp("date").notNull(),
   venueAddress: text("venue_address").notNull(),
   venueCity: text("venue_city").notNull(),
