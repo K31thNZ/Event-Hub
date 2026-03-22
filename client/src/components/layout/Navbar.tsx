@@ -15,7 +15,7 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useState } from "react";
 
 export function Navbar() {
-  const { user, isAuthenticated, logout } = useAuth();
+  const { user, isAuthenticated, login, logout } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const getInitials = (name: string) => name?.substring(0, 2).toUpperCase() || "U";
@@ -51,15 +51,15 @@ export function Navbar() {
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" className="relative h-10 w-10 rounded-full p-0 border-2 border-transparent hover:border-primary/50 transition-colors">
                     <Avatar className="h-10 w-10">
-                      <AvatarImage src={user?.profileImageUrl || ""} alt={user?.firstName || "User"} />
-                      <AvatarFallback className="bg-primary/10 text-primary">{getInitials(user?.firstName || "Ex")}</AvatarFallback>
+                      <AvatarImage src={user?.avatarUrl || ""} alt={user?.displayName || "User"} />
+                      <AvatarFallback className="bg-primary/10 text-primary">{getInitials(user?.displayName || "Ex")}</AvatarFallback>
                     </Avatar>
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent className="w-56" align="end" forceMount>
                   <DropdownMenuLabel className="font-normal">
                     <div className="flex flex-col space-y-1">
-                      <p className="text-sm font-medium leading-none">{user?.firstName} {user?.lastName}</p>
+                      <p className="text-sm font-medium leading-none">{user?.displayName || user?.username}</p>
                       <p className="text-xs leading-none text-muted-foreground">{user?.email}</p>
                     </div>
                   </DropdownMenuLabel>
@@ -79,8 +79,8 @@ export function Navbar() {
               </DropdownMenu>
             </div>
           ) : (
-            <Button asChild className="rounded-full px-6 shadow-lg shadow-primary/20 hover:shadow-xl hover:shadow-primary/30 transition-all hover:-translate-y-0.5">
-              <a href="/api/login">Sign In</a>
+            <Button onClick={login} className="rounded-full px-6 shadow-lg shadow-primary/20 hover:shadow-xl hover:shadow-primary/30 transition-all hover:-translate-y-0.5">
+              Sign In
             </Button>
           )}
         </nav>
@@ -106,8 +106,8 @@ export function Navbar() {
                   </div>
                 </>
               ) : (
-                <Button asChild className="w-full mt-4 rounded-xl">
-                  <a href="/api/login">Sign In</a>
+                <Button className="w-full mt-4 rounded-xl" onClick={() => { login(); setMobileMenuOpen(false); }}>
+                  Sign In
                 </Button>
               )}
             </SheetContent>
