@@ -45,6 +45,7 @@ async function buildAll() {
     ...Object.keys(pkg.devDependencies || {}),
   ];
   const externals = allDeps.filter((dep) => !allowlist.includes(dep));
+  externals.push("connect-pg-simple"); // force external — uses SQL file at runtime
 
   await esbuild({
     entryPoints: ["server/index.ts"],
