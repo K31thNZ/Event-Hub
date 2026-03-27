@@ -68,12 +68,14 @@ export default function Home() {
                   <SelectTrigger className="w-full pl-12 h-12 bg-transparent border-none focus:ring-0 text-base shadow-none">
                     <SelectValue placeholder="Location" />
                   </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Any City</SelectItem>
+                  <SelectContent className="bg-white dark:bg-gray-800">
+                    <SelectItem value="all">All Locations</SelectItem>
                     <SelectItem value="Moscow">Moscow</SelectItem>
-                    <SelectItem value="St. Petersburg">St. Petersburg</SelectItem>
-                    <SelectItem value="Kazan">Kazan</SelectItem>
-                    <SelectItem value="Sochi">Sochi</SelectItem>
+                    <SelectItem value="Dubai">Dubai</SelectItem>
+                    <SelectItem value="London">London</SelectItem>
+                    <SelectItem value="New York">New York</SelectItem>
+                    <SelectItem value="Singapore">Singapore</SelectItem>
+                    <SelectItem value="Sydney">Sydney</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
