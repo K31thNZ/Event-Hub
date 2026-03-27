@@ -87,11 +87,12 @@ export default function Home() {
                     <SelectValue placeholder="Category" />
                   </SelectTrigger>
                   <SelectContent className="bg-white dark:bg-gray-800">
-                            {EVENT_CATEGORIES.map((cat) => (
-                              <SelectItem key={cat.value} value={cat.value}>
-                                {cat.label}
-                              </SelectItem>
-                            ))}
+                     <SelectItem value="all">All Categories</SelectItem>
+                      {EVENT_CATEGORIES.map((cat) => (
+                     <SelectItem key={cat.value} value={cat.value}>
+                        {cat.label}
+                     </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               </div>
