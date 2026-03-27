@@ -5,6 +5,7 @@ import { Search, MapPin, CalendarHeart } from "lucide-react";
 import { useState } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { motion } from "framer-motion";
+import { EVENT_CATEGORIES, EVENT_CATEGORY_VALUES } from "@shared/categories";
 
 export default function Home() {
   const [search, setSearch] = useState("");
@@ -85,13 +86,13 @@ export default function Home() {
                   <SelectTrigger className="w-full px-4 h-12 bg-transparent border-none focus:ring-0 text-base shadow-none">
                     <SelectValue placeholder="Category" />
                   </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Any Category</SelectItem>
-                    <SelectItem value="Nightlife">Nightlife</SelectItem>
-                    <SelectItem value="Networking">Networking</SelectItem>
-                    <SelectItem value="Culture">Culture</SelectItem>
-                    <SelectItem value="Food & Drink">Food & Drink</SelectItem>
-                  </SelectContent>
+                  <SelectContent className="bg-white dark:bg-gray-800">
+                            {EVENT_CATEGORIES.map((cat) => (
+                              <SelectItem key={cat.value} value={cat.value}>
+                                {cat.label}
+                              </SelectItem>
+                            ))}
+                   </SelectContent>
                 </Select>
               </div>
             </div>
