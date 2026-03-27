@@ -160,7 +160,7 @@ export default function CreateEvent() {
                           <SelectTrigger className="h-12 rounded-xl">
                             <SelectValue placeholder="Select a category…" />
                           </SelectTrigger>
-                          <SelectContent>
+                          <SelectContent className="bg-white dark:bg-gray-800">
                             {EVENT_CATEGORIES.map((cat) => (
                               <SelectItem key={cat.value} value={cat.value}>
                                 {cat.label}
