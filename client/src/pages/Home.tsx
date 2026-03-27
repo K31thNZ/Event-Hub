@@ -92,7 +92,7 @@ export default function Home() {
                                 {cat.label}
                               </SelectItem>
                             ))}
-                   </SelectContent>
+                  </SelectContent>
                 </Select>
               </div>
             </div>
