@@ -5,7 +5,7 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'server/shared/schema.ts'
+      - './shared/schema.ts'
       - 'drizzle.config.ts'
 
 jobs:
@@ -22,11 +22,11 @@ jobs:
           node-version: '20'
 
       - name: Install dependencies
-        working-directory: ./server
+        
         run: npm install                 # installs all deps, including drizzle-kit and ts-node
 
       - name: Run Drizzle push (using TS config)
-        working-directory: ./server
+        
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: npx drizzle-kit push --config=drizzle.config.ts
