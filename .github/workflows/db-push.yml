@@ -1,11 +1,11 @@
 name: Database Migration
 
 on:
-  workflow_dispatch:           # allows manual trigger from GitHub UI
+  workflow_dispatch:                     # manual trigger
   push:
-    branches: [ main ]         # optional: run automatically on push to main
+    branches: [ main ]
     paths:
-      - 'server/shared/schema.ts'   # only run when schema changes
+      - 'server/shared/schema.ts'
       - 'drizzle.config.ts'
 
 jobs:
@@ -19,14 +19,14 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'   # or 22/24, whichever your project uses
+          node-version: '20'
 
       - name: Install dependencies
-        working-directory: ./server   # adjust if your package.json is elsewhere
-        run: npm install -g ts-node
+        working-directory: ./server
+        run: npm install                 # installs all deps, including drizzle-kit and ts-node
 
-- name: Run Drizzle push
-  working-directory: ./server
-  env:
-    DATABASE_URL: ${{ secrets.DATABASE_URL }}
-  run: npx drizzle-kit push --config=drizzle.config.ts
+      - name: Run Drizzle push (using TS config)
+        working-directory: ./server
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npx drizzle-kit push --config=drizzle.config.ts
