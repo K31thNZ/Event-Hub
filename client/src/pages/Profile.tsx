@@ -1,14 +1,15 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { User, Bell, Calendar, Check, Copy } from "lucide-react";
+import { User, Bell, Calendar, Check, ExternalLink } from "lucide-react";
 import { motion } from "framer-motion";
 import { EVENT_CATEGORIES, getCategoryLabel } from "@shared/categories";
 
-const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? "https://auth.expatevents.org";
+const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? "https://meh-auth.onrender.com";
 
 const CATEGORY_ICONS: Record<string, string> = {
   networking: "🔗", tech: "💻", culture: "🎨", food: "🍔",
@@ -28,9 +29,14 @@ export default function Profile() {
   const [slots, setSlots] = useState<Slot[]>([]);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [isMouseDown, setIsMouseDown] = useState(false);
   const [dragMode, setDragMode] = useState<"add" | "remove">("add");
+
+  // Telegram linking state
+  const [telegramIdInput, setTelegramIdInput] = useState("");
+  const [telegramSaving, setTelegramSaving] = useState(false);
+  const [telegramSaved, setTelegramSaved] = useState(false);
+  const [telegramError, setTelegramError] = useState("");
 
   // Load current interests and slots from meh-auth
   useEffect(() => {
@@ -102,12 +108,31 @@ export default function Profile() {
     }
   };
 
-  const copyTelegramId = () => {
-    if (!user) return;
-    // The user's meh-auth ID — paste this in the bot to link accounts
-    navigator.clipboard.writeText(String(user.id));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const saveTelegramId = async () => {
+    const id = telegramIdInput.trim();
+    if (!id) return;
+    if (!/^\d+$/.test(id)) {
+      setTelegramError("Telegram IDs are numbers only — check you copied it correctly.");
+      return;
+    }
+    setTelegramError("");
+    setTelegramSaving(true);
+    try {
+      const res = await fetch(`${AUTH_URL}/api/user/profile`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ telegramId: id }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setTelegramSaved(true);
+      setTelegramIdInput("");
+      setTimeout(() => setTelegramSaved(false), 3000);
+    } catch (err) {
+      setTelegramError("Failed to save. Please try again.");
+    } finally {
+      setTelegramSaving(false);
+    }
   };
 
   if (isLoading) {
@@ -130,6 +155,7 @@ export default function Profile() {
   }
 
   const initials = (user.displayName ?? user.username ?? "U").substring(0, 2).toUpperCase();
+  const telegramLinked = !!user.telegramId;
 
   return (
     <div
@@ -170,34 +196,76 @@ export default function Profile() {
               <h2 className="text-xl font-bold font-display">Telegram Notifications</h2>
             </div>
             <CardContent className="p-8">
-              {user.telegramId ? (
+              {telegramLinked ? (
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                  <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
                     <span style={{ fontSize: 20 }}>✈️</span>
                   </div>
                   <div>
                     <p className="font-medium">Telegram connected</p>
-                    <p className="text-sm text-muted-foreground">You'll receive event notifications via @ExpatEventsBot</p>
+                    <p className="text-sm text-muted-foreground">You'll receive event notifications via the ExpatEvents bot</p>
                   </div>
-                  <Badge className="ml-auto" variant="secondary">Connected</Badge>
+                  <Badge className="ml-auto shrink-0" variant="secondary">Connected</Badge>
                 </div>
               ) : (
-                <div className="space-y-4">
-                  <p className="text-muted-foreground text-sm">
-                    Connect Telegram to get event notifications and availability alerts directly in your phone.
+                <div className="space-y-5">
+                  <p className="text-sm text-muted-foreground">
+                    Connect your Telegram account to get personalised event notifications and availability alerts straight to your phone.
                   </p>
-                  <ol className="space-y-2 text-sm text-muted-foreground">
-                    <li>1. Open <a href="https://t.me/ExpatEventsMoscowBot" target="_blank" rel="noreferrer" className="text-primary underline">@ExpatEventsMoscowBot</a> on Telegram</li>
-                    <li>2. Send <code className="bg-muted px-1 rounded">/start</code></li>
-                    <li>3. The bot will link your account automatically if you signed in with Telegram, or paste your profile ID:</li>
+
+                  <ol className="space-y-3 text-sm">
+                    <li className="flex gap-3">
+                      <span className="flex-none w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center font-semibold text-xs">1</span>
+                      <span>
+                        Open the{" "}
+                        <a
+                          href="https://t.me/ExpatEventsMoscowBot"
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-primary underline underline-offset-2 inline-flex items-center gap-1"
+                        >
+                          ExpatEvents Telegram bot <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </span>
+                    </li>
+                    <li className="flex gap-3">
+                      <span className="flex-none w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center font-semibold text-xs">2</span>
+                      <span>Send <code className="bg-muted px-1.5 py-0.5 rounded text-xs">/start</code> — the bot will reply with your Telegram ID</span>
+                    </li>
+                    <li className="flex gap-3">
+                      <span className="flex-none w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center font-semibold text-xs">3</span>
+                      <span>Copy that number and paste it below</span>
+                    </li>
                   </ol>
-                  <div className="flex items-center gap-2">
-                    <code className="bg-muted px-3 py-2 rounded-lg text-sm flex-1">Your profile ID: {user.id}</code>
-                    <Button variant="outline" size="sm" onClick={copyTelegramId} className="gap-2">
-                      {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                      {copied ? "Copied" : "Copy"}
+
+                  <div className="flex gap-2 items-start">
+                    <Input
+                      data-testid="input-telegram-id"
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="Paste your Telegram ID here…"
+                      value={telegramIdInput}
+                      onChange={e => { setTelegramIdInput(e.target.value); setTelegramError(""); }}
+                      className="flex-1"
+                      onKeyDown={e => { if (e.key === "Enter") saveTelegramId(); }}
+                    />
+                    <Button
+                      data-testid="button-connect-telegram"
+                      onClick={saveTelegramId}
+                      disabled={telegramSaving || !telegramIdInput.trim()}
+                      className="shrink-0 gap-2"
+                    >
+                      {telegramSaved ? <><Check className="w-4 h-4" /> Linked!</> : telegramSaving ? "Saving…" : "Connect"}
                     </Button>
                   </div>
+
+                  {telegramError && (
+                    <p className="text-sm text-destructive">{telegramError}</p>
+                  )}
+
+                  <p className="text-xs text-muted-foreground">
+                    If you signed in with Telegram directly, your account links automatically — no need to do this.
+                  </p>
                 </div>
               )}
             </CardContent>
@@ -216,6 +284,7 @@ export default function Profile() {
                   return (
                     <button
                       key={cat.value}
+                      data-testid={`button-interest-${cat.value}`}
                       onClick={() => toggleInterest(cat.value)}
                       className={`
                         flex items-center gap-2 px-4 py-2 rounded-full border text-sm font-medium transition-all
@@ -267,6 +336,7 @@ export default function Profile() {
                       return (
                         <div
                           key={day}
+                          data-testid={`slot-${day}-${hour}`}
                           onMouseDown={() => handleSlotMouseDown(day, hour)}
                           onMouseEnter={() => handleSlotMouseEnter(day, hour)}
                           className={`
@@ -291,6 +361,7 @@ export default function Profile() {
 
           {/* ── Save button ──────────────────────────────────────────────── */}
           <Button
+            data-testid="button-save-profile"
             onClick={saveAll}
             disabled={saving}
             className="w-full h-14 text-lg rounded-2xl shadow-xl shadow-primary/20 hover:shadow-primary/30 hover:-translate-y-0.5 transition-all"
