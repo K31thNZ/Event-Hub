@@ -23,10 +23,10 @@ jobs:
 
       - name: Install dependencies
         working-directory: ./server   # adjust if your package.json is elsewhere
-        run: npm install
+        run: npm install -g ts-node
 
-      - name: Run Drizzle migrations
-        working-directory: ./server
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: npx drizzle-kit push   # or use 'migrate' if you prefer
+- name: Run Drizzle push
+  working-directory: ./server
+  env:
+    DATABASE_URL: ${{ secrets.DATABASE_URL }}
+  run: npx drizzle-kit push --config=drizzle.config.ts
