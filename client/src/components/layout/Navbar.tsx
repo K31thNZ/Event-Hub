@@ -10,7 +10,7 @@ import {
   DropdownMenuSeparator, 
   DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
-import { Ticket, CalendarPlus, LogOut, User, Menu } from "lucide-react";
+import { Ticket, CalendarPlus, LogOut, User, Menu, Settings } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useState } from "react";
 
@@ -70,6 +70,12 @@ export function Navbar() {
                       <span>My Dashboard</span>
                     </Link>
                   </DropdownMenuItem>
+                  <DropdownMenuItem asChild className="cursor-pointer">
+                    <Link href="/profile" className="w-full flex items-center">
+                      <Settings className="mr-2 h-4 w-4" />
+                      <span>Profile & Interests</span>
+                    </Link>
+                  </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem className="cursor-pointer text-destructive focus:bg-destructive/10" onClick={() => logout()}>
                     <LogOut className="mr-2 h-4 w-4" />
@@ -98,6 +104,7 @@ export function Navbar() {
               {isAuthenticated ? (
                 <>
                   <Link href="/dashboard" onClick={() => setMobileMenuOpen(false)} className="text-lg font-semibold">My Dashboard</Link>
+                  <Link href="/profile" onClick={() => setMobileMenuOpen(false)} className="text-lg font-semibold">Profile & Interests</Link>
                   <Link href="/create-event" onClick={() => setMobileMenuOpen(false)} className="text-lg font-semibold text-primary">Host an Event</Link>
                   <div className="mt-auto border-t pt-6">
                     <Button variant="outline" className="w-full justify-start text-destructive" onClick={() => { logout(); setMobileMenuOpen(false); }}>

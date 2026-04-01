@@ -10,6 +10,7 @@ export interface User {
   avatarUrl?: string;
   email?: string;
   interests?: string[];
+  telegramId?: string | number | null;
   isExpatMember: boolean;
   isGamesMember: boolean;
   dice: number;
