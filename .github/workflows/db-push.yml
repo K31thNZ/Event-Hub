@@ -23,7 +23,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: ./server   # adjust if your package.json is elsewhere
-        run: npm ci
+        run: npm install
 
       - name: Run Drizzle migrations
         working-directory: ./server
