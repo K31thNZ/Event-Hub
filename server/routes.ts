@@ -127,6 +127,20 @@ async function seedDatabase() {
     const existing = await storage.getEvents();
     if (existing.length > 0) return;
 
+    // Verify the auth service has a user with ID 1 before seeding
+    const AUTH_URL = process.env.AUTH_SERVICE_URL ?? "https://meh-auth.onrender.com";
+    let userExists = false;
+    try {
+      const checkRes = await fetch(`${AUTH_URL}/api/users/1`);
+      userExists = checkRes.ok;
+    } catch {
+      userExists = false;
+    }
+    if (!userExists) {
+      console.log("[seed] Skipping seed — no admin user found yet in auth service");
+      return;
+    }
+
     // Seed organizer ID — matches the first admin user created in meh-auth
     const seedOrganizerId = 1;
 
