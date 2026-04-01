@@ -44,3 +44,4 @@ outputType = "webview"
 
 [agent]
 integrations = ["javascript_log_in_with_replit:2.0.0", "javascript_database:1.0.0"]
+expertMode = true
