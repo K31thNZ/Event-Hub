@@ -50,10 +50,9 @@ export function useAuth() {
     fetch(`${AUTH_URL}/api/auth/logout`, {
       method: "POST",
       credentials: "include",
-    }).then(() => {
-      queryClient.setQueryData(["auth-user"], null);
-      window.location.href = "/";
-    });
+    }).catch(() => {});
+    queryClient.clear();
+    window.location.href = "/";
   }
 
   return { user, isLoading, isAuthenticated, login, logout };
