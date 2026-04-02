@@ -14,7 +14,7 @@ import { users } from "./models/auth";
 
 export const events = pgTable("events", {
   id: serial("id").primaryKey(),
-  organizerId: varchar("organizer_id").references(() => users.id).notNull(),
+  organizerId: varchar("organizer_id").notNull(),
   title: text("title").notNull(),
   description: text("description").notNull(),
   category: text("category").notNull().default("social"),
@@ -37,7 +37,7 @@ export const ticketTypes = pgTable("ticket_types", {
 
 export const orders = pgTable("orders", {
   id: serial("id").primaryKey(),
-  attendeeId: varchar("attendee_id").references(() => users.id).notNull(),
+  attendeeId: varchar("attendee_id").notNull(),
   eventId: integer("event_id").references(() => events.id).notNull(),
   status: text("status").notNull(), // 'completed', etc.
   totalAmount: integer("total_amount").notNull(),

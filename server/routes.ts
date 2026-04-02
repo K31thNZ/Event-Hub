@@ -44,7 +44,7 @@ export async function registerRoutes(
   app.post(api.events.create.path, requireAuth, async (req: any, res) => {
     try {
       const input = api.events.create.input.parse(req.body);
-      const event = await storage.createEvent(req.user.id, input);
+      const event = await storage.createEvent(String(req.user.id), input);
       res.status(201).json(event);
     } catch (err) {
       if (err instanceof z.ZodError) {
@@ -53,7 +53,8 @@ export async function registerRoutes(
           field: err.errors[0].path.join("."),
         });
       }
-      res.status(500).json({ message: "Internal server error" });
+      console.error("[createEvent]", err);
+      res.status(500).json({ message: err instanceof Error ? err.message : "Internal server error" });
     }
   });
 
