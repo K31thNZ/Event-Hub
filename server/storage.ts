@@ -3,8 +3,7 @@ import {
   events, ticketTypes, orders, orderTickets,
   type Event, type TicketType, type Order, type OrderTicket,
   type EventWithTickets, type OrderWithDetails,
-  type CreateEventRequest, type UpdateEventRequest,
-  type CreateOrderRequest
+  type CreateEventRequest, type UpdateEventRequest, type CreateOrderRequest
 } from "@shared/schema";
 import { eq, desc, ilike, and, or } from "drizzle-orm";
 
@@ -14,12 +13,13 @@ export interface IStorage {
   getEvent(id: number): Promise<EventWithTickets | undefined>;
   getEventsByOrganizer(organizerId: string): Promise<EventWithTickets[]>;
   createEvent(organizerId: string, eventData: CreateEventRequest): Promise<EventWithTickets>;
-  
+  updateEvent(id: number, eventData: UpdateEventRequest): Promise<EventWithTickets>;
+  deleteEvent(id: number): Promise<void>;
+
   // Orders
   getOrdersByAttendee(attendeeId: string): Promise<OrderWithDetails[]>;
   getOrder(id: number): Promise<OrderWithDetails | undefined>;
   createOrder(attendeeId: string, orderData: CreateOrderRequest): Promise<OrderWithDetails>;
-  deleteEvent(id: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -107,6 +107,39 @@ export class DatabaseStorage implements IStorage {
       });
       
       return createdEvent!;
+    });
+  }
+
+  async updateEvent(id: number, eventData: UpdateEventRequest): Promise<EventWithTickets> {
+    return await db.transaction(async (tx) => {
+      const updates: Record<string, any> = {};
+      if (eventData.title !== undefined) updates.title = eventData.title;
+      if (eventData.description !== undefined) updates.description = eventData.description;
+      if (eventData.category !== undefined) updates.category = eventData.category;
+      if (eventData.date !== undefined) updates.date = new Date(eventData.date as string);
+      if (eventData.venueAddress !== undefined) updates.venueAddress = eventData.venueAddress;
+      if (eventData.venueCity !== undefined) updates.venueCity = eventData.venueCity;
+      if (eventData.imageUrl !== undefined) updates.imageUrl = eventData.imageUrl;
+      if (eventData.published !== undefined) updates.published = eventData.published;
+
+      if (Object.keys(updates).length > 0) {
+        await tx.update(events).set(updates).where(eq(events.id, id));
+      }
+
+      if (eventData.ticketTypes !== undefined) {
+        await tx.delete(ticketTypes).where(eq(ticketTypes.eventId, id));
+        if (eventData.ticketTypes.length > 0) {
+          await tx.insert(ticketTypes).values(
+            eventData.ticketTypes.map(t => ({ ...t, eventId: id }))
+          );
+        }
+      }
+
+      const updated = await tx.query.events.findFirst({
+        where: eq(events.id, id),
+        with: { ticketTypes: true },
+      });
+      return updated!;
     });
   }
 

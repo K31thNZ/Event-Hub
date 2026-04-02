@@ -109,3 +109,25 @@ export type OrderWithDetails = Order & {
   event: Event, 
   tickets: (OrderTicket & { ticketType: TicketType })[] 
 };
+
+export type CreateEventRequest = {
+  title: string;
+  description: string;
+  category: string;
+  date: Date | string;
+  venueAddress: string;
+  venueCity: string;
+  imageUrl?: string | null;
+  published?: boolean;
+  ticketTypes: { name: string; price: number; quantity: number; maxPerOrder: number }[];
+};
+
+export type UpdateEventRequest = Partial<CreateEventRequest>;
+
+export type CreateOrderRequest = {
+  eventId: number;
+  attendeeName: string;
+  attendeeEmail: string;
+  notes?: string | null;
+  tickets: { ticketTypeId: number; quantity: number }[];
+};

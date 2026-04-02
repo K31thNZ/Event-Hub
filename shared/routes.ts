@@ -63,6 +63,33 @@ export const api = {
         401: errorSchemas.unauthorized,
       }
     },
+    update: {
+      method: 'PATCH' as const,
+      path: '/api/events/:id' as const,
+      input: z.object({
+        title: z.string().min(1).optional(),
+        description: z.string().min(1).optional(),
+        category: z.string().min(1).optional(),
+        date: z.string().or(z.date()).optional(),
+        venueAddress: z.string().min(1).optional(),
+        venueCity: z.string().min(1).optional(),
+        imageUrl: z.string().optional().nullable(),
+        published: z.boolean().optional(),
+        ticketTypes: z.array(z.object({
+          name: z.string().min(1),
+          price: z.number().min(0),
+          quantity: z.number().min(1),
+          maxPerOrder: z.number().min(1),
+        })).optional(),
+      }),
+      responses: {
+        200: z.custom<EventWithTickets>(),
+        400: errorSchemas.validation,
+        401: errorSchemas.unauthorized,
+        403: z.object({ message: z.string() }),
+        404: errorSchemas.notFound,
+      }
+    },
     delete: {
       method: 'DELETE' as const,
       path: '/api/events/:id' as const,

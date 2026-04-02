@@ -40,7 +40,7 @@ export function useMyEvents() {
     queryKey: [api.events.myEvents.path],
     queryFn: async () => {
       const res = await fetch(api.events.myEvents.path, { credentials: "include" });
-      if (res.status === 401) return []; // Not logged in
+      if (res.status === 401) return [];
       if (!res.ok) throw new Error("Failed to fetch your events");
       const data = await res.json();
       return data as EventWithTickets[];
@@ -58,12 +58,57 @@ export function useCreateEvent() {
         body: JSON.stringify(data),
         credentials: "include",
       });
-      
       if (!res.ok) {
         const error = await res.json();
         throw new Error(error.message || "Failed to create event");
       }
       return res.json() as Promise<EventWithTickets>;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [api.events.list.path] });
+      queryClient.invalidateQueries({ queryKey: [api.events.myEvents.path] });
+    },
+  });
+}
+
+export function useUpdateEvent() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: z.infer<typeof api.events.update.input> }) => {
+      const url = buildUrl(api.events.update.path, { id });
+      const res = await fetch(url, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || "Failed to update event");
+      }
+      return res.json() as Promise<EventWithTickets>;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [api.events.list.path] });
+      queryClient.invalidateQueries({ queryKey: [api.events.myEvents.path] });
+    },
+  });
+}
+
+export function useDeleteEvent() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const url = buildUrl(api.events.delete.path, { id });
+      const res = await fetch(url, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || "Failed to delete event");
+      }
+      return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [api.events.list.path] });

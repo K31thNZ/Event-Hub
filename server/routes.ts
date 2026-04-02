@@ -58,6 +58,25 @@ export async function registerRoutes(
     }
   });
 
+  app.patch(api.events.update.path, requireAuth, async (req: any, res) => {
+    try {
+      const event = await storage.getEvent(Number(req.params.id));
+      if (!event) return res.status(404).json({ message: "Event not found" });
+      if (req.user.role !== "admin" && event.organizerId !== String(req.user.id)) {
+        return res.status(403).json({ message: "Only the organizer or an admin can edit this event" });
+      }
+      const input = api.events.update.input.parse(req.body);
+      const updated = await storage.updateEvent(Number(req.params.id), input);
+      res.json(updated);
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: err.errors[0].message, field: err.errors[0].path.join(".") });
+      }
+      console.error("[updateEvent]", err);
+      res.status(500).json({ message: err instanceof Error ? err.message : "Internal server error" });
+    }
+  });
+
   app.delete(api.events.delete.path, requireAuth, async (req: any, res) => {
     try {
       const event = await storage.getEvent(Number(req.params.id));
