@@ -219,12 +219,12 @@ export default function Profile() {
                       <span>
                         Open the{" "}
                         <a
-                          href="https://t.me/ExpatEventsMoscowBot"
+                          href="https://t.me/ExpatEvents_bot"
                           target="_blank"
                           rel="noreferrer"
                           className="text-primary underline underline-offset-2 inline-flex items-center gap-1"
                         >
-                          ExpatEvents Telegram bot <ExternalLink className="w-3 h-3" />
+                          @ExpatEvents_bot <ExternalLink className="w-3 h-3" />
                         </a>
                       </span>
                     </li>
