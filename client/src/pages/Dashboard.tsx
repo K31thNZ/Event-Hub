@@ -3,7 +3,7 @@ import { useMyEvents, useUpdateEvent, useDeleteEvent, useEvents } from "@/hooks/
 import { useMyOrders } from "@/hooks/use-orders";
 import { useAuth } from "@/hooks/use-auth";
 import { Link } from "wouter";
-import { useForm, useFieldArray, Controller } from "react-hook-form";
+import { useForm, useFieldArray, Controller, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { EVENT_CATEGORIES, EVENT_CATEGORY_VALUES } from "@shared/categories";
@@ -35,6 +35,7 @@ const editEventSchema = z.object({
   title: z.string().min(3, "Title must be at least 3 characters"),
   description: z.string().min(10, "Description is too short"),
   category: z.enum(EVENT_CATEGORY_VALUES as [string, ...string[]]),
+  category2: z.string().optional().nullable(),
   date: z.string().min(1, "Date is required"),
   venueAddress: z.string().min(3, "Address is required"),
   venueCity: z.string().min(2, "City is required"),
@@ -69,6 +70,7 @@ function EditEventSheet({
       title: event.title,
       description: event.description,
       category: event.category,
+      category2: event.category2 ?? null,
       date: format(new Date(event.date), "yyyy-MM-dd'T'HH:mm"),
       venueAddress: event.venueAddress,
       venueCity: event.venueCity,
@@ -84,6 +86,7 @@ function EditEventSheet({
   });
 
   const { fields, append, remove } = useFieldArray({ control: form.control, name: "ticketTypes" });
+  const watchedCategory = useWatch({ control: form.control, name: "category" });
 
   const onSubmit = async (data: EditFormValues) => {
     if (!event) return;
@@ -136,6 +139,28 @@ function EditEventSheet({
               <Input {...form.register("date")} type="datetime-local" className="h-11 rounded-xl" />
             </div>
           </div>
+
+          {watchedCategory && (
+            <div className="space-y-1.5">
+              <Label>
+                Second Category <span className="text-muted-foreground font-normal text-xs">(optional)</span>
+              </Label>
+              <Controller control={form.control} name="category2" render={({ field }) => (
+                <Select
+                  onValueChange={(v) => field.onChange(v === "__none__" ? null : v)}
+                  value={field.value ?? "__none__"}
+                >
+                  <SelectTrigger className="h-11 rounded-xl"><SelectValue placeholder="None" /></SelectTrigger>
+                  <SelectContent className="bg-white dark:bg-gray-800">
+                    <SelectItem value="__none__">— None —</SelectItem>
+                    {EVENT_CATEGORIES.filter(cat => cat.value !== watchedCategory).map(cat => (
+                      <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )} />
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">

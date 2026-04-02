@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useForm, useFieldArray, Controller } from "react-hook-form";
+import { useForm, useFieldArray, Controller, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useCreateEvent } from "@/hooks/use-events";
@@ -29,6 +29,7 @@ const createEventSchema = z.object({
   category: z.enum(EVENT_CATEGORY_VALUES as [string, ...string[]], {
     required_error: "Please select a category",
   }),
+  category2: z.string().optional().nullable(),
   date: z.coerce.date({ required_error: "Valid date is required" }),
   venueAddress: z.string().min(3, "Address is required"),
   venueCity: z.string().min(2, "City is required"),
@@ -71,6 +72,8 @@ export default function CreateEvent() {
     control,
     name: "ticketTypes",
   });
+
+  const watchedCategory = useWatch({ control, name: "category" });
 
   const onSubmit = async (data: FormValues) => {
     setSubmitError(null);
@@ -157,7 +160,7 @@ export default function CreateEvent() {
                       name="category"
                       render={({ field }) => (
                         <Select onValueChange={field.onChange} value={field.value}>
-                          <SelectTrigger className="h-12 rounded-xl">
+                          <SelectTrigger className="h-12 rounded-xl" data-testid="select-category">
                             <SelectValue placeholder="Select a category…" />
                           </SelectTrigger>
                           <SelectContent className="bg-white dark:bg-gray-800">
@@ -187,6 +190,36 @@ export default function CreateEvent() {
                     )}
                   </div>
                 </div>
+
+                {watchedCategory && (
+                  <div className="space-y-2">
+                    <Label>
+                      Second Category <span className="text-muted-foreground font-normal">(optional)</span>
+                    </Label>
+                    <Controller
+                      control={control}
+                      name="category2"
+                      render={({ field }) => (
+                        <Select
+                          onValueChange={(v) => field.onChange(v === "__none__" ? null : v)}
+                          value={field.value ?? "__none__"}
+                        >
+                          <SelectTrigger className="h-12 rounded-xl" data-testid="select-category2">
+                            <SelectValue placeholder="None" />
+                          </SelectTrigger>
+                          <SelectContent className="bg-white dark:bg-gray-800">
+                            <SelectItem value="__none__">— None —</SelectItem>
+                            {EVENT_CATEGORIES.filter((cat) => cat.value !== watchedCategory).map((cat) => (
+                              <SelectItem key={cat.value} value={cat.value}>
+                                {cat.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                  </div>
+                )}
 
                 <div className="space-y-2">
                   <Label>Description</Label>

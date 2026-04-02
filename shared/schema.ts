@@ -18,6 +18,7 @@ export const events = pgTable("events", {
   title: text("title").notNull(),
   description: text("description").notNull(),
   category: text("category").notNull().default("social"),
+  category2: text("category2"),
   date: timestamp("date").notNull(),
   venueAddress: text("venue_address").notNull(),
   venueCity: text("venue_city").notNull(),
@@ -114,6 +115,7 @@ export type CreateEventRequest = {
   title: string;
   description: string;
   category: string;
+  category2?: string | null;
   date: Date | string;
   venueAddress: string;
   venueCity: string;
