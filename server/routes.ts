@@ -4,11 +4,28 @@ import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { requireAuth } from "./auth-client";
 import { z } from "zod";
+import { db } from "./db";
+import { users } from "@shared/models/auth";
+import { eq } from "drizzle-orm";
 
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+
+  // ── Current user profile (local DB) ─────────────────────────────────────
+
+  app.get("/api/me", requireAuth, async (req: any, res) => {
+    try {
+      const localUser = await db.query.users.findFirst({
+        where: eq(users.id, String(req.user.id)),
+      });
+      res.json({ isAdmin: localUser?.isAdmin ?? false });
+    } catch (err) {
+      console.error("[/api/me]", err);
+      res.json({ isAdmin: false });
+    }
+  });
 
   // ── Events ──────────────────────────────────────────────────────────────
 

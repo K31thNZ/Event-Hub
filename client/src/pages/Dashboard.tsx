@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useMyEvents, useUpdateEvent, useDeleteEvent, useEvents } from "@/hooks/use-events";
 import { useMyOrders } from "@/hooks/use-orders";
 import { useAuth } from "@/hooks/use-auth";
@@ -299,7 +300,17 @@ export default function Dashboard() {
   const { data: myOrders, isLoading: loadingOrders } = useMyOrders();
   const deleteEvent = useDeleteEvent();
   const { toast } = useToast();
-  const isAdmin = user?.role === "admin";
+
+  const { data: meData } = useQuery<{ isAdmin: boolean }>({
+    queryKey: ["/api/me"],
+    queryFn: async () => {
+      const res = await fetch("/api/me", { credentials: "include" });
+      if (!res.ok) return { isAdmin: false };
+      return res.json();
+    },
+    enabled: !!user,
+  });
+  const isAdmin = meData?.isAdmin ?? false;
 
   const [editingEvent, setEditingEvent] = useState<EventWithTickets | null>(null);
   const [deletingEvent, setDeletingEvent] = useState<EventWithTickets | null>(null);
