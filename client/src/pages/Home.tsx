@@ -4,18 +4,14 @@ import { EventCard } from "@/components/events/EventCard";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Search, MapPin, CalendarHeart, Sparkles, X, ArrowRight } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { motion, AnimatePresence } from "framer-motion";
-import { EVENT_CATEGORIES, EVENT_CATEGORY_VALUES } from "@shared/categories";
+import { EVENT_CATEGORIES } from "@shared/categories";
 import { Link } from "wouter";
 
 const BANNER_DISMISSED_KEY = "expat_interests_banner_dismissed";
 
-// Show the banner only when:
-//   - user is logged in
-//   - user has no interests set
-//   - user hasn't dismissed it this session
 function useShowPersonalisationBanner(user: any): [boolean, () => void] {
   const [dismissed, setDismissed] = useState(() => {
     try { return sessionStorage.getItem(BANNER_DISMISSED_KEY) === "1"; } catch { return false; }
@@ -47,6 +43,56 @@ export default function Home() {
 
   return (
     <div className="flex flex-col min-h-screen">
+
+      {/* ── Personalisation nudge — sticky below the navbar ──────────── */}
+      {/* Rendered at the very top of page content so it's always visible */}
+      <AnimatePresence>
+        {showBanner && (
+          <motion.div
+            key="interests-banner"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+            className="sticky top-16 z-40 overflow-hidden"
+          >
+            <div className="bg-primary text-primary-foreground px-4 py-3">
+              <div className="max-w-7xl mx-auto flex items-center gap-3">
+
+                <Sparkles className="w-4 h-4 shrink-0 opacity-90" />
+
+                <p className="flex-1 text-sm font-medium">
+                  <span className="font-semibold">Make it personal —</span>{" "}
+                  <span className="opacity-90">
+                    set your interests and get notified when matching events are posted.
+                  </span>
+                </p>
+
+                <Button
+                  asChild
+                  size="sm"
+                  variant="secondary"
+                  className="shrink-0 rounded-full text-xs h-7 px-3 gap-1 font-semibold"
+                  onClick={dismissBanner}
+                >
+                  <Link href="/profile">
+                    Set interests
+                    <ArrowRight className="w-3 h-3" />
+                  </Link>
+                </Button>
+
+                <button
+                  onClick={dismissBanner}
+                  aria-label="Dismiss"
+                  className="shrink-0 opacity-70 hover:opacity-100 transition-opacity ml-1"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ── Hero ──────────────────────────────────────────────────────── */}
       <section className="relative pt-32 pb-20 md:pt-48 md:pb-32 overflow-hidden">
@@ -133,73 +179,13 @@ export default function Home() {
       {/* ── Events listing ────────────────────────────────────────────── */}
       <section className="py-20 bg-background flex-1">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-
-          {/* Section heading */}
-          <div className="flex items-end justify-between mb-8">
+          <div className="flex items-end justify-between mb-12">
             <div>
-              <h2 className="text-3xl md:text-4xl font-display font-bold mb-2">Upcoming Events</h2>
+              <h2 className="text-3xl md:text-4xl font-display font-bold mb-4">Upcoming Events</h2>
               <p className="text-muted-foreground">Discover what's happening around you.</p>
             </div>
           </div>
 
-          {/* ── Personalisation nudge banner ─────────────────────────── */}
-          <AnimatePresence>
-            {showBanner && (
-              <motion.div
-                key="interests-banner"
-                initial={{ opacity: 0, y: -24, scaleY: 0.92 }}
-                animate={{ opacity: 1, y: 0, scaleY: 1 }}
-                exit={{ opacity: 0, y: -16, scaleY: 0.95 }}
-                transition={{ type: "spring", stiffness: 340, damping: 28 }}
-                className="mb-8 origin-top"
-              >
-                <div className="relative flex flex-col sm:flex-row items-start sm:items-center gap-4 bg-primary/5 border border-primary/20 rounded-2xl px-5 py-4 shadow-sm shadow-primary/5">
-
-                  {/* Icon */}
-                  <div className="shrink-0 w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                    <Sparkles className="w-5 h-5 text-primary" />
-                  </div>
-
-                  {/* Text */}
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-foreground text-sm">
-                      Make events personal
-                    </p>
-                    <p className="text-muted-foreground text-sm mt-0.5">
-                      Tell us what you're into and we'll surface events that match — plus notify
-                      you on Telegram the moment something new drops.
-                    </p>
-                  </div>
-
-                  {/* CTA */}
-                  <div className="flex items-center gap-2 shrink-0">
-                    <Button
-                      asChild
-                      size="sm"
-                      className="rounded-full gap-1.5 shadow-md shadow-primary/15 whitespace-nowrap"
-                      onClick={dismissBanner}
-                    >
-                      <Link href="/profile">
-                        Set my interests
-                        <ArrowRight className="w-3.5 h-3.5" />
-                      </Link>
-                    </Button>
-                  </div>
-
-                  {/* Dismiss */}
-                  <button
-                    onClick={dismissBanner}
-                    aria-label="Dismiss"
-                    className="absolute top-3 right-3 text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Event grid */}
           {isLoading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
               {[1, 2, 3, 4, 5, 6].map(i => (
