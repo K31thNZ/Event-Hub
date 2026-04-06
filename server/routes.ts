@@ -1,3 +1,4 @@
+import { registerPicksRoutes } from "./picks-routes";
 import type { Express } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
@@ -9,6 +10,7 @@ import { users } from "@shared/models/auth";
 import { eq } from "drizzle-orm";
 
 export async function registerRoutes(
+  registerPicksRoutes(app);
   httpServer: Server,
   app: Express
 ): Promise<Server> {
