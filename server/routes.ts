@@ -10,10 +10,11 @@ import { users } from "@shared/models/auth";
 import { eq } from "drizzle-orm";
 
 export async function registerRoutes(
-  registerPicksRoutes(app);
-  httpServer: Server,
-  app: Express
+  app: Express,
+  httpServer: Server
 ): Promise<Server> {
+  // Register picks routes
+  registerPicksRoutes(app);
 
   // ── Current user profile (local DB) ─────────────────────────────────────
 
