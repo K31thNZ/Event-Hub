@@ -13,6 +13,7 @@ import CreateEvent from "@/pages/CreateEvent";
 import OrderView from "@/pages/OrderView";
 import Profile from "@/pages/Profile";
 import { useAuth } from "@/hooks/use-auth";
+import Picks from "@/pages/Picks";
 
 // Protected Route Wrapper
 function ProtectedRoute({ component: Component }: { component: any }) {
@@ -40,6 +41,7 @@ function Router() {
           <Route path="/create-event"><ProtectedRoute component={CreateEvent} /></Route>
           <Route path="/orders/:id"><ProtectedRoute component={OrderView} /></Route>
           <Route path="/profile"><ProtectedRoute component={Profile} /></Route>
+          <Route path="/picks" component={Picks} />
           <Route component={NotFound} />
         </Switch>
       </main>
