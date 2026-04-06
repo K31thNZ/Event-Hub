@@ -6,12 +6,6 @@ import { z } from "zod";
 export * from "./models/auth";
 import { users } from "./models/auth";
 
-// Add isAdmin to users table indirectly by extending the model or just adding it here
-// Since models/auth.ts is managed by integration, we should ideally modify it there
-// but we can also just use the users table here if we want to add columns.
-// However, the integration instructions say "DO NOT modify the auth module files unless absolutely necessary".
-// But adding a column is necessary for this feature.
-
 export const events = pgTable("events", {
   id: serial("id").primaryKey(),
   organizerId: varchar("organizer_id").notNull(),
@@ -31,7 +25,7 @@ export const ticketTypes = pgTable("ticket_types", {
   id: serial("id").primaryKey(),
   eventId: integer("event_id").references(() => events.id).notNull(),
   name: text("name").notNull(),
-  price: integer("price").notNull(), // price in rubles
+  price: integer("price").notNull(),
   quantity: integer("quantity").notNull(),
   maxPerOrder: integer("max_per_order").notNull(),
 });
@@ -40,7 +34,7 @@ export const orders = pgTable("orders", {
   id: serial("id").primaryKey(),
   attendeeId: varchar("attendee_id").notNull(),
   eventId: integer("event_id").references(() => events.id).notNull(),
-  status: text("status").notNull(), // 'completed', etc.
+  status: text("status").notNull(),
   totalAmount: integer("total_amount").notNull(),
   attendeeName: text("attendee_name").notNull(),
   attendeeEmail: text("attendee_email").notNull(),
@@ -55,60 +49,64 @@ export const orderTickets = pgTable("order_tickets", {
   quantity: integer("quantity").notNull(),
 });
 
-// Relations
+// ── Curator picks ─────────────────────────────────────────────────────────
+// One row per weekly picks edition. curatorId is the meh-auth user ID.
+// eventIds is an ordered array of up to 6 event IDs from this database.
+export const curatorPicks = pgTable("curator_picks", {
+  id: serial("id").primaryKey(),
+  curatorId: varchar("curator_id").notNull(),        // meh-auth user ID
+  curatorName: text("curator_name").notNull(),        // denormalised for display
+  curatorAvatarUrl: text("curator_avatar_url"),
+  curatorSpecialty: text("curator_specialty").notNull().default("Events"), // e.g. "Networking", "Tech"
+  weekOf: timestamp("week_of").notNull(),             // Monday of the featured week
+  intro: text("intro").notNull(),                     // curator's intro blurb (max ~300 chars)
+  eventIds: integer("event_ids").array().notNull(),   // ordered list of picked event IDs
+  published: boolean("published").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// ── Relations ─────────────────────────────────────────────────────────────
 export const eventsRelations = relations(events, ({ one, many }) => ({
-  organizer: one(users, {
-    fields: [events.organizerId],
-    references: [users.id],
-  }),
+  organizer: one(users, { fields: [events.organizerId], references: [users.id] }),
   ticketTypes: many(ticketTypes),
   orders: many(orders),
 }));
 
 export const ticketTypesRelations = relations(ticketTypes, ({ one }) => ({
-  event: one(events, {
-    fields: [ticketTypes.eventId],
-    references: [events.id],
-  }),
+  event: one(events, { fields: [ticketTypes.eventId], references: [events.id] }),
 }));
 
 export const ordersRelations = relations(orders, ({ one, many }) => ({
-  attendee: one(users, {
-    fields: [orders.attendeeId],
-    references: [users.id],
-  }),
-  event: one(events, {
-    fields: [orders.eventId],
-    references: [events.id],
-  }),
+  attendee: one(users, { fields: [orders.attendeeId], references: [users.id] }),
+  event: one(events, { fields: [orders.eventId], references: [events.id] }),
   tickets: many(orderTickets),
 }));
 
 export const orderTicketsRelations = relations(orderTickets, ({ one }) => ({
-  order: one(orders, {
-    fields: [orderTickets.orderId],
-    references: [orders.id],
-  }),
-  ticketType: one(ticketTypes, {
-    fields: [orderTickets.ticketTypeId],
-    references: [ticketTypes.id],
-  }),
+  order: one(orders, { fields: [orderTickets.orderId], references: [orders.id] }),
+  ticketType: one(ticketTypes, { fields: [orderTickets.ticketTypeId], references: [ticketTypes.id] }),
 }));
 
+// ── Insert schemas ────────────────────────────────────────────────────────
 export const insertEventSchema = createInsertSchema(events).omit({ id: true, createdAt: true, organizerId: true });
 export const insertTicketTypeSchema = createInsertSchema(ticketTypes).omit({ id: true, eventId: true });
 export const insertOrderSchema = createInsertSchema(orders).omit({ id: true, createdAt: true, attendeeId: true, eventId: true, status: true, totalAmount: true });
 export const insertOrderTicketSchema = createInsertSchema(orderTickets).omit({ id: true, orderId: true });
+export const insertCuratorPicksSchema = createInsertSchema(curatorPicks).omit({ id: true, createdAt: true, updatedAt: true });
 
+// ── Types ─────────────────────────────────────────────────────────────────
 export type Event = typeof events.$inferSelect;
 export type TicketType = typeof ticketTypes.$inferSelect;
 export type Order = typeof orders.$inferSelect;
 export type OrderTicket = typeof orderTickets.$inferSelect;
+export type CuratorPick = typeof curatorPicks.$inferSelect;
 
 export type EventWithTickets = Event & { ticketTypes: TicketType[] };
-export type OrderWithDetails = Order & { 
-  event: Event, 
-  tickets: (OrderTicket & { ticketType: TicketType })[] 
+export type CuratorPickWithEvents = CuratorPick & { events: EventWithTickets[] };
+export type OrderWithDetails = Order & {
+  event: Event;
+  tickets: (OrderTicket & { ticketType: TicketType })[];
 };
 
 export type CreateEventRequest = {
