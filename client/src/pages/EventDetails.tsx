@@ -15,7 +15,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { motion } from "framer-motion";
 
-// ── Countdown hook (unchanged) ───────────────────────────────────────────
+// ── Countdown hook ────────────────────────────────────────────────────────
 function useCountdown(targetDate: Date) {
   const [timeLeft, setTimeLeft] = useState<string | null>(null);
 
@@ -37,7 +37,7 @@ function useCountdown(targetDate: Date) {
   return timeLeft;
 }
 
-// ── Checkout schema (unchanged) ──────────────────────────────────────────
+// ── Checkout schema ──────────────────────────────────────────────────────
 const checkoutSchema = z.object({
   attendeeEmail: z.string().email("Please enter a valid email"),
   notes: z.string().optional(),
@@ -131,7 +131,7 @@ export default function EventDetails() {
   return (
     <div className="min-h-screen bg-background">
 
-      {/* Hero Banner - much smaller now, just a decorative top bar */}
+      {/* Hero Banner - smaller decorative bar */}
       <div className="w-full h-48 md:h-64 relative">
         <img
           src={event.imageUrl || fallbackImage}
@@ -141,7 +141,7 @@ export default function EventDetails() {
         <div className="absolute inset-0 bg-gradient-to-t from-background to-transparent" />
       </div>
 
-      {/* Main content - no negative margin, starts immediately below hero */}
+      {/* Main content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
         <div className="flex flex-col lg:flex-row gap-12">
 
@@ -210,27 +210,11 @@ export default function EventDetails() {
                 </div>
               )}
 
-              {/* Get Tickets button */}
-              <div className="mt-10 pt-6 border-t border-border">
-                {!isAuthenticated ? (
-                  <Button asChild className="w-full py-6 rounded-xl text-lg shadow-xl shadow-primary/20">
-                    <a href="/api/login">Login to Get Tickets</a>
-                  </Button>
-                ) : (
-                  <Button
-                    onClick={() => setIsTicketPanelOpen(true)}
-                    className="w-full py-6 rounded-xl text-lg shadow-xl shadow-primary/20 hover:shadow-primary/30 transition-all hover:-translate-y-0.5 group"
-                  >
-                    <Ticket className="w-5 h-5 mr-2" />
-                    Get Tickets
-                    <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
-                  </Button>
-                )}
-              </div>
+              {/* The large "Get Tickets" button has been REMOVED */}
             </motion.div>
           </div>
 
-          {/* Sidebar (right column) */}
+          {/* Sidebar (right column) – contains the only "Get Tickets" button */}
           <div className="lg:w-[320px]">
             <motion.div
               initial={{ opacity: 0, x: 20 }}
