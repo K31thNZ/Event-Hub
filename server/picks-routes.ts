@@ -1,22 +1,14 @@
 // server/picks-routes.ts
-// Curator picks API routes for Event-Hub.
-// Mounted in server/routes.ts alongside the existing routes.
-
 import type { Express, Request, Response } from "express";
 import { db } from "./db";
 import { curatorPicks, events, ticketTypes } from "@shared/schema";
 import { eq, desc, and, inArray } from "drizzle-orm";
+import { requireAuth } from "./auth-client";  // ← use the same auth as main routes
+import { storage } from "./storage";          // for role checks
 
-// ── Auth helpers (same pattern as existing routes) ────────────────────────
-function requireAuth(req: Request, res: Response, next: Function) {
-  if (!req.session.userId) return res.status(401).json({ message: "Not authenticated" });
-  next();
-}
-
+// Helper: ensure user is curator or admin
 async function requireCuratorOrAdmin(req: Request, res: Response, next: Function) {
-  if (!req.session.userId) return res.status(401).json({ message: "Not authenticated" });
-  const { storage } = await import("./storage");
-  const user = await storage.getUser(req.session.userId);
+  const user = await storage.getUser(req.user.id);
   if (!user || !["curator", "admin"].includes(user.role ?? "")) {
     return res.status(403).json({ message: "Curator or admin access required" });
   }
@@ -24,16 +16,13 @@ async function requireCuratorOrAdmin(req: Request, res: Response, next: Function
 }
 
 async function requireAdmin(req: Request, res: Response, next: Function) {
-  if (!req.session.userId) return res.status(401).json({ message: "Not authenticated" });
-  const { storage } = await import("./storage");
-  const user = await storage.getUser(req.session.userId);
+  const user = await storage.getUser(req.user.id);
   if (!user || user.role !== "admin") {
     return res.status(403).json({ message: "Admin access required" });
   }
   next();
 }
 
-// ── Resolve event IDs to full EventWithTickets objects ────────────────────
 async function resolvePickEvents(eventIds: number[]) {
   if (eventIds.length === 0) return [];
   const evts = await db
@@ -56,9 +45,7 @@ async function resolvePickEvents(eventIds: number[]) {
 }
 
 export function registerPicksRoutes(app: Express) {
-
-  // ── GET /api/picks ─────────────────────────────────────────────────────
-  // Public — returns the latest published picks edition with resolved events.
+  // Public routes (no auth)
   app.get("/api/picks", async (_req, res) => {
     try {
       const [pick] = await db
@@ -67,9 +54,7 @@ export function registerPicksRoutes(app: Express) {
         .where(eq(curatorPicks.published, true))
         .orderBy(desc(curatorPicks.weekOf))
         .limit(1);
-
       if (!pick) return res.json(null);
-
       const pickedEvents = await resolvePickEvents(pick.eventIds);
       res.json({ ...pick, events: pickedEvents });
     } catch (err: any) {
@@ -77,8 +62,6 @@ export function registerPicksRoutes(app: Express) {
     }
   });
 
-  // ── GET /api/picks/all ─────────────────────────────────────────────────
-  // Public — returns all published editions (for archive/history).
   app.get("/api/picks/all", async (_req, res) => {
     try {
       const picks = await db
@@ -92,14 +75,13 @@ export function registerPicksRoutes(app: Express) {
     }
   });
 
-  // ── GET /api/curator/picks ─────────────────────────────────────────────
-  // Curator — returns all their own picks (published + drafts).
-  app.get("/api/curator/picks", requireCuratorOrAdmin, async (req, res) => {
+  // ── Authenticated curator/admin routes ─────────────────────────────────
+  app.get("/api/curator/picks", requireAuth, requireCuratorOrAdmin, async (req: any, res) => {
     try {
       const picks = await db
         .select()
         .from(curatorPicks)
-        .where(eq(curatorPicks.curatorId, String(req.session.userId)))
+        .where(eq(curatorPicks.curatorId, String(req.user.id)))
         .orderBy(desc(curatorPicks.weekOf));
       res.json(picks);
     } catch (err: any) {
@@ -107,16 +89,12 @@ export function registerPicksRoutes(app: Express) {
     }
   });
 
-  // ── POST /api/curator/picks ────────────────────────────────────────────
-  // Curator — create a new picks edition (as draft).
-  app.post("/api/curator/picks", requireCuratorOrAdmin, async (req, res) => {
+  app.post("/api/curator/picks", requireAuth, requireCuratorOrAdmin, async (req: any, res) => {
     try {
-      const { storage } = await import("./storage");
-      const user = await storage.getUser(req.session.userId!);
+      const user = await storage.getUser(req.user.id);
       if (!user) return res.status(401).json({ message: "User not found" });
 
       const { intro, eventIds, weekOf, curatorSpecialty } = req.body;
-
       if (!intro || !Array.isArray(eventIds) || eventIds.length === 0) {
         return res.status(400).json({ message: "intro and eventIds are required" });
       }
@@ -141,22 +119,19 @@ export function registerPicksRoutes(app: Express) {
     }
   });
 
-  // ── PATCH /api/curator/picks/:id ──────────────────────────────────────
-  // Curator — update their pick edition.
-  app.patch("/api/curator/picks/:id", requireCuratorOrAdmin, async (req, res) => {
+  app.patch("/api/curator/picks/:id", requireAuth, requireCuratorOrAdmin, async (req: any, res) => {
     try {
       const pickId = parseInt(req.params.id);
       const [existing] = await db.select().from(curatorPicks).where(eq(curatorPicks.id, pickId));
-
       if (!existing) return res.status(404).json({ message: "Pick not found" });
-      if (existing.curatorId !== String(req.session.userId)) {
-        const { storage } = await import("./storage");
-        const user = await storage.getUser(req.session.userId!);
+
+      // Ownership check
+      if (existing.curatorId !== String(req.user.id)) {
+        const user = await storage.getUser(req.user.id);
         if (user?.role !== "admin") return res.status(403).json({ message: "Not your pick" });
       }
 
       const { intro, eventIds, weekOf, curatorSpecialty, published, curatorName, curatorAvatarUrl } = req.body;
-
       const [updated] = await db
         .update(curatorPicks)
         .set({
@@ -171,23 +146,20 @@ export function registerPicksRoutes(app: Express) {
         })
         .where(eq(curatorPicks.id, pickId))
         .returning();
-
       res.json(updated);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
   });
 
-  // ── DELETE /api/curator/picks/:id ─────────────────────────────────────
-  app.delete("/api/curator/picks/:id", requireCuratorOrAdmin, async (req, res) => {
+  app.delete("/api/curator/picks/:id", requireAuth, requireCuratorOrAdmin, async (req: any, res) => {
     try {
       const pickId = parseInt(req.params.id);
       const [existing] = await db.select().from(curatorPicks).where(eq(curatorPicks.id, pickId));
       if (!existing) return res.status(404).json({ message: "Pick not found" });
 
-      if (existing.curatorId !== String(req.session.userId)) {
-        const { storage } = await import("./storage");
-        const user = await storage.getUser(req.session.userId!);
+      if (existing.curatorId !== String(req.user.id)) {
+        const user = await storage.getUser(req.user.id);
         if (user?.role !== "admin") return res.status(403).json({ message: "Not your pick" });
       }
 
@@ -198,10 +170,8 @@ export function registerPicksRoutes(app: Express) {
     }
   });
 
-  // ── GET /api/admin/users ───────────────────────────────────────────────
-  // Admin — fetch all users from meh-auth for the user management tab.
-  // Proxies to meh-auth so we get role info.
-  app.get("/api/admin/users", requireAdmin, async (req, res) => {
+  // Admin user management (proxy to auth service)
+  app.get("/api/admin/users", requireAuth, requireAdmin, async (req, res) => {
     try {
       const authUrl = process.env.AUTH_SERVICE_URL ?? "https://auth.expatevents.org";
       const response = await fetch(`${authUrl}/api/admin/users`, {
@@ -217,9 +187,7 @@ export function registerPicksRoutes(app: Express) {
     }
   });
 
-  // ── PATCH /api/admin/users/:id/role ───────────────────────────────────
-  // Admin — update a user's role via meh-auth.
-  app.patch("/api/admin/users/:id/role", requireAdmin, async (req, res) => {
+  app.patch("/api/admin/users/:id/role", requireAuth, requireAdmin, async (req, res) => {
     try {
       const userId = req.params.id;
       const { role } = req.body;
