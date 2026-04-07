@@ -25,6 +25,15 @@ export function Navbar() {
   const getInitials = (name: string) => name?.substring(0, 2).toUpperCase() || "U";
   const roleBadge = user?.role ? ROLE_BADGE[user.role] : undefined;
 
+  // Handlers for login/logout
+  const handleLogin = () => {
+    login(); // plain function – redirects to auth service
+  };
+
+  const handleLogout = () => {
+    logout(); // plain function – clears session and redirects
+  };
+
   return (
     <header className="sticky top-0 z-50 w-full glass">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
@@ -115,7 +124,7 @@ export function Navbar() {
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     className="cursor-pointer text-destructive focus:bg-destructive/10"
-                    onClick={() => logout.mutate()}
+                    onClick={handleLogout}   // ✅ fixed: call logout directly
                   >
                     <LogOut className="mr-2 h-4 w-4" />
                     <span>Log out</span>
@@ -125,7 +134,7 @@ export function Navbar() {
             </div>
           ) : (
             <Button
-              onClick={() => typeof login === "function" ? login() : login.mutate(undefined)}
+              onClick={handleLogin}   // ✅ fixed: call login directly
               className="rounded-full px-6 shadow-lg shadow-primary/20 hover:shadow-xl hover:shadow-primary/30 transition-all hover:-translate-y-0.5"
             >
               Sign In
@@ -153,7 +162,11 @@ export function Navbar() {
                   )}
                   <Link href="/create-event" onClick={() => setMobileMenuOpen(false)} className="text-lg font-semibold text-primary">Host an Event</Link>
                   <div className="mt-auto border-t pt-6">
-                    <Button variant="outline" className="w-full justify-start text-destructive" onClick={() => { logout.mutate(); setMobileMenuOpen(false); }}>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start text-destructive"
+                      onClick={() => { handleLogout(); setMobileMenuOpen(false); }}
+                    >
                       <LogOut className="w-4 h-4 mr-2" /> Log Out
                     </Button>
                   </div>
@@ -161,7 +174,7 @@ export function Navbar() {
               ) : (
                 <Button
                   className="w-full mt-4 rounded-xl"
-                  onClick={() => { (typeof login === "function" ? login() : login.mutate(undefined)); setMobileMenuOpen(false); }}
+                  onClick={() => { handleLogin(); setMobileMenuOpen(false); }}
                 >
                   Sign In
                 </Button>
