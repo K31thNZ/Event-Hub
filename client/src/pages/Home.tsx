@@ -4,7 +4,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { EventCard } from "@/components/events/EventCard";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, MapPin, CalendarHeart, Sparkles, X, ArrowRight } from "lucide-react";
+import { Search, MapPin, CalendarHeart, Sparkles, X, ArrowRight, History } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { motion, AnimatePresence } from "framer-motion";
@@ -36,7 +36,6 @@ export default function Home() {
   const { user } = useAuth();
   const [showBanner, dismissBanner] = useShowPersonalisationBanner(user);
 
-  // ── Post‑login welcome overlay and scroll ─────────────────────────────
   const [location] = useLocation();
   const [showWelcomeOverlay, setShowWelcomeOverlay] = useState(false);
   const upcomingRef = useRef<HTMLElement>(null);
@@ -46,15 +45,11 @@ export default function Home() {
     const justLoggedIn = params.get('justLoggedIn') === 'true';
 
     if (justLoggedIn && upcomingRef.current) {
-      // Show overlay banner covering hero
       setShowWelcomeOverlay(true);
-      // Smooth scroll to upcoming events section after a tiny delay
       setTimeout(() => {
         upcomingRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       }, 100);
-      // Auto‑hide the overlay after 5 seconds
       const timer = setTimeout(() => setShowWelcomeOverlay(false), 5000);
-      // Clean up URL (remove justLoggedIn)
       const cleanUrl = window.location.pathname;
       window.history.replaceState({}, document.title, cleanUrl);
       return () => clearTimeout(timer);
@@ -67,10 +62,19 @@ export default function Home() {
     category: category !== "all" ? category : undefined,
   });
 
+  // Filter events into upcoming and past
+  const now = new Date();
+  const upcomingEvents = (events || []).filter(event => new Date(event.date) >= now);
+  const pastEvents = (events || []).filter(event => new Date(event.date) < now);
+
+  // Sort upcoming by date ascending, past by date descending (most recent first)
+  upcomingEvents.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  pastEvents.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
   return (
     <div className="flex flex-col min-h-screen">
 
-      {/* ── Personalisation nudge — sticky below the navbar ──────────── */}
+      {/* Personalisation nudge */}
       <AnimatePresence>
         {showBanner && (
           <motion.div
@@ -115,9 +119,8 @@ export default function Home() {
         )}
       </AnimatePresence>
 
-      {/* ── Hero ──────────────────────────────────────────────────────── */}
+      {/* Hero section (unchanged) */}
       <section className="relative pt-32 pb-20 md:pt-48 md:pb-32 overflow-hidden">
-        {/* Welcome overlay (appears only after login) */}
         <AnimatePresence>
           {showWelcomeOverlay && (
             <motion.div
@@ -215,38 +218,66 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── Events listing ────────────────────────────────────────────── */}
+      {/* ── Events listing with upcoming and past sections ── */}
       <section
         id="upcoming-events"
         ref={upcomingRef}
         className="py-20 bg-background flex-1 scroll-mt-20"
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-end justify-between mb-12">
-            <div>
-              <h2 className="text-3xl md:text-4xl font-display font-bold mb-4">Upcoming Events</h2>
-              <p className="text-muted-foreground">Discover what's happening around you.</p>
-            </div>
-          </div>
-
           {isLoading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
               {[1, 2, 3, 4, 5, 6].map(i => (
                 <div key={i} className="h-96 rounded-2xl bg-muted animate-pulse" />
               ))}
             </div>
-          ) : events?.length === 0 ? (
-            <div className="text-center py-32 glass rounded-3xl">
-              <CalendarHeart className="w-16 h-16 mx-auto text-muted-foreground mb-6 opacity-50" />
-              <h3 className="text-2xl font-display font-bold mb-2">No events found</h3>
-              <p className="text-muted-foreground">Try adjusting your search or filters.</p>
-            </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-              {events?.map((event, i) => (
-                <EventCard key={event.id} event={event} index={i} />
-              ))}
-            </div>
+            <>
+              {/* Upcoming Events */}
+              {upcomingEvents.length > 0 && (
+                <div className="mb-16">
+                  <div className="flex items-end justify-between mb-12">
+                    <div>
+                      <h2 className="text-3xl md:text-4xl font-display font-bold mb-4">Upcoming Events</h2>
+                      <p className="text-muted-foreground">Discover what's happening around you.</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+                    {upcomingEvents.map((event, i) => (
+                      <EventCard key={event.id} event={event} index={i} />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Past Events */}
+              {pastEvents.length > 0 && (
+                <div>
+                  <div className="flex items-end justify-between mb-12">
+                    <div>
+                      <h2 className="text-3xl md:text-4xl font-display font-bold mb-4 flex items-center gap-2">
+                        <History className="w-8 h-8 text-muted-foreground" />
+                        Past Events
+                      </h2>
+                      <p className="text-muted-foreground">Events that have already taken place.</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8 opacity-80">
+                    {pastEvents.map((event, i) => (
+                      <EventCard key={event.id} event={event} index={i} />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {upcomingEvents.length === 0 && pastEvents.length === 0 && (
+                <div className="text-center py-32 glass rounded-3xl">
+                  <CalendarHeart className="w-16 h-16 mx-auto text-muted-foreground mb-6 opacity-50" />
+                  <h3 className="text-2xl font-display font-bold mb-2">No events found</h3>
+                  <p className="text-muted-foreground">Try adjusting your search or filters.</p>
+                </div>
+              )}
+            </>
           )}
         </div>
       </section>
