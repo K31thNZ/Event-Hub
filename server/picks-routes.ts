@@ -3,22 +3,16 @@ import type { Express, Request, Response } from "express";
 import { db } from "./db";
 import { curatorPicks, events, ticketTypes } from "@shared/schema";
 import { eq, desc, and, inArray } from "drizzle-orm";
-import { requireAuth } from "./auth-client";  // ← use the same auth as main routes
-import { storage } from "./storage";          // for role checks
+import { requireAuth, requireAdmin } from "./auth-client"; // ✅ use the real auth
+import { storage } from "./storage";
 
-// Helper: ensure user is curator or admin
+// Helper: ensure user is curator or admin (uses req.user from auth-client)
 async function requireCuratorOrAdmin(req: Request, res: Response, next: Function) {
-  const user = await storage.getUser(req.user.id);
-  if (!user || !["curator", "admin"].includes(user.role ?? "")) {
+  const user = (req as any).user;
+  if (!user) return res.status(401).json({ message: "Not authenticated" });
+  const localUser = await storage.getUser(user.id);
+  if (!localUser || !["curator", "admin"].includes(localUser.role ?? "")) {
     return res.status(403).json({ message: "Curator or admin access required" });
-  }
-  next();
-}
-
-async function requireAdmin(req: Request, res: Response, next: Function) {
-  const user = await storage.getUser(req.user.id);
-  if (!user || user.role !== "admin") {
-    return res.status(403).json({ message: "Admin access required" });
   }
   next();
 }
@@ -29,12 +23,10 @@ async function resolvePickEvents(eventIds: number[]) {
     .select()
     .from(events)
     .where(and(inArray(events.id, eventIds), eq(events.published, true)));
-
   const tickets = await db
     .select()
     .from(ticketTypes)
     .where(inArray(ticketTypes.eventId, eventIds));
-
   return eventIds
     .map(id => evts.find(e => e.id === id))
     .filter(Boolean)
@@ -45,7 +37,7 @@ async function resolvePickEvents(eventIds: number[]) {
 }
 
 export function registerPicksRoutes(app: Express) {
-  // Public routes (no auth)
+  // Public routes
   app.get("/api/picks", async (_req, res) => {
     try {
       const [pick] = await db
@@ -75,13 +67,13 @@ export function registerPicksRoutes(app: Express) {
     }
   });
 
-  // ── Authenticated curator/admin routes ─────────────────────────────────
+  // ── Authenticated curator/admin routes ─────────────────────────────
   app.get("/api/curator/picks", requireAuth, requireCuratorOrAdmin, async (req: any, res) => {
     try {
       const picks = await db
         .select()
         .from(curatorPicks)
-        .where(eq(curatorPicks.curatorId, String(req.user.id)))
+        .where(eq(curatorPicks.curatorId, String(req.user.id))) // ✅ req.user.id from auth-client
         .orderBy(desc(curatorPicks.weekOf));
       res.json(picks);
     } catch (err: any) {
@@ -125,7 +117,6 @@ export function registerPicksRoutes(app: Express) {
       const [existing] = await db.select().from(curatorPicks).where(eq(curatorPicks.id, pickId));
       if (!existing) return res.status(404).json({ message: "Pick not found" });
 
-      // Ownership check
       if (existing.curatorId !== String(req.user.id)) {
         const user = await storage.getUser(req.user.id);
         if (user?.role !== "admin") return res.status(403).json({ message: "Not your pick" });
