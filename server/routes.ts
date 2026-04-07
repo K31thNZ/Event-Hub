@@ -3,7 +3,7 @@ import type { Express } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
-import { requireAuth } from "./auth-client";
+import { requireAuth, getUser } from "./auth-client";
 import { z } from "zod";
 import { db } from "./db";
 import { users } from "@shared/models/auth";
@@ -16,8 +16,21 @@ export async function registerRoutes(
   // Register picks routes
   registerPicksRoutes(app);
 
-  // ── Current user profile (local DB) ─────────────────────────────────────
+  // ── Current authenticated user (from auth service) ────────────────────
+  // This endpoint proxies the user object from meh-auth so the frontend
+  // doesn't need to call the auth service directly (avoids CORS/cookie issues).
+  app.get("/api/user", async (req, res) => {
+    try {
+      const user = await getUser(req);
+      if (!user) return res.status(401).json(null);
+      res.json(user);
+    } catch (err) {
+      console.error("[/api/user]", err);
+      res.status(500).json({ error: "Failed to fetch user" });
+    }
+  });
 
+  // ── Current user profile (local DB) ─────────────────────────────────────
   app.get("/api/me", requireAuth, async (req: any, res) => {
     try {
       const localUser = await db.query.users.findFirst({
@@ -31,7 +44,6 @@ export async function registerRoutes(
   });
 
   // ── Events ──────────────────────────────────────────────────────────────
-
   app.get(api.events.list.path, async (req, res) => {
     try {
       const query = api.events.list.input?.parse(req.query);
@@ -115,7 +127,6 @@ export async function registerRoutes(
   });
 
   // ── Orders ──────────────────────────────────────────────────────────────
-
   app.get(api.orders.myOrders.path, requireAuth, async (req: any, res) => {
     try {
       const orders = await storage.getOrdersByAttendee(req.user.id);
