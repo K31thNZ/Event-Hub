@@ -1,90 +1,69 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, serial, integer, boolean, timestamptz, varchar } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 export * from "./models/auth";
 import { users } from "./models/auth";
 
-// ── Events ────────────────────────────────────────────────────────────────
 export const events = pgTable("events", {
   id: serial("id").primaryKey(),
-  organizerId: integer("organizer_id")  // changed to integer to match users.id
-                .notNull()
-                .references(() => users.id, { onDelete: "cascade" }),
+  organizerId: integer("organizer_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
   description: text("description").notNull(),
   category: text("category").notNull().default("social"),
   category2: text("category2"),
-  date: timestamptz("date").notNull(),   // changed to timestamptz
+  date: timestamp("date", { withTimezone: true }).notNull(),
   venueAddress: text("venue_address").notNull(),
   venueCity: text("venue_city").notNull(),
   imageUrl: text("image_url"),
   published: boolean("published").default(true).notNull(),
-  createdAt: timestamptz("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
-// ── Ticket types ──────────────────────────────────────────────────────────
 export const ticketTypes = pgTable("ticket_types", {
   id: serial("id").primaryKey(),
-  eventId: integer("event_id")
-            .references(() => events.id, { onDelete: "cascade" })
-            .notNull(),
+  eventId: integer("event_id").references(() => events.id, { onDelete: "cascade" }).notNull(),
   name: text("name").notNull(),
   price: integer("price").notNull(),
   quantity: integer("quantity").notNull(),
   maxPerOrder: integer("max_per_order").notNull(),
 });
 
-// ── Orders ────────────────────────────────────────────────────────────────
 export const orders = pgTable("orders", {
   id: serial("id").primaryKey(),
-  attendeeId: integer("attendee_id")  // changed to integer
-               .notNull()
-               .references(() => users.id, { onDelete: "cascade" }),
-  eventId: integer("event_id")
-            .references(() => events.id, { onDelete: "cascade" })
-            .notNull(),
+  attendeeId: integer("attendee_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  eventId: integer("event_id").references(() => events.id, { onDelete: "cascade" }).notNull(),
   status: text("status").notNull(),
   totalAmount: integer("total_amount").notNull(),
   attendeeName: text("attendee_name").notNull(),
   attendeeEmail: text("attendee_email").notNull(),
   notes: text("notes"),
-  createdAt: timestamptz("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
-// ── Order tickets ─────────────────────────────────────────────────────────
 export const orderTickets = pgTable("order_tickets", {
   id: serial("id").primaryKey(),
-  orderId: integer("order_id")
-            .references(() => orders.id, { onDelete: "cascade" })
-            .notNull(),
-  ticketTypeId: integer("ticket_type_id")
-                 .references(() => ticketTypes.id, { onDelete: "cascade" })
-                 .notNull(),
+  orderId: integer("order_id").references(() => orders.id, { onDelete: "cascade" }).notNull(),
+  ticketTypeId: integer("ticket_type_id").references(() => ticketTypes.id, { onDelete: "cascade" }).notNull(),
   quantity: integer("quantity").notNull(),
 });
 
-// ── Curator picks ─────────────────────────────────────────────────────────
-// One row per weekly picks edition. curatorId is the meh-auth user ID.
-// eventIds is an ordered array of up to 6 event IDs from this database.
 export const curatorPicks = pgTable("curator_picks", {
   id: serial("id").primaryKey(),
-  curatorId: integer("curator_id")  // changed to integer
-              .notNull()
-              .references(() => users.id, { onDelete: "cascade" }),
-  curatorName: text("curator_name").notNull(),        // denormalised for display
+  curatorId: integer("curator_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  curatorName: text("curator_name").notNull(),
   curatorAvatarUrl: text("curator_avatar_url"),
-  curatorSpecialty: text("curator_specialty").notNull().default("Events"), // e.g. "Networking", "Tech"
-  weekOf: timestamptz("week_of").notNull(),            // Monday of the featured week
-  intro: text("intro").notNull(),                     // curator's intro blurb (max ~300 chars)
-  eventIds: integer("event_ids").array().notNull(),   // ordered list of picked event IDs
+  curatorSpecialty: text("curator_specialty").notNull().default("Events"),
+  weekOf: timestamp("week_of", { withTimezone: true }).notNull(),
+  intro: text("intro").notNull(),
+  eventIds: integer("event_ids").array().notNull(),
   published: boolean("published").default(false).notNull(),
-  createdAt: timestamptz("created_at").defaultNow().notNull(),
-  updatedAt: timestamptz("updated_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
-// ── Relations ─────────────────────────────────────────────────────────────
+// Relations (unchanged, just using the corrected table definitions)
 export const eventsRelations = relations(events, ({ one, many }) => ({
   organizer: one(users, { fields: [events.organizerId], references: [users.id] }),
   ticketTypes: many(ticketTypes),
@@ -110,7 +89,7 @@ export const curatorPicksRelations = relations(curatorPicks, ({ one }) => ({
   curator: one(users, { fields: [curatorPicks.curatorId], references: [users.id] }),
 }));
 
-// ── Insert schemas (fixed: include required foreign keys) ────────────────
+// Insert schemas (unchanged)
 export const insertEventSchema = createInsertSchema(events, {
   organizerId: z.number(),
   date: z.coerce.date(),
@@ -138,7 +117,7 @@ export const insertCuratorPicksSchema = createInsertSchema(curatorPicks, {
   eventIds: z.array(z.number()),
 }).omit({ id: true, createdAt: true, updatedAt: true });
 
-// ── Types ─────────────────────────────────────────────────────────────────
+// Types
 export type Event = typeof events.$inferSelect;
 export type TicketType = typeof ticketTypes.$inferSelect;
 export type Order = typeof orders.$inferSelect;
@@ -153,7 +132,7 @@ export type OrderWithDetails = Order & {
 };
 
 export type CreateEventRequest = {
-  organizerId: number;   // now required
+  organizerId: number;
   title: string;
   description: string;
   category: string;
@@ -166,10 +145,10 @@ export type CreateEventRequest = {
   ticketTypes: { name: string; price: number; quantity: number; maxPerOrder: number }[];
 };
 
-export type UpdateEventRequest = Partial<Omit<CreateEventRequest, "organizerId">>; // organizerId cannot be updated
+export type UpdateEventRequest = Partial<Omit<CreateEventRequest, "organizerId">>;
 
 export type CreateOrderRequest = {
-  attendeeId: number;    // now required
+  attendeeId: number;
   eventId: number;
   attendeeName: string;
   attendeeEmail: string;
