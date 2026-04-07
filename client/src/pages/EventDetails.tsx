@@ -9,13 +9,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { motion } from "framer-motion";
 
-// ── Countdown hook ────────────────────────────────────────────────────────
+// ── Countdown hook (unchanged) ───────────────────────────────────────────
 function useCountdown(targetDate: Date) {
   const [timeLeft, setTimeLeft] = useState<string | null>(null);
 
@@ -23,14 +23,11 @@ function useCountdown(targetDate: Date) {
     const tick = () => {
       const diff = targetDate.getTime() - Date.now();
       if (diff <= 0) { setTimeLeft("00:00:00"); return; }
-      // Only show if within 10 hours
       if (diff > 10 * 60 * 60 * 1000) { setTimeLeft(null); return; }
       const h = Math.floor(diff / 3_600_000);
       const m = Math.floor((diff % 3_600_000) / 60_000);
       const s = Math.floor((diff % 60_000) / 1_000);
-      setTimeLeft(
-        `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
-      );
+      setTimeLeft(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`);
     };
     tick();
     const id = setInterval(tick, 1000);
@@ -40,7 +37,7 @@ function useCountdown(targetDate: Date) {
   return timeLeft;
 }
 
-// ── Schema — one name per ticket line item ────────────────────────────────
+// ── Checkout schema (unchanged) ──────────────────────────────────────────
 const checkoutSchema = z.object({
   attendeeEmail: z.string().email("Please enter a valid email"),
   notes: z.string().optional(),
@@ -67,7 +64,6 @@ export default function EventDetails() {
     defaultValues: { ticketNames: {} },
   });
 
-  // Auto-populate email when user is loaded
   useEffect(() => {
     if (user?.email) setValue("attendeeEmail", user.email);
   }, [user, setValue]);
@@ -98,8 +94,6 @@ export default function EventDetails() {
 
   const totalQty = Object.values(selectedTickets).reduce((a, b) => a + b, 0);
 
-  // Build the list of ticket-name fields needed in checkout
-  // One name field per ticket in the basket (e.g. 2x General = 2 fields)
   const ticketNameFields: { key: string; label: string }[] = [];
   Object.entries(selectedTickets)
     .filter(([, qty]) => qty > 0)
@@ -114,9 +108,7 @@ export default function EventDetails() {
     });
 
   const onSubmitCheckout = async (data: CheckoutForm) => {
-    // Use the first ticket name as the primary attendee name for the order record
     const primaryName = Object.values(data.ticketNames)[0] ?? "";
-
     const payload = {
       eventId: event.id,
       attendeeName: primaryName,
@@ -126,7 +118,6 @@ export default function EventDetails() {
         .filter(([, qty]) => qty > 0)
         .map(([tId, qty]) => ({ ticketTypeId: Number(tId), quantity: qty })),
     };
-
     try {
       const order = await createOrder.mutateAsync(payload);
       setIsCheckoutOpen(false);
@@ -138,71 +129,60 @@ export default function EventDetails() {
   };
 
   return (
-    <div className="min-h-screen bg-background pb-32">
+    <div className="min-h-screen bg-background">
 
-      {/* Hero Banner */}
-      <div className="w-full h-[40vh] md:h-[60vh] relative">
+      {/* Hero Banner - much smaller now, just a decorative top bar */}
+      <div className="w-full h-48 md:h-64 relative">
         <img
           src={event.imageUrl || fallbackImage}
           alt={event.title}
           className="w-full h-full object-cover"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/20 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-background to-transparent" />
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-32 relative z-10">
+      {/* Main content - no negative margin, starts immediately below hero */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
         <div className="flex flex-col lg:flex-row gap-12">
 
-          {/* Main Content */}
-          <div className="flex-1 space-y-10">
+          {/* Main Content (left column) */}
+          <div className="flex-1 space-y-8">
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="glass p-8 md:p-12 rounded-3xl relative"
+              className="bg-card rounded-3xl p-6 md:p-10 border border-border shadow-lg"
             >
-              {/* ── Countdown badge (top-right, only within 10 hours) ── */}
-              {countdown && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.8 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="absolute top-6 right-6 flex items-center gap-2 bg-destructive/10 border border-destructive/20 text-destructive px-4 py-2 rounded-full"
-                >
-                  <Timer className="w-4 h-4 shrink-0" />
-                  <span className="font-mono font-bold text-sm tracking-widest">
-                    {countdown}
-                  </span>
-                  <span className="text-xs font-medium hidden sm:inline">starts in</span>
-                </motion.div>
-              )}
-
+              {/* Category badge */}
               <div className="inline-flex px-4 py-1.5 rounded-full bg-primary/10 text-primary font-bold text-sm tracking-wider uppercase mb-6">
                 {event.category}
               </div>
 
-              <h1 className="text-4xl md:text-6xl font-display font-bold text-foreground leading-tight mb-8">
+              {/* Title */}
+              <h1 className="text-3xl md:text-5xl font-display font-bold text-foreground leading-tight mb-6">
                 {event.title}
               </h1>
 
+              {/* Event details row */}
               <div className="flex flex-wrap gap-6 text-muted-foreground border-t border-b border-border py-6 mb-8">
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full bg-primary/5 flex items-center justify-center">
-                    <Calendar className="w-5 h-5 text-primary" />
+                  <div className="w-10 h-10 rounded-full bg-primary/5 flex items-center justify-center">
+                    <Calendar className="w-4 h-4 text-primary" />
                   </div>
                   <p className="font-semibold text-foreground">
                     {format(new Date(event.date), "EEEE, MMMM d, yyyy")}
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full bg-primary/5 flex items-center justify-center">
-                    <Clock className="w-5 h-5 text-primary" />
+                  <div className="w-10 h-10 rounded-full bg-primary/5 flex items-center justify-center">
+                    <Clock className="w-4 h-4 text-primary" />
                   </div>
                   <p className="font-semibold text-foreground">
                     {format(new Date(event.date), "h:mm a")}
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full bg-primary/5 flex items-center justify-center">
-                    <MapPin className="w-5 h-5 text-primary" />
+                  <div className="w-10 h-10 rounded-full bg-primary/5 flex items-center justify-center">
+                    <MapPin className="w-4 h-4 text-primary" />
                   </div>
                   <div>
                     <p className="font-semibold text-foreground">{event.venueAddress}</p>
@@ -211,6 +191,7 @@ export default function EventDetails() {
                 </div>
               </div>
 
+              {/* Description */}
               <div>
                 <h3 className="text-2xl font-display font-bold mb-4">About this event</h3>
                 <div className="prose prose-lg dark:prose-invert max-w-none text-muted-foreground whitespace-pre-wrap">
@@ -218,8 +199,19 @@ export default function EventDetails() {
                 </div>
               </div>
 
-              {/* Get Tickets CTA — bottom of the detail card on mobile / always visible */}
-              <div className="mt-10 pt-8 border-t border-border">
+              {/* Countdown (if within 10 hours) */}
+              {countdown && (
+                <div className="mt-8 flex items-center gap-3 bg-destructive/10 border border-destructive/20 text-destructive px-5 py-3 rounded-2xl">
+                  <Timer className="w-5 h-5 shrink-0" />
+                  <div>
+                    <p className="text-xs font-medium">Event starts in</p>
+                    <p className="font-mono font-bold text-xl tracking-widest">{countdown}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Get Tickets button */}
+              <div className="mt-10 pt-6 border-t border-border">
                 {!isAuthenticated ? (
                   <Button asChild className="w-full py-6 rounded-xl text-lg shadow-xl shadow-primary/20">
                     <a href="/api/login">Login to Get Tickets</a>
@@ -238,8 +230,8 @@ export default function EventDetails() {
             </motion.div>
           </div>
 
-          {/* Desktop sidebar — just shows event quick-facts, no ticket selector */}
-          <div className="hidden lg:block w-[320px]">
+          {/* Sidebar (right column) */}
+          <div className="lg:w-[320px]">
             <motion.div
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
@@ -279,16 +271,6 @@ export default function EventDetails() {
                 </div>
               </div>
 
-              {countdown && (
-                <div className="flex items-center gap-2 bg-destructive/10 border border-destructive/20 text-destructive px-4 py-3 rounded-2xl">
-                  <Timer className="w-4 h-4 shrink-0" />
-                  <div>
-                    <p className="text-xs font-medium">Event starts in</p>
-                    <p className="font-mono font-bold text-lg tracking-widest">{countdown}</p>
-                  </div>
-                </div>
-              )}
-
               {!isAuthenticated ? (
                 <Button asChild className="w-full rounded-xl shadow-lg shadow-primary/20">
                   <a href="/api/login">Login to Get Tickets</a>
@@ -308,7 +290,7 @@ export default function EventDetails() {
         </div>
       </div>
 
-      {/* ── Ticket selector panel (slides in from right) ─────────────────── */}
+      {/* Ticket selector panel (unchanged) */}
       <Sheet open={isTicketPanelOpen} onOpenChange={setIsTicketPanelOpen}>
         <SheetContent className="w-full sm:max-w-md overflow-y-auto border-l-0 sm:rounded-l-3xl shadow-2xl">
           <SheetHeader className="mb-6">
@@ -372,7 +354,7 @@ export default function EventDetails() {
         </SheetContent>
       </Sheet>
 
-      {/* ── Checkout panel ────────────────────────────────────────────────── */}
+      {/* Checkout panel (unchanged) */}
       <Sheet open={isCheckoutOpen} onOpenChange={setIsCheckoutOpen}>
         <SheetContent className="w-full sm:max-w-md overflow-y-auto border-l-0 sm:rounded-l-3xl shadow-2xl">
           <SheetHeader className="mb-8">
@@ -380,7 +362,6 @@ export default function EventDetails() {
             <SheetDescription>Please provide your details to complete the order.</SheetDescription>
           </SheetHeader>
 
-          {/* Order summary */}
           <div className="bg-primary/5 rounded-2xl p-5 mb-8 border border-primary/10">
             <h4 className="font-semibold text-primary flex items-center gap-2 mb-3">
               <CheckCircle2 className="w-4 h-4" /> Order Summary
@@ -403,8 +384,6 @@ export default function EventDetails() {
           </div>
 
           <form onSubmit={handleSubmit(onSubmitCheckout)} className="space-y-5">
-
-            {/* One name field per ticket */}
             {ticketNameFields.length > 0 && (
               <div className="space-y-4">
                 <Label className="text-base font-semibold">Name on the ticket</Label>
@@ -426,7 +405,6 @@ export default function EventDetails() {
               </div>
             )}
 
-            {/* Email — auto-populated */}
             <div className="space-y-2">
               <Label>Email Address</Label>
               <Input
