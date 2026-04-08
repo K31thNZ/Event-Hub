@@ -1,4 +1,5 @@
 import { Link } from "wouter";
+import { Users } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -50,10 +51,14 @@ export function Navbar() {
 
         {/* Desktop Nav */}
         <nav className="hidden md:flex items-center gap-8 font-medium">
-          <Link href="/picks" className="flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors">
-            <Sparkles className="w-4 h-4" />
-            Recommended
-          </Link>
+<Link href="/picks" className="flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors">
+  <Sparkles className="w-4 h-4" />
+  Recommended
+</Link>
+<Link href="/groups" className="flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors">
+  <Users className="w-4 h-4" />
+  Groups
+</Link>
 
           {isAuthenticated ? (
             <div className="flex items-center gap-4">
@@ -152,6 +157,9 @@ export function Navbar() {
               <Link href="/picks" onClick={() => setMobileMenuOpen(false)} className="text-lg font-semibold flex items-center gap-2">
                 <Sparkles className="w-5 h-5 text-primary" /> Recommended
               </Link>
+              <Link href="/groups" onClick={() => setMobileMenuOpen(false)} className="text-lg font-semibold flex items-center gap-2">
+  <Users className="w-5 h-5 text-primary" /> Groups
+</Link>
               <Link href="/" onClick={() => setMobileMenuOpen(false)} className="text-lg font-semibold">All Events</Link>
               {isAuthenticated ? (
                 <>
