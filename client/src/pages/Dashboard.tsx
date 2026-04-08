@@ -99,7 +99,7 @@ function EditEventSheet({ event, open, onClose }: { event: EventWithTickets | nu
               <Controller control={form.control} name="category" render={({ field }) => (
                 <Select onValueChange={field.onChange} value={field.value}>
                   <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
-                  <SelectContent>{EVENT_CATEGORIES.map(cat => <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>)}</SelectContent>
+                  <SelectContent className="bg-white dark:bg-zinc-900">{EVENT_CATEGORIES.map(cat => <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>)}</SelectContent>
                 </Select>
               )} />
             </div>
