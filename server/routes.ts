@@ -1,3 +1,4 @@
+import { registerGroupRoutes } from "./group-routes";
 import { registerPicksRoutes } from "./picks-routes";
 import type { Express } from "express";
 import type { Server } from "http";
