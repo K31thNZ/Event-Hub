@@ -111,7 +111,7 @@ function EditEventSheet({ event, open, onClose }: { event: EventWithTickets | nu
               <Controller control={form.control} name="category2" render={({ field }) => (
                 <Select onValueChange={v => field.onChange(v === "__none__" ? null : v)} value={field.value ?? "__none__"}>
                   <SelectTrigger className="h-11 rounded-xl"><SelectValue placeholder="None" /></SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="bg-white dark:bg-zinc-900">
                     <SelectItem value="__none__">— None —</SelectItem>
                     {EVENT_CATEGORIES.filter(cat => cat.value !== watchedCategory).map(cat => <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>)}
                   </SelectContent>
@@ -416,7 +416,7 @@ function AdminUsersTab() {
                 <SelectTrigger className={`w-32 h-8 rounded-full text-xs font-semibold border-0 ${badge.className}`}>
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent  className="bg-white dark:bg-zinc-900">
                   {ROLES.map(r => (
                     <SelectItem key={r} value={r} className="text-sm capitalize">{ROLE_BADGE[r].label}</SelectItem>
                   ))}
