@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useMyEvents, useUpdateEvent, useDeleteEvent, useEvents } from "@/hooks/use-events";
+import { MyGroupsTab } from "@/components/groups/MyGroupsTab";
 import { useMyOrders } from "@/hooks/use-orders";
 import { useAuth } from "@/hooks/use-auth";
 import { Link, useSearch } from "wouter";
