@@ -163,7 +163,7 @@ export default function Home() {
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-accent">
                 unforgettable
               </span>{" "}
-              event.
+              event
             </h1>
             <p className="text-lg md:text-xl text-muted-foreground mb-10 leading-relaxed max-w-xl">
               The premier platform for expats in Russia to discover local gatherings, professional
@@ -188,7 +188,7 @@ export default function Home() {
                   <SelectTrigger className="w-full pl-12 h-12 bg-transparent border-none focus:ring-0 text-base shadow-none">
                     <SelectValue placeholder="Location" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="bg-white dark:bg-zinc-900">
                     <SelectItem value="all">All Locations</SelectItem>
                     <SelectItem value="Moscow">Moscow</SelectItem>
                     <SelectItem value="Dubai">Dubai</SelectItem>
@@ -205,7 +205,7 @@ export default function Home() {
                   <SelectTrigger className="w-full px-4 h-12 bg-transparent border-none focus:ring-0 text-base shadow-none">
                     <SelectValue placeholder="Category" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="bg-white dark:bg-zinc-900">
                     <SelectItem value="all">All Categories</SelectItem>
                     {EVENT_CATEGORIES.map(cat => (
                       <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>
