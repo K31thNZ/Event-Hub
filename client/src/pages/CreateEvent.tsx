@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm, useFieldArray, Controller, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useCreateEvent } from "@/hooks/use-events";
 import { useAuth } from "@/hooks/use-auth";
-import { useLocation } from "wouter";
+import { useLocation, useParams } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,7 +17,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Trash2, Plus, CalendarPlus, Image as ImageIcon, AlertCircle } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Trash2, Plus, CalendarPlus, Image as ImageIcon, AlertCircle, RefreshCw, Lock } from "lucide-react";
 import { motion } from "framer-motion";
 import { EVENT_CATEGORIES, EVENT_CATEGORY_VALUES } from "@shared/categories";
 
@@ -44,29 +45,49 @@ const createEventSchema = z.object({
       })
     )
     .min(1, "Add at least one ticket type"),
+  // New group fields
+  groupId: z.number().optional().nullable(),
+  isPrivate: z.boolean().optional().default(false),
+  recurrence: z.enum(["weekly", "biweekly", "monthly"]).optional().nullable(),
+  recurrenceUntil: z.string().optional().nullable(),
 });
 
 type FormValues = z.infer<typeof createEventSchema>;
 
 export default function CreateEvent() {
   const [, setLocation] = useLocation();
+  const params = useParams<{ groupId?: string }>();
   const createEvent = useCreateEvent();
   const { user, isLoading } = useAuth();
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [showRecurrence, setShowRecurrence] = useState(false);
 
   const {
     register,
     control,
     handleSubmit,
     formState: { errors },
+    setValue,
+    watch,
   } = useForm<FormValues>({
     resolver: zodResolver(createEventSchema),
     defaultValues: {
       ticketTypes: [
         { name: "General Admission", price: 0, quantity: 100, maxPerOrder: 5 },
       ],
+      isPrivate: false,
     },
   });
+
+  // Set groupId from URL if present
+  useEffect(() => {
+    if (params.groupId) {
+      const numericId = parseInt(params.groupId, 10);
+      if (!isNaN(numericId)) {
+        setValue("groupId", numericId);
+      }
+    }
+  }, [params.groupId, setValue]);
 
   const { fields, append, remove } = useFieldArray({
     control,
@@ -74,6 +95,7 @@ export default function CreateEvent() {
   });
 
   const watchedCategory = useWatch({ control, name: "category" });
+  const watchedGroupId = watch("groupId");
 
   const onSubmit = async (data: FormValues) => {
     setSubmitError(null);
@@ -82,7 +104,14 @@ export default function CreateEvent() {
       return;
     }
     try {
-      await createEvent.mutateAsync({ ...data, published: true } as any);
+      await createEvent.mutateAsync({
+        ...data,
+        published: true,
+        groupId: data.groupId ?? null,
+        isPrivate: data.isPrivate ?? false,
+        recurrence: showRecurrence ? data.recurrence : null,
+        recurrenceUntil: showRecurrence ? data.recurrenceUntil : null,
+      } as any);
       setLocation("/dashboard");
     } catch (e: any) {
       const msg = e?.message ?? "";
@@ -134,6 +163,9 @@ export default function CreateEvent() {
           </div>
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
+            {/* Hidden groupId field if set from URL */}
+            {watchedGroupId && <input type="hidden" {...register("groupId")} />}
+
             {/* ── Basic Information ─────────────────────────────────── */}
             <Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
               <div className="bg-primary/5 px-8 py-4 border-b border-border/50">
@@ -232,6 +264,53 @@ export default function CreateEvent() {
                     <p className="text-destructive text-sm">{errors.description.message}</p>
                   )}
                 </div>
+
+                {/* Group-only options – shown when a groupId is present */}
+                {watchedGroupId && (
+                  <div className="space-y-4 pt-2 border-t border-border">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-medium text-sm">Private event</p>
+                        <p className="text-xs text-muted-foreground">Only group members can see this event</p>
+                      </div>
+                      <Controller control={control} name="isPrivate" render={({ field }) => (
+                        <Switch checked={!!field.value} onCheckedChange={field.onChange} />
+                      )} />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-medium text-sm flex items-center gap-1.5">
+                          <RefreshCw className="w-4 h-4 text-primary" /> Recurring event
+                        </p>
+                        <p className="text-xs text-muted-foreground">Automatically create future instances</p>
+                      </div>
+                      <Switch checked={showRecurrence} onCheckedChange={setShowRecurrence} />
+                    </div>
+
+                    {showRecurrence && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                        <div className="space-y-2">
+                          <Label>Repeat</Label>
+                          <Controller control={control} name="recurrence" render={({ field }) => (
+                            <Select onValueChange={field.onChange} value={field.value ?? ""}>
+                              <SelectTrigger className="h-11 rounded-xl"><SelectValue placeholder="Select frequency" /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="weekly">Every week</SelectItem>
+                                <SelectItem value="biweekly">Every 2 weeks</SelectItem>
+                                <SelectItem value="monthly">Monthly</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          )} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Repeat until (optional)</Label>
+                          <Input {...register("recurrenceUntil")} type="date" className="h-11 rounded-xl" />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
 
