@@ -562,6 +562,9 @@ export default function Dashboard() {
             <TabsTrigger value="events" className="rounded-lg px-4 py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-sm">
               <CalendarDays className="w-4 h-4 mr-2" /> My Events
             </TabsTrigger>
+            <TabsTrigger value="groups" className="rounded-lg px-4 py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-sm">
+  <Users className="w-4 h-4 mr-2" /> My Groups
+</TabsTrigger>
             {isCurator && (
               <TabsTrigger value="curator" className="rounded-lg px-4 py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-sm">
                 <Sparkles className="w-4 h-4 mr-2" /> Curator
@@ -635,6 +638,11 @@ export default function Dashboard() {
             )}
           </TabsContent>
 
+          {/* ── My Groups ─────────────────────────────────────────────── */}
+          <TabsContent value="groups">
+            <MyGroupsTab />
+          </TabsContent>
+          
           {/* ── Curator ───────────────────────────────────────────────── */}
           {isCurator && (
             <TabsContent value="curator">
