@@ -4,7 +4,10 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
-
+import Groups from "@/pages/Groups";
+import GroupProfile from "@/pages/GroupProfile";
+import CreateGroup from "@/pages/CreateGroup";
+import GroupManage from "@/pages/GroupManage";
 import { Navbar } from "@/components/layout/Navbar";
 import Home from "@/pages/Home";
 import EventDetails from "@/pages/EventDetails";
@@ -42,6 +45,10 @@ function Router() {
           <Route path="/orders/:id"><ProtectedRoute component={OrderView} /></Route>
           <Route path="/profile"><ProtectedRoute component={Profile} /></Route>
           <Route path="/picks" component={Picks} />
+          <Route path="/groups" component={Groups} />
+          <Route path="/groups/create" component={CreateGroup} />
+          <Route path="/groups/:slug/manage" component={GroupManage} />
+          <Route path="/groups/:slug" component={GroupProfile} />
           <Route component={NotFound} />
         </Switch>
       </main>
