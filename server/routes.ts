@@ -16,6 +16,7 @@ export async function registerRoutes(
 ): Promise<Server> {
   // Register picks routes
   registerPicksRoutes(app);
+  registerGroupRoutes(app);
 
   // ── Current authenticated user (from auth service) ────────────────────
   // This endpoint proxies the user object from meh-auth so the frontend
