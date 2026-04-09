@@ -5,13 +5,13 @@ import {
   type Event, type TicketType, type Order, type OrderTicket,
   type EventWithTickets, type OrderWithDetails,
   type CreateEventRequest, type UpdateEventRequest, type CreateOrderRequest,
-  type User  // ✅ import User type if needed
+  type User
 } from "@shared/schema";
-import { eq, desc, ilike, and, or } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 
 export interface IStorage {
   // Users
-  getUser(userId: number): Promise<User | undefined>;  // ✅ add to interface
+  getUser(userId: number): Promise<User | undefined>;  // ✅ added
 
   // Events
   getEvents(params?: { search?: string, category?: string, city?: string }): Promise<EventWithTickets[]>;
@@ -28,7 +28,7 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
-  // ✅ Add getUser method
+  // ✅ Implement getUser
   async getUser(userId: number): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, userId));
     return user;
@@ -41,7 +41,6 @@ export class DatabaseStorage implements IStorage {
         await tx.delete(orderTickets).where(eq(orderTickets.orderId, order.id));
       }
       await tx.delete(orders).where(eq(orders.eventId, id));
-      
       await tx.delete(ticketTypes).where(eq(ticketTypes.eventId, id));
       await tx.delete(events).where(eq(events.id, id));
     });
@@ -52,30 +51,23 @@ export class DatabaseStorage implements IStorage {
       with: { ticketTypes: true },
       orderBy: [desc(events.createdAt)],
     });
-    
     return results.filter(e => {
       let matches = true;
       if (params?.search) {
         const s = params.search.toLowerCase();
         matches = matches && (e.title.toLowerCase().includes(s) || e.description.toLowerCase().includes(s));
       }
-      if (params?.category) {
-        matches = matches && e.category === params.category;
-      }
-      if (params?.city) {
-        const s = params.city.toLowerCase();
-        matches = matches && e.venueCity.toLowerCase().includes(s);
-      }
+      if (params?.category) matches = matches && e.category === params.category;
+      if (params?.city) matches = matches && e.venueCity.toLowerCase().includes(params.city.toLowerCase());
       return matches;
     });
   }
 
   async getEvent(id: number): Promise<EventWithTickets | undefined> {
-    const ev = await db.query.events.findFirst({
+    return await db.query.events.findFirst({
       where: eq(events.id, id),
       with: { ticketTypes: true }
     });
-    return ev;
   }
 
   async getEventsByOrganizer(organizerId: string): Promise<EventWithTickets[]> {
@@ -100,19 +92,16 @@ export class DatabaseStorage implements IStorage {
         published: eventData.published,
       }).returning();
 
-      if (eventData.ticketTypes && eventData.ticketTypes.length > 0) {
-        const typesToInsert = eventData.ticketTypes.map(t => ({
-          ...t,
-          eventId: newEvent.id
-        }));
-        await tx.insert(ticketTypes).values(typesToInsert);
+      if (eventData.ticketTypes?.length) {
+        await tx.insert(ticketTypes).values(
+          eventData.ticketTypes.map(t => ({ ...t, eventId: newEvent.id }))
+        );
       }
 
       const createdEvent = await tx.query.events.findFirst({
         where: eq(events.id, newEvent.id),
         with: { ticketTypes: true }
       });
-      
       return createdEvent!;
     });
   }
@@ -130,13 +119,13 @@ export class DatabaseStorage implements IStorage {
       if (eventData.imageUrl !== undefined) updates.imageUrl = eventData.imageUrl;
       if (eventData.published !== undefined) updates.published = eventData.published;
 
-      if (Object.keys(updates).length > 0) {
+      if (Object.keys(updates).length) {
         await tx.update(events).set(updates).where(eq(events.id, id));
       }
 
       if (eventData.ticketTypes !== undefined) {
         await tx.delete(ticketTypes).where(eq(ticketTypes.eventId, id));
-        if (eventData.ticketTypes.length > 0) {
+        if (eventData.ticketTypes.length) {
           await tx.insert(ticketTypes).values(
             eventData.ticketTypes.map(t => ({ ...t, eventId: id }))
           );
@@ -154,12 +143,7 @@ export class DatabaseStorage implements IStorage {
   async getOrdersByAttendee(attendeeId: string): Promise<OrderWithDetails[]> {
     return await db.query.orders.findMany({
       where: eq(orders.attendeeId, attendeeId),
-      with: {
-        event: true,
-        tickets: {
-          with: { ticketType: true }
-        }
-      },
+      with: { event: true, tickets: { with: { ticketType: true } } },
       orderBy: [desc(orders.createdAt)],
     });
   }
@@ -167,24 +151,17 @@ export class DatabaseStorage implements IStorage {
   async getOrder(id: number): Promise<OrderWithDetails | undefined> {
     return await db.query.orders.findFirst({
       where: eq(orders.id, id),
-      with: {
-        event: true,
-        tickets: {
-          with: { ticketType: true }
-        }
-      }
+      with: { event: true, tickets: { with: { ticketType: true } } }
     });
   }
 
   async createOrder(attendeeId: string, orderData: CreateOrderRequest): Promise<OrderWithDetails> {
     return await db.transaction(async (tx) => {
       let totalAmount = 0;
-      
       for (const t of orderData.tickets) {
         const [ticketType] = await tx.select().from(ticketTypes).where(eq(ticketTypes.id, t.ticketTypeId));
         if (!ticketType) throw new Error(`Ticket type ${t.ticketTypeId} not found`);
-        if (t.quantity > ticketType.maxPerOrder) throw new Error(`Cannot order more than ${ticketType.maxPerOrder} tickets of this type`);
-        
+        if (t.quantity > ticketType.maxPerOrder) throw new Error(`Cannot order more than ${ticketType.maxPerOrder} tickets`);
         totalAmount += ticketType.price * t.quantity;
       }
 
@@ -198,24 +175,14 @@ export class DatabaseStorage implements IStorage {
         notes: orderData.notes,
       }).returning();
 
-      const ticketsToInsert = orderData.tickets.map(t => ({
-        orderId: newOrder.id,
-        ticketTypeId: t.ticketTypeId,
-        quantity: t.quantity,
-      }));
-
-      await tx.insert(orderTickets).values(ticketsToInsert);
+      await tx.insert(orderTickets).values(
+        orderData.tickets.map(t => ({ orderId: newOrder.id, ticketTypeId: t.ticketTypeId, quantity: t.quantity }))
+      );
 
       const createdOrder = await tx.query.orders.findFirst({
         where: eq(orders.id, newOrder.id),
-        with: {
-          event: true,
-          tickets: {
-            with: { ticketType: true }
-          }
-        }
+        with: { event: true, tickets: { with: { ticketType: true } } }
       });
-      
       return createdOrder!;
     });
   }
