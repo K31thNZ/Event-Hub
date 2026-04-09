@@ -1,13 +1,18 @@
 import { db } from "./db";
 import { 
   events, ticketTypes, orders, orderTickets,
+  users,  // ✅ import users table
   type Event, type TicketType, type Order, type OrderTicket,
   type EventWithTickets, type OrderWithDetails,
-  type CreateEventRequest, type UpdateEventRequest, type CreateOrderRequest
+  type CreateEventRequest, type UpdateEventRequest, type CreateOrderRequest,
+  type User  // ✅ import User type if needed
 } from "@shared/schema";
 import { eq, desc, ilike, and, or } from "drizzle-orm";
 
 export interface IStorage {
+  // Users
+  getUser(userId: number): Promise<User | undefined>;  // ✅ add to interface
+
   // Events
   getEvents(params?: { search?: string, category?: string, city?: string }): Promise<EventWithTickets[]>;
   getEvent(id: number): Promise<EventWithTickets | undefined>;
@@ -23,19 +28,21 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
+  // ✅ Add getUser method
+  async getUser(userId: number): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.id, userId));
+    return user;
+  }
+
   async deleteEvent(id: number): Promise<void> {
     await db.transaction(async (tx) => {
-      // Delete orders associated with this event
       const eventOrders = await tx.select().from(orders).where(eq(orders.eventId, id));
       for (const order of eventOrders) {
         await tx.delete(orderTickets).where(eq(orderTickets.orderId, order.id));
       }
       await tx.delete(orders).where(eq(orders.eventId, id));
       
-      // Delete ticket types
       await tx.delete(ticketTypes).where(eq(ticketTypes.eventId, id));
-      
-      // Delete the event
       await tx.delete(events).where(eq(events.id, id));
     });
   }
