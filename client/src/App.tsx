@@ -1,4 +1,4 @@
-import { Switch, Route } from "wouter";
+import { Switch, Route, useLocation } from "wouter"; // add useLocation
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -17,8 +17,9 @@ import OrderView from "@/pages/OrderView";
 import Profile from "@/pages/Profile";
 import { useAuth } from "@/hooks/use-auth";
 import Picks from "@/pages/Picks";
+import PitchDeck from './pages/PitchDeck'; // your component
 
-// Protected Route Wrapper
+// Protected Route Wrapper (unchanged)
 function ProtectedRoute({ component: Component }: { component: any }) {
   const { isAuthenticated, isLoading } = useAuth();
 
@@ -33,6 +34,14 @@ function ProtectedRoute({ component: Component }: { component: any }) {
 }
 
 function Router() {
+  const [location] = useLocation(); // get current path
+
+  // If the user is viewing the pitch deck, render it without any layout
+  if (location === '/pitch') {
+    return <PitchDeck />;
+  }
+
+  // Otherwise, render the normal layout with navbar
   return (
     <div className="min-h-screen flex flex-col bg-background font-sans">
       <Navbar />
