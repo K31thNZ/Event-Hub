@@ -1,16 +1,17 @@
-// server/picks-routes.ts
 import type { Express, Request, Response } from "express";
 import { db } from "./db";
 import { curatorPicks, events, ticketTypes } from "@shared/schema";
 import { eq, desc, and, inArray } from "drizzle-orm";
-import { requireAuth, requireAdmin } from "./auth-client"; // ✅ use the real auth
+import { requireAuth, requireAdmin } from "./auth-client";
 import { storage } from "./storage";
 
-// Helper: ensure user is curator or admin (uses req.user from auth-client)
+// ✅ Safe middleware: checks req.user exists and has valid role
 async function requireCuratorOrAdmin(req: Request, res: Response, next: Function) {
   const user = (req as any).user;
-  if (!user) return res.status(401).json({ message: "Not authenticated" });
-  const localUser = await storage.getUser(user.id);
+  if (!user?.id) {
+    return res.status(401).json({ message: "Not authenticated or missing user id" });
+  }
+  const localUser = await storage.getUser(Number(user.id));
   if (!localUser || !["curator", "admin"].includes(localUser.role ?? "")) {
     return res.status(403).json({ message: "Curator or admin access required" });
   }
@@ -18,7 +19,7 @@ async function requireCuratorOrAdmin(req: Request, res: Response, next: Function
 }
 
 async function resolvePickEvents(eventIds: number[]) {
-  if (eventIds.length === 0) return [];
+  if (!eventIds.length) return [];
   const evts = await db
     .select()
     .from(events)
@@ -67,13 +68,13 @@ export function registerPicksRoutes(app: Express) {
     }
   });
 
-  // ── Authenticated curator/admin routes ─────────────────────────────
+  // Authenticated curator/admin routes
   app.get("/api/curator/picks", requireAuth, requireCuratorOrAdmin, async (req: any, res) => {
     try {
       const picks = await db
         .select()
         .from(curatorPicks)
-        .where(eq(curatorPicks.curatorId, String(req.user.id))) // ✅ req.user.id from auth-client
+        .where(eq(curatorPicks.curatorId, String(req.user.id)))
         .orderBy(desc(curatorPicks.weekOf));
       res.json(picks);
     } catch (err: any) {
