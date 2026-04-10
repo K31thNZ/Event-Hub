@@ -191,7 +191,7 @@ function CuratorTab() {
       return res.json();
     },
   });
-
+  const [showPastTickets, setShowPastTickets] = useState(false);
   const [editingPick, setEditingPick] = useState<any | null>(null);
   const [intro, setIntro] = useState("");
   const [specialty, setSpecialty] = useState("");
@@ -567,71 +567,82 @@ export default function Dashboard() {
       <Ticket className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />
       <h3 className="text-xl font-bold mb-2">No tickets yet</h3>
       <p className="text-muted-foreground mb-6">You haven't purchased any tickets.</p>
-      <Button asChild variant="outline" className="rounded-full"><Link href="/">Browse Events</Link></Button>
+      <Button asChild variant="outline" className="rounded-full">
+        <Link href="/">Browse Events</Link>
+      </Button>
     </div>
   ) : (() => {
     const now = new Date();
     const upcoming = myOrders?.filter(o => new Date(o.event.date) >= now) ?? [];
     const past = myOrders?.filter(o => new Date(o.event.date) < now) ?? [];
- 
     return (
-      <div className="space-y-10">
-        {upcoming.length > 0 && (
-          <div>
-            <h3 className="text-lg font-semibold mb-4">Upcoming</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {upcoming.map(order => (
-                <div key={order.id} className="bg-card border border-border rounded-2xl p-6 shadow-sm hover:shadow-md transition-shadow flex flex-col">
-                  <div className="flex justify-between items-start mb-4">
-                    <div className="inline-flex px-2 py-1 rounded bg-green-100 text-green-700 text-xs font-bold uppercase tracking-wider">Confirmed</div>
-                    <span className="font-mono text-muted-foreground text-sm">#{order.id}</span>
-                  </div>
-                  <h3 className="font-display font-bold text-xl mb-1 line-clamp-1">{order.event.title}</h3>
-                  <p className="text-muted-foreground text-sm mb-6">{format(new Date(order.event.date), "MMM d, yyyy • h:mm a")}</p>
-                  <div className="mt-auto pt-4 border-t border-border flex justify-between items-center">
-                    <span className="font-bold">{order.totalAmount} ₽</span>
-                    <Button asChild variant="secondary" size="sm" className="rounded-lg">
-                      <Link href={`/orders/${order.id}`}>View Ticket</Link>
-                    </Button>
-                  </div>
+      <div className="space-y-6">
+ 
+        {upcoming.length === 0 ? (
+          <div className="text-center py-12 glass rounded-3xl border-dashed">
+            <Ticket className="w-10 h-10 text-muted-foreground mx-auto mb-3 opacity-40" />
+            <p className="font-medium mb-1">No upcoming tickets</p>
+            <p className="text-muted-foreground text-sm mb-5">Browse events and grab a ticket.</p>
+            <Button asChild variant="outline" className="rounded-full">
+              <Link href="/">Browse Events</Link>
+            </Button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {upcoming.map(order => (
+              <div key={order.id} className="bg-card border border-border rounded-2xl p-6 shadow-sm hover:shadow-md transition-shadow flex flex-col">
+                <div className="flex justify-between items-start mb-4">
+                  <div className="inline-flex px-2 py-1 rounded bg-green-100 text-green-700 text-xs font-bold uppercase tracking-wider">Confirmed</div>
+                  <span className="font-mono text-muted-foreground text-sm">#{order.id}</span>
                 </div>
-              ))}
-            </div>
+                <h3 className="font-display font-bold text-xl mb-1 line-clamp-1">{order.event.title}</h3>
+                <p className="text-muted-foreground text-sm mb-6">{format(new Date(order.event.date), "MMM d, yyyy • h:mm a")}</p>
+                <div className="mt-auto pt-4 border-t border-border flex justify-between items-center">
+                  <span className="font-bold">{order.totalAmount} ₽</span>
+                  <Button asChild variant="secondary" size="sm" className="rounded-lg">
+                    <Link href={`/orders/${order.id}`}>View Ticket</Link>
+                  </Button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
  
         {past.length > 0 && (
-          <div>
-            <h3 className="text-lg font-semibold mb-4 text-muted-foreground flex items-center gap-2">
-              <Archive className="w-4 h-4" /> Past Events
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 opacity-75">
-              {past.map(order => (
-                <div key={order.id} className="bg-card border border-border/60 rounded-2xl p-6 shadow-sm flex flex-col">
-                  <div className="flex justify-between items-start mb-4">
-                    <div className="inline-flex px-2 py-1 rounded bg-muted text-muted-foreground text-xs font-bold uppercase tracking-wider">Past</div>
-                    <span className="font-mono text-muted-foreground text-sm">#{order.id}</span>
+          <div className="pt-2 border-t border-border">
+            <button
+              type="button"
+              onClick={() => setShowPastTickets(v => !v)}
+              className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <Archive className="w-4 h-4" />
+              Past tickets ({past.length})
+              <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${showPastTickets ? "rotate-180" : ""}`} />
+            </button>
+ 
+            {showPastTickets && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-4 opacity-70">
+                {past.map(order => (
+                  <div key={order.id} className="bg-card border border-border/60 rounded-2xl p-6 shadow-sm flex flex-col">
+                    <div className="flex justify-between items-start mb-4">
+                      <div className="inline-flex px-2 py-1 rounded bg-muted text-muted-foreground text-xs font-bold uppercase tracking-wider">Past</div>
+                      <span className="font-mono text-muted-foreground text-sm">#{order.id}</span>
+                    </div>
+                    <h3 className="font-display font-bold text-xl mb-1 line-clamp-1 text-muted-foreground">{order.event.title}</h3>
+                    <p className="text-muted-foreground text-sm mb-6">{format(new Date(order.event.date), "MMM d, yyyy • h:mm a")}</p>
+                    <div className="mt-auto pt-4 border-t border-border flex justify-between items-center">
+                      <span className="font-bold text-muted-foreground">{order.totalAmount} ₽</span>
+                      <Button asChild variant="outline" size="sm" className="rounded-lg">
+                        <Link href={`/orders/${order.id}`}>View</Link>
+                      </Button>
+                    </div>
                   </div>
-                  <h3 className="font-display font-bold text-xl mb-1 line-clamp-1 text-muted-foreground">{order.event.title}</h3>
-                  <p className="text-muted-foreground text-sm mb-6">{format(new Date(order.event.date), "MMM d, yyyy • h:mm a")}</p>
-                  <div className="mt-auto pt-4 border-t border-border flex justify-between items-center">
-                    <span className="font-bold text-muted-foreground">{order.totalAmount} ₽</span>
-                    <Button asChild variant="outline" size="sm" className="rounded-lg">
-                      <Link href={`/orders/${order.id}`}>View</Link>
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
  
-        {upcoming.length === 0 && past.length > 0 && (
-          <div className="text-center py-6">
-            <p className="text-muted-foreground">No upcoming events — browse to find your next one.</p>
-            <Button asChild variant="outline" className="rounded-full mt-3"><Link href="/">Browse Events</Link></Button>
-          </div>
-        )}
       </div>
     );
   })()}
