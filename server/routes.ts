@@ -14,13 +14,10 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  // Register picks routes
   registerPicksRoutes(app);
   registerGroupRoutes(app);
 
-  // ── Current authenticated user (from auth service) ────────────────────
-  // This endpoint proxies the user object from meh-auth so the frontend
-  // doesn't need to call the auth service directly (avoids CORS/cookie issues).
+  // ── Current authenticated user ────────────────────────────────────────
   app.get("/api/user", async (req, res) => {
     try {
       const user = await getUser(req);
@@ -32,7 +29,7 @@ export async function registerRoutes(
     }
   });
 
-  // ── Current user profile (local DB) ─────────────────────────────────────
+  // ── Current user profile (local DB) ──────────────────────────────────
   app.get("/api/me", requireAuth, async (req: any, res) => {
     try {
       const localUser = await db.query.users.findFirst({
@@ -45,7 +42,7 @@ export async function registerRoutes(
     }
   });
 
-  // ── Events ──────────────────────────────────────────────────────────────
+  // ── Events ────────────────────────────────────────────────────────────
   app.get(api.events.list.path, async (req, res) => {
     try {
       const query = api.events.list.input?.parse(req.query);
@@ -66,9 +63,12 @@ export async function registerRoutes(
     }
   });
 
+  // Admins see all events; regular users see only their own.
   app.get(api.events.myEvents.path, requireAuth, async (req: any, res) => {
     try {
-      const events = await storage.getEventsByOrganizer(req.user.id);
+      const events = req.user.role === "admin"
+        ? await storage.getEvents()          // all events
+        : await storage.getEventsByOrganizer(String(req.user.id)); // own events only
       res.json(events);
     } catch (e) {
       res.status(500).json({ message: "Failed to fetch your events" });
@@ -114,11 +114,8 @@ export async function registerRoutes(
   app.delete(api.events.delete.path, requireAuth, async (req: any, res) => {
     try {
       const event = await storage.getEvent(Number(req.params.id));
-      if (!event) {
-        return res.status(404).json({ message: "Event not found" });
-      }
-      // Allow admins or the event organizer to delete
-      if (req.user.role !== "admin" && event.organizerId !== req.user.id) {
+      if (!event) return res.status(404).json({ message: "Event not found" });
+      if (req.user.role !== "admin" && event.organizerId !== String(req.user.id)) {
         return res.status(403).json({ message: "Only administrators or the event organizer can delete events" });
       }
       await storage.deleteEvent(Number(req.params.id));
@@ -128,10 +125,10 @@ export async function registerRoutes(
     }
   });
 
-  // ── Orders ──────────────────────────────────────────────────────────────
+  // ── Orders ────────────────────────────────────────────────────────────
   app.get(api.orders.myOrders.path, requireAuth, async (req: any, res) => {
     try {
-      const orders = await storage.getOrdersByAttendee(req.user.id);
+      const orders = await storage.getOrdersByAttendee(String(req.user.id));
       res.json(orders);
     } catch (e) {
       res.status(500).json({ message: "Failed to fetch orders" });
@@ -142,7 +139,7 @@ export async function registerRoutes(
     try {
       const order = await storage.getOrder(Number(req.params.id));
       if (!order) return res.status(404).json({ message: "Order not found" });
-      if (order.attendeeId !== req.user.id && order.event.organizerId !== req.user.id) {
+      if (order.attendeeId !== String(req.user.id) && order.event.organizerId !== String(req.user.id) && req.user.role !== "admin") {
         return res.status(403).json({ message: "Unauthorized to view this order" });
       }
       res.json(order);
@@ -154,7 +151,7 @@ export async function registerRoutes(
   app.post(api.orders.create.path, requireAuth, async (req: any, res) => {
     try {
       const input = api.orders.create.input.parse(req.body);
-      const order = await storage.createOrder(req.user.id, input);
+      const order = await storage.createOrder(String(req.user.id), input);
       res.status(201).json(order);
     } catch (err) {
       if (err instanceof z.ZodError) {
@@ -168,39 +165,41 @@ export async function registerRoutes(
   });
 
   await seedDatabase();
-
   return httpServer;
 }
 
-// ── Seed ────────────────────────────────────────────────────────────────────
-// Creates sample events on first run if the database is empty.
-// Uses organizer ID 1 — make sure an admin user with ID 1 exists in meh-auth.
+// ── Seed ──────────────────────────────────────────────────────────────────
+// Fetches the actual admin user ID from meh-auth and uses that UUID as
+// organizerId, so seeded events are owned by a real user and show up in
+// the admin's dashboard.
 async function seedDatabase() {
   try {
     const existing = await storage.getEvents();
     if (existing.length > 0) return;
 
-    // Verify the auth service has a user with ID 1 before seeding
     const AUTH_URL = process.env.AUTH_SERVICE_URL ?? "https://meh-auth.onrender.com";
-    let userExists = false;
+
+    // Fetch the real admin user object to get their UUID
+    let adminUser: { id: string | number } | null = null;
     try {
-      const checkRes = await fetch(`${AUTH_URL}/api/users/1`);
-      userExists = checkRes.ok;
+      const res = await fetch(`${AUTH_URL}/api/users/1`);
+      if (res.ok) adminUser = await res.json();
     } catch {
-      userExists = false;
+      adminUser = null;
     }
-    if (!userExists) {
-      console.log("[seed] Skipping seed — no admin user found yet in auth service");
+
+    if (!adminUser?.id) {
+      console.log("[seed] Skipping seed — no admin user found in auth service");
       return;
     }
 
-    // Seed organizer ID — matches the first admin user created in meh-auth
-    const seedOrganizerId = 1;
+    // Use the actual user ID (as a string) so it matches the varchar FK
+    const seedOrganizerId = String(adminUser.id);
 
     await storage.createEvent(seedOrganizerId, {
       title: "Moscow Expat Networking Drinks",
       description: "Join us for our monthly networking event. Meet fellow expats living and working in Moscow.",
-      category: "Networking",
+      category: "networking",
       date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       venueAddress: "Stoleshnikov Lane 11",
       venueCity: "Moscow",
@@ -215,7 +214,7 @@ async function seedDatabase() {
     await storage.createEvent(seedOrganizerId, {
       title: "St. Petersburg Tech Meetup",
       description: "A gathering of expat tech professionals, developers, and founders.",
-      category: "Tech",
+      category: "tech",
       date: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
       venueAddress: "Nevsky Prospect 28",
       venueCity: "St. Petersburg",
@@ -230,7 +229,7 @@ async function seedDatabase() {
     await storage.createEvent(seedOrganizerId, {
       title: "Russian Cooking Masterclass",
       description: "Learn how to make authentic Borscht and Pelmeni with our expert chef.",
-      category: "Food & Drink",
+      category: "food",
       date: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
       venueAddress: "Tverskaya St 14",
       venueCity: "Moscow",
@@ -241,7 +240,7 @@ async function seedDatabase() {
       ],
     });
 
-    console.log("[seed] Created 3 sample events");
+    console.log(`[seed] Created 3 sample events (organizerId: ${seedOrganizerId})`);
   } catch (err) {
     console.error("[seed] Failed to seed database:", err);
   }
