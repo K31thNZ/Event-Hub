@@ -4,20 +4,16 @@ import { db } from "./db";
 import { groups, groupMembers, events, ticketTypes } from "@shared/schema";
 import { eq, and, desc, sql, inArray, ne } from "drizzle-orm";
 import { addWeeks } from "date-fns";
-import { storage } from "./storage"; // ✅ static import of the storage object
+import { storage } from "./storage";
+import { requireAuth } from "./auth-client"; // ← unified auth, same as routes.ts & picks-routes.ts
 
 const MAX_MODERATORS = 5;
 const MAX_RECURRING_INSTANCES = 12;
 
-// ✅ Define helper functions locally (not imported from storage)
-async function getUser(userId: number) {
-  return storage.getUser(userId);
-}
-
-async function getMembership(groupId: number, userId: number | undefined) {
+async function getMembership(groupId: number, userId: number | string | undefined) {
   if (!userId) return null;
   const [m] = await db.select().from(groupMembers)
-    .where(and(eq(groupMembers.groupId, groupId), eq(groupMembers.userId, userId)));
+    .where(and(eq(groupMembers.groupId, groupId), eq(groupMembers.userId, String(userId))));
   return m ?? null;
 }
 
@@ -43,24 +39,15 @@ function buildRecurringDates(
   return dates;
 }
 
-// ✅ Safe auth middleware
-function requireAuth(req: Request, res: Response, next: Function) {
-  if (!req.session?.userId) {
-    return res.status(401).json({ message: "Not authenticated" });
-  }
-  next();
-}
-
-// ✅ Export the main registration function
 export function registerGroupRoutes(app: Express) {
 
   // ── GET /api/groups (public) ──────────────────────────────────────────
-  app.get("/api/groups", async (req, res) => {
+  app.get("/api/groups", async (req: any, res) => {
     try {
       const { category } = req.query;
-      const userId = req.session?.userId;
+      const userId = req.user?.id;
 
-      let query = db.select({
+      const rows = await db.select({
         group: groups,
         memberCount: sql<number>`cast(count(${groupMembers.id}) filter (where ${groupMembers.status} = 'active') as int)`,
       })
@@ -70,14 +57,12 @@ export function registerGroupRoutes(app: Express) {
       .groupBy(groups.id)
       .orderBy(desc(groups.createdAt));
 
-      const rows = await query;
-
       let membershipMap: Map<number, string> = new Map();
       if (userId) {
         const memberships = await db.select()
           .from(groupMembers)
           .where(and(
-            eq(groupMembers.userId, userId),
+            eq(groupMembers.userId, String(userId)),
             eq(groupMembers.status, "active"),
             inArray(groupMembers.groupId, rows.map(r => r.group.id))
           ));
@@ -99,9 +84,9 @@ export function registerGroupRoutes(app: Express) {
   });
 
   // ── GET /api/groups/:slug (public) ────────────────────────────────────
-  app.get("/api/groups/:slug", async (req, res) => {
+  app.get("/api/groups/:slug", async (req: any, res) => {
     try {
-      const userId = req.session?.userId;
+      const userId = req.user?.id;
       const [group] = await db.select().from(groups)
         .where(and(eq(groups.slug, req.params.slug), eq(groups.status, "active")));
       if (!group) return res.status(404).json({ message: "Group not found" });
@@ -113,14 +98,13 @@ export function registerGroupRoutes(app: Express) {
         .where(and(eq(groupMembers.groupId, group.id), eq(groupMembers.status, "active")))
         .orderBy(desc(groupMembers.joinedAt));
 
-      const eventQuery = db.select().from(events)
+      const groupEvents = await db.select().from(events)
         .where(and(
           eq(events.groupId, group.id),
           eq(events.published, true),
           isActiveMember ? sql`true` : eq(events.isPrivate, false)
         ))
         .orderBy(events.date);
-      const groupEvents = await eventQuery;
 
       const eventIds = groupEvents.map(e => e.id);
       const tickets = eventIds.length > 0
@@ -131,12 +115,13 @@ export function registerGroupRoutes(app: Express) {
         ticketTypes: tickets.filter(t => t.eventId === e.id),
       }));
 
-      const memberCount = members.length;
       res.json({
         ...group,
-        members: group.membershipType === "open" || isActiveMember ? members : members.filter(m => ["owner","moderator"].includes(m.role)),
+        members: group.membershipType === "open" || isActiveMember
+          ? members
+          : members.filter(m => ["owner", "moderator"].includes(m.role)),
         events: eventsWithTickets,
-        memberCount,
+        memberCount: members.length,
         currentUserRole: membership?.role ?? null,
         currentUserStatus: membership?.status ?? null,
       });
@@ -146,16 +131,15 @@ export function registerGroupRoutes(app: Express) {
   });
 
   // ── POST /api/groups (create) ─────────────────────────────────────────
-  app.post("/api/groups", requireAuth, async (req, res) => {
+  app.post("/api/groups", requireAuth, async (req: any, res) => {
     try {
-      const user = await getUser(req.session.userId!);
-      if (!user) return res.status(401).json({ message: "User not found" });
+      const user = req.user;
       if (!isPremium(user.role)) {
         return res.status(403).json({ message: "A premium membership is required to create a group." });
       }
 
       const [existing] = await db.select().from(groups)
-        .where(and(eq(groups.ownerUserId, user.id), ne(groups.status, "suspended")));
+        .where(and(eq(groups.ownerUserId, String(user.id)), ne(groups.status, "suspended")));
       if (existing) {
         return res.status(400).json({ message: "You already own a group. Premium members may own one group." });
       }
@@ -172,7 +156,7 @@ export function registerGroupRoutes(app: Express) {
         name: name.trim(),
         slug: slug.trim().toLowerCase(),
         description: description?.trim() ?? "",
-        ownerUserId: user.id,
+        ownerUserId: String(user.id),
         category: category ?? "social",
         imageUrl: imageUrl ?? null,
         bannerUrl: bannerUrl ?? null,
@@ -183,11 +167,11 @@ export function registerGroupRoutes(app: Express) {
 
       await db.insert(groupMembers).values({
         groupId: group.id,
-        userId: user.id,
+        userId: String(user.id),
         role: "owner",
         status: "active",
         displayName: user.displayName ?? user.username,
-        avatarUrl: user.avatarUrl,
+        avatarUrl: user.avatarUrl ?? null,
       });
 
       res.status(201).json(group);
@@ -200,10 +184,10 @@ export function registerGroupRoutes(app: Express) {
   });
 
   // ── PATCH /api/groups/:id ──────────────────────────────────────────────
-  app.patch("/api/groups/:id", requireAuth, async (req, res) => {
+  app.patch("/api/groups/:id", requireAuth, async (req: any, res) => {
     try {
       const groupId = parseInt(req.params.id);
-      const membership = await getMembership(groupId, req.session.userId);
+      const membership = await getMembership(groupId, req.user.id);
       if (membership?.role !== "owner") {
         return res.status(403).json({ message: "Only the group owner can edit settings" });
       }
@@ -227,12 +211,11 @@ export function registerGroupRoutes(app: Express) {
   });
 
   // ── DELETE /api/groups/:id ─────────────────────────────────────────────
-  app.delete("/api/groups/:id", requireAuth, async (req, res) => {
+  app.delete("/api/groups/:id", requireAuth, async (req: any, res) => {
     try {
       const groupId = parseInt(req.params.id);
-      const user = await getUser(req.session.userId!);
-      const membership = await getMembership(groupId, req.session.userId);
-      if (membership?.role !== "owner" && user?.role !== "admin") {
+      const membership = await getMembership(groupId, req.user.id);
+      if (membership?.role !== "owner" && req.user.role !== "admin") {
         return res.status(403).json({ message: "Only the group owner can delete a group" });
       }
       await db.update(groups).set({ status: "suspended", updatedAt: new Date() })
@@ -244,11 +227,10 @@ export function registerGroupRoutes(app: Express) {
   });
 
   // ── POST /api/groups/:id/join ──────────────────────────────────────────
-  app.post("/api/groups/:id/join", requireAuth, async (req, res) => {
+  app.post("/api/groups/:id/join", requireAuth, async (req: any, res) => {
     try {
       const groupId = parseInt(req.params.id);
-      const user = await getUser(req.session.userId!);
-      if (!user) return res.status(401).json({ message: "User not found" });
+      const user = req.user;
 
       const [group] = await db.select().from(groups).where(eq(groups.id, groupId));
       if (!group || group.status !== "active") return res.status(404).json({ message: "Group not found" });
@@ -263,11 +245,11 @@ export function registerGroupRoutes(app: Express) {
       } else {
         await db.insert(groupMembers).values({
           groupId,
-          userId: user.id,
+          userId: String(user.id),
           role: "member",
           status,
           displayName: user.displayName ?? user.username,
-          avatarUrl: user.avatarUrl,
+          avatarUrl: user.avatarUrl ?? null,
         });
       }
       res.json({ ok: true, status });
@@ -277,10 +259,10 @@ export function registerGroupRoutes(app: Express) {
   });
 
   // ── POST /api/groups/:id/leave ─────────────────────────────────────────
-  app.post("/api/groups/:id/leave", requireAuth, async (req, res) => {
+  app.post("/api/groups/:id/leave", requireAuth, async (req: any, res) => {
     try {
       const groupId = parseInt(req.params.id);
-      const membership = await getMembership(groupId, req.session.userId);
+      const membership = await getMembership(groupId, req.user.id);
       if (!membership) return res.status(404).json({ message: "Not a member" });
       if (membership.role === "owner") return res.status(400).json({ message: "Transfer ownership before leaving" });
       await db.delete(groupMembers).where(eq(groupMembers.id, membership.id));
@@ -291,10 +273,10 @@ export function registerGroupRoutes(app: Express) {
   });
 
   // ── POST /api/groups/:id/moderators ───────────────────────────────────
-  app.post("/api/groups/:id/moderators", requireAuth, async (req, res) => {
+  app.post("/api/groups/:id/moderators", requireAuth, async (req: any, res) => {
     try {
       const groupId = parseInt(req.params.id);
-      const membership = await getMembership(groupId, req.session.userId);
+      const membership = await getMembership(groupId, req.user.id);
       if (membership?.role !== "owner") {
         return res.status(403).json({ message: "Only the owner can add moderators" });
       }
@@ -321,14 +303,14 @@ export function registerGroupRoutes(app: Express) {
   });
 
   // ── DELETE /api/groups/:id/moderators/:userId ─────────────────────────
-  app.delete("/api/groups/:id/moderators/:userId", requireAuth, async (req, res) => {
+  app.delete("/api/groups/:id/moderators/:userId", requireAuth, async (req: any, res) => {
     try {
       const groupId = parseInt(req.params.id);
-      const membership = await getMembership(groupId, req.session.userId);
+      const membership = await getMembership(groupId, req.user.id);
       if (membership?.role !== "owner") {
         return res.status(403).json({ message: "Only the owner can remove moderators" });
       }
-      const targetMembership = await getMembership(groupId, parseInt(req.params.userId));
+      const targetMembership = await getMembership(groupId, req.params.userId);
       if (!targetMembership) return res.status(404).json({ message: "Member not found" });
       await db.update(groupMembers).set({ role: "member" }).where(eq(groupMembers.id, targetMembership.id));
       res.json({ ok: true });
@@ -338,10 +320,10 @@ export function registerGroupRoutes(app: Express) {
   });
 
   // ── PATCH /api/groups/:id/members/:userId ─────────────────────────────
-  app.patch("/api/groups/:id/members/:userId", requireAuth, async (req, res) => {
+  app.patch("/api/groups/:id/members/:userId", requireAuth, async (req: any, res) => {
     try {
       const groupId = parseInt(req.params.id);
-      const membership = await getMembership(groupId, req.session.userId);
+      const membership = await getMembership(groupId, req.user.id);
       if (!["owner", "moderator"].includes(membership?.role ?? "")) {
         return res.status(403).json({ message: "Moderator or owner access required" });
       }
@@ -349,7 +331,7 @@ export function registerGroupRoutes(app: Express) {
       if (!["active", "banned"].includes(status)) {
         return res.status(400).json({ message: "status must be 'active' or 'banned'" });
       }
-      const target = await getMembership(groupId, parseInt(req.params.userId));
+      const target = await getMembership(groupId, req.params.userId);
       if (!target) return res.status(404).json({ message: "Member not found" });
       if (target.role === "owner") return res.status(400).json({ message: "Cannot modify owner's status" });
       await db.update(groupMembers).set({ status }).where(eq(groupMembers.id, target.id));
@@ -360,11 +342,10 @@ export function registerGroupRoutes(app: Express) {
   });
 
   // ── POST /api/groups/:id/events ───────────────────────────────────────
-  app.post("/api/groups/:id/events", requireAuth, async (req, res) => {
+  app.post("/api/groups/:id/events", requireAuth, async (req: any, res) => {
     try {
       const groupId = parseInt(req.params.id);
-      const user = await getUser(req.session.userId!);
-      if (!user) return res.status(401).json({ message: "User not found" });
+      const user = req.user;
 
       const membership = await getMembership(groupId, user.id);
       if (!["owner", "moderator"].includes(membership?.role ?? "")) {
@@ -379,7 +360,7 @@ export function registerGroupRoutes(app: Express) {
 
       const eventDate = new Date(date);
       const [baseEvent] = await db.insert(events).values({
-        organizerId: user.id,
+        organizerId: String(user.id),
         groupId,
         title, description, category,
         date: eventDate,
@@ -405,7 +386,7 @@ export function registerGroupRoutes(app: Express) {
         const futureDates = buildRecurringDates(eventDate, recurrence, recurUntil);
         for (const instanceDate of futureDates) {
           const [instance] = await db.insert(events).values({
-            organizerId: user.id,
+            organizerId: String(user.id),
             groupId,
             title, description, category,
             date: instanceDate,
@@ -427,17 +408,14 @@ export function registerGroupRoutes(app: Express) {
         }
       }
 
-      res.status(201).json({
-        event: baseEvent,
-        instances: createdInstances.length,
-      });
+      res.status(201).json({ event: baseEvent, instances: createdInstances.length });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
   });
 
   // ── GET /api/groups/my ────────────────────────────────────────────────
-  app.get("/api/groups/my", requireAuth, async (req, res) => {
+  app.get("/api/groups/my", requireAuth, async (req: any, res) => {
     try {
       const memberships = await db.select({
         membership: groupMembers,
@@ -446,7 +424,7 @@ export function registerGroupRoutes(app: Express) {
       .from(groupMembers)
       .innerJoin(groups, eq(groupMembers.groupId, groups.id))
       .where(and(
-        eq(groupMembers.userId, req.session.userId!),
+        eq(groupMembers.userId, String(req.user.id)),
         eq(groupMembers.status, "active"),
         eq(groups.status, "active"),
       ))
@@ -462,10 +440,10 @@ export function registerGroupRoutes(app: Express) {
   });
 
   // ── POST /api/groups/:id/invite ────────────────────────────────────────
-  app.post("/api/groups/:id/invite", requireAuth, async (req, res) => {
+  app.post("/api/groups/:id/invite", requireAuth, async (req: any, res) => {
     try {
       const groupId = parseInt(req.params.id);
-      const membership = await getMembership(groupId, req.session.userId);
+      const membership = await getMembership(groupId, req.user.id);
       if (membership?.role !== "owner") {
         return res.status(403).json({ message: "Only the owner can send invites" });
       }
@@ -481,7 +459,7 @@ export function registerGroupRoutes(app: Express) {
       } else {
         await db.insert(groupMembers).values({
           groupId,
-          userId,
+          userId: String(userId),
           role: "member",
           status: "invited",
           displayName: displayName ?? null,
@@ -495,10 +473,10 @@ export function registerGroupRoutes(app: Express) {
   });
 
   // ── POST /api/groups/:id/accept-invite ────────────────────────────────
-  app.post("/api/groups/:id/accept-invite", requireAuth, async (req, res) => {
+  app.post("/api/groups/:id/accept-invite", requireAuth, async (req: any, res) => {
     try {
       const groupId = parseInt(req.params.id);
-      const membership = await getMembership(groupId, req.session.userId);
+      const membership = await getMembership(groupId, req.user.id);
       if (!membership || membership.status !== "invited") {
         return res.status(400).json({ message: "No pending invite found" });
       }
