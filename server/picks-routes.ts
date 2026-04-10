@@ -9,10 +9,10 @@ import { storage } from "./storage";
 async function requireCuratorOrAdmin(req: Request, res: Response, next: Function) {
   const user = (req as any).user;
   if (!user?.id) {
-    return res.status(401).json({ message: "Not authenticated or missing user id" });
+    return res.status(401).json({ message: "Not authenticated" });
   }
-  const localUser = await storage.getUser(Number(user.id));
-  if (!localUser || !["curator", "admin"].includes(localUser.role ?? "")) {
+  // Role comes from meh-auth via requireAuth, not the local DB
+  if (!["curator", "admin"].includes(user.role ?? "")) {
     return res.status(403).json({ message: "Curator or admin access required" });
   }
   next();
