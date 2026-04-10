@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
-import type { GroupWithDetails, EventWithTickets } from "@shared/schema";
+import type { GroupWithDetails } from "@shared/schema";
 
 const RECURRENCE_LABELS: Record<string, string> = {
   weekly: "Every week",
@@ -30,7 +30,10 @@ export default function GroupProfile() {
   const joinMutation = useMutation({
     mutationFn: () => apiRequest("POST", `/api/groups/${group?.id}/join`).then(r => r.json()),
     onSuccess: (data) => {
+      // Invalidate so the server re-fetches with the user's session and returns
+      // the updated currentUserRole / currentUserStatus, hiding the join button.
       queryClient.invalidateQueries({ queryKey: [`/api/groups/${slug}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/groups/my"] });
       toast({
         title: data.status === "pending" ? "Request sent" : "Joined!",
         description: data.status === "pending"
@@ -45,6 +48,7 @@ export default function GroupProfile() {
     mutationFn: () => apiRequest("POST", `/api/groups/${group?.id}/leave`).then(r => r.json()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/groups/${slug}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/groups/my"] });
       toast({ title: "Left group" });
     },
     onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
@@ -63,11 +67,15 @@ export default function GroupProfile() {
   );
 
   const role = group.currentUserRole;
+  const memberStatus = (group as any).currentUserStatus; // "active" | "pending" | "invited" | null
+  const isActiveMember = !!role && memberStatus === "active";
+  const isPending = memberStatus === "pending";
   const isOwnerOrMod = role === "owner" || role === "moderator";
-  const isMember = !!role;
-  const canJoin = !isMember && user;
 
-  // Separate recurring base events from instances
+  // Show join button only when: logged in, not already a member (active or pending)
+  const canJoin = user && !isActiveMember && !isPending;
+
+  // Separate recurring base events from instances, only upcoming
   const baseEvents = group.events.filter(e => !e.parentEventId && new Date(e.date) >= new Date());
   const upcomingEvents = baseEvents.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
@@ -125,6 +133,7 @@ export default function GroupProfile() {
                     </div>
                     {isOwnerOrMod && (
                       <Button asChild variant="outline" size="sm" className="rounded-full gap-1.5">
+                        {/* Links to GroupManage page */}
                         <Link href={`/groups/${slug}/manage`}>
                           <Settings className="w-3.5 h-3.5" /> Manage
                         </Link>
@@ -138,8 +147,8 @@ export default function GroupProfile() {
               </div>
 
               {/* Join / Leave / Role */}
-              <div className="mt-6 pt-6 border-t border-border flex items-center gap-3">
-                {role ? (
+              <div className="mt-6 pt-6 border-t border-border flex items-center gap-3 flex-wrap">
+                {isActiveMember ? (
                   <>
                     <Badge className="capitalize gap-1">
                       {role === "owner" && "★ "}
@@ -152,6 +161,11 @@ export default function GroupProfile() {
                       </Button>
                     )}
                   </>
+                ) : isPending ? (
+                  // Request sent — pending approval, don't show join button again
+                  <Badge variant="secondary" className="rounded-full px-4 py-1.5">
+                    Request pending approval
+                  </Badge>
                 ) : canJoin ? (
                   <Button onClick={() => joinMutation.mutate()} disabled={joinMutation.isPending}
                     className="rounded-full px-6 gap-2 shadow-lg shadow-primary/20">
