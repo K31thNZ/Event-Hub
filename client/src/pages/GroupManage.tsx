@@ -1,86 +1,85 @@
+// client/src/pages/GroupManage.tsx
+import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useParams, Link } from "wouter";
 import { getQueryFn, apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
-import { useState } from "react";
+import { useForm, Controller } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Card, CardContent } from "@/components/ui/card";
-import { Settings, Users, Shield, CheckCircle, XCircle, ShieldPlus, ShieldMinus, ArrowLeft } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { ArrowLeft, Save, Trash2 } from "lucide-react";
+import { Link } from "wouter";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { useState } from "react";
 import { EVENT_CATEGORIES } from "@shared/categories";
 import type { GroupWithDetails } from "@shared/schema";
 
+const editGroupSchema = z.object({
+  name: z.string().min(2, "Name must be at least 2 characters"),
+  description: z.string().optional(),
+  category: z.string().min(1, "Category is required"),
+  imageUrl: z.string().url("Must be a valid URL").optional().or(z.literal("")),
+  bannerUrl: z.string().url("Must be a valid URL").optional().or(z.literal("")),
+  visibility: z.enum(["public", "private"]),
+  membershipType: z.enum(["open", "invite_only"]),
+});
+type EditGroupForm = z.infer<typeof editGroupSchema>;
+
 export default function GroupManage() {
   const { slug } = useParams();
+  const [, setLocation] = useLocation();
   const { user } = useAuth();
   const { toast } = useToast();
+  const [showDelete, setShowDelete] = useState(false);
 
   const { data: group, isLoading } = useQuery<GroupWithDetails>({
     queryKey: [`/api/groups/${slug}`],
     queryFn: getQueryFn({ on401: "returnNull" }),
   });
 
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [category, setCategory] = useState("");
-  const [visibility, setVisibility] = useState("");
-  const [membershipType, setMembershipType] = useState("");
-  const [imageUrl, setImageUrl] = useState("");
-  const [bannerUrl, setBannerUrl] = useState("");
-  const [settingsInit, setSettingsInit] = useState(false);
+  const form = useForm<EditGroupForm>({
+    resolver: zodResolver(editGroupSchema),
+    values: group ? {
+      name: group.name,
+      description: group.description ?? "",
+      category: group.category,
+      imageUrl: group.imageUrl ?? "",
+      bannerUrl: group.bannerUrl ?? "",
+      visibility: group.visibility as "public" | "private",
+      membershipType: group.membershipType as "open" | "invite_only",
+    } : undefined,
+  });
 
-  if (group && !settingsInit) {
-    setName(group.name);
-    setDescription(group.description);
-    setCategory(group.category);
-    setVisibility(group.visibility);
-    setMembershipType(group.membershipType);
-    setImageUrl(group.imageUrl ?? "");
-    setBannerUrl(group.bannerUrl ?? "");
-    setSettingsInit(true);
-  }
-
-  const saveSettings = useMutation({
-    mutationFn: () => apiRequest("PATCH", `/api/groups/${group?.id}`, {
-      name, description, category, visibility, membershipType,
-      imageUrl: imageUrl || null, bannerUrl: bannerUrl || null,
-    }).then(r => r.json()),
+  const updateMutation = useMutation({
+    mutationFn: (data: EditGroupForm) =>
+      apiRequest("PATCH", `/api/groups/${group!.id}`, {
+        ...data,
+        imageUrl: data.imageUrl || null,
+        bannerUrl: data.bannerUrl || null,
+      }).then(r => r.json()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/groups/${slug}`] });
-      toast({ title: "Settings saved" });
+      queryClient.invalidateQueries({ queryKey: ["/api/groups/my"] });
+      toast({ title: "Group updated" });
+      setLocation(`/groups/${slug}`);
     },
-    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+    onError: (err: any) => toast({ title: "Failed to update", description: err.message, variant: "destructive" }),
   });
 
-  const approveMember = useMutation({
-    mutationFn: (userId: number) => apiRequest("PATCH", `/api/groups/${group?.id}/members/${userId}`, { status: "active" }).then(r => r.json()),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: [`/api/groups/${slug}`] }); toast({ title: "Member approved" }); },
-    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
-  });
-
-  const banMember = useMutation({
-    mutationFn: (userId: number) => apiRequest("PATCH", `/api/groups/${group?.id}/members/${userId}`, { status: "banned" }).then(r => r.json()),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: [`/api/groups/${slug}`] }); toast({ title: "Member removed" }); },
-    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
-  });
-
-  const promoteMod = useMutation({
-    mutationFn: (userId: number) => apiRequest("POST", `/api/groups/${group?.id}/moderators`, { userId }).then(r => r.json()),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: [`/api/groups/${slug}`] }); toast({ title: "Moderator added" }); },
-    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
-  });
-
-  const demoteMod = useMutation({
-    mutationFn: (userId: number) => apiRequest("DELETE", `/api/groups/${group?.id}/moderators/${userId}`).then(r => r.json()),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: [`/api/groups/${slug}`] }); toast({ title: "Moderator removed" }); },
-    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  const deleteMutation = useMutation({
+    mutationFn: () => apiRequest("DELETE", `/api/groups/${group!.id}`).then(r => r.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/groups"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/groups/my"] });
+      toast({ title: "Group deleted" });
+      setLocation("/groups");
+    },
+    onError: (err: any) => toast({ title: "Failed to delete", description: err.message, variant: "destructive" }),
   });
 
   if (isLoading) return (
@@ -89,179 +88,138 @@ export default function GroupManage() {
     </div>
   );
 
-  if (!group || (group.currentUserRole !== "owner" && group.currentUserRole !== "moderator")) {
-    return <div className="text-center py-32"><h2 className="text-3xl font-display font-bold">Access denied</h2></div>;
+  if (!group) return (
+    <div className="text-center py-32">
+      <h2 className="text-3xl font-display font-bold">Group not found</h2>
+    </div>
+  );
+
+  const role = group.currentUserRole;
+  if (role !== "owner" && role !== "moderator") {
+    return (
+      <div className="text-center py-32">
+        <h2 className="text-3xl font-display font-bold">Access denied</h2>
+        <p className="text-muted-foreground mt-2">Only the owner and moderators can manage this group.</p>
+        <Button asChild variant="outline" className="mt-6 rounded-full">
+          <Link href={`/groups/${slug}`}>Back to group</Link>
+        </Button>
+      </div>
+    );
   }
 
-  const isOwner = group.currentUserRole === "owner";
-  const activeMembers = group.members.filter(m => m.status === "active" && m.role !== "owner");
-  const pendingMembers = group.members.filter(m => m.status === "pending");
-  const moderators = group.members.filter(m => m.role === "moderator" && m.status === "active");
-  const regularMembers = activeMembers.filter(m => m.role === "member");
-
   return (
-    <div className="min-h-screen bg-background py-12 pb-24">
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="mb-8 flex items-center gap-4">
-          <Button asChild variant="ghost" size="sm" className="rounded-full gap-1.5">
-            <Link href={`/groups/${slug}`}><ArrowLeft className="w-4 h-4" /> Back to group</Link>
-          </Button>
-        </div>
-        <div className="mb-8">
-          <h1 className="text-3xl font-display font-bold">Manage: {group.name}</h1>
-          <p className="text-muted-foreground mt-1">
-            {isOwner ? "Owner" : "Moderator"} · {group.memberCount} member{group.memberCount !== 1 ? "s" : ""}
-          </p>
-        </div>
+    <div className="min-h-screen bg-muted/20 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-2xl mx-auto">
+        <Link href={`/groups/${slug}`} className="inline-flex items-center text-muted-foreground hover:text-primary mb-8 transition-colors">
+          <ArrowLeft className="w-4 h-4 mr-2" /> Back to {group.name}
+        </Link>
 
-        <Tabs defaultValue="members" className="w-full">
-          <TabsList className="mb-6 p-1 bg-muted/50 rounded-xl h-auto flex flex-wrap gap-1">
-            <TabsTrigger value="members" className="rounded-lg px-4 py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">
-              <Users className="w-4 h-4 mr-2" /> Members
-            </TabsTrigger>
-            {isOwner && (
-              <TabsTrigger value="moderators" className="rounded-lg px-4 py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">
-                <Shield className="w-4 h-4 mr-2" /> Moderators
-              </TabsTrigger>
-            )}
-            {isOwner && (
-              <TabsTrigger value="settings" className="rounded-lg px-4 py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">
-                <Settings className="w-4 h-4 mr-2" /> Settings
-              </TabsTrigger>
-            )}
-          </TabsList>
+        <h1 className="text-3xl font-display font-bold mb-8">Manage Group</h1>
 
-          {/* Members tab */}
-          <TabsContent value="members" className="space-y-6">
-            {pendingMembers.length > 0 && (
-              <Card className="rounded-2xl border-amber-200 dark:border-amber-900/50">
-                <div className="bg-amber-50 dark:bg-amber-900/20 px-5 py-3 border-b border-amber-200 dark:border-amber-900/50 rounded-t-2xl">
-                  <h3 className="font-semibold text-sm text-amber-800 dark:text-amber-300">Pending requests ({pendingMembers.length})</h3>
-                </div>
-                <CardContent className="p-4 space-y-2">
-                  {pendingMembers.map(m => (
-                    <div key={m.id} className="flex items-center gap-3 p-3 rounded-xl bg-muted/40">
-                      <Avatar className="h-9 w-9"><AvatarFallback>{(m.displayName ?? "U").substring(0,2).toUpperCase()}</AvatarFallback></Avatar>
-                      <p className="flex-1 font-medium text-sm">{m.displayName ?? "Unknown"}</p>
-                      <Button size="sm" variant="outline" className="rounded-lg gap-1 text-green-700 border-green-300 hover:bg-green-50" onClick={() => approveMember.mutate(m.userId)}>
-                        <CheckCircle className="w-3.5 h-3.5" /> Approve
-                      </Button>
-                      <Button size="sm" variant="outline" className="rounded-lg gap-1 text-destructive border-destructive/30 hover:bg-destructive/10" onClick={() => banMember.mutate(m.userId)}>
-                        <XCircle className="w-3.5 h-3.5" /> Decline
-                      </Button>
-                    </div>
+        <form onSubmit={form.handleSubmit(d => updateMutation.mutate(d))} className="space-y-6 bg-card border border-border rounded-3xl p-8">
+          <div className="space-y-1.5">
+            <Label>Group Name</Label>
+            <Input {...form.register("name")} className="h-12 rounded-xl" />
+            {form.formState.errors.name && <p className="text-destructive text-sm">{form.formState.errors.name.message}</p>}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Description</Label>
+            <Textarea {...form.register("description")} className="rounded-xl min-h-[100px]" placeholder="Tell people what this group is about…" />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Category</Label>
+            <Controller control={form.control} name="category" render={({ field }) => (
+              <Select onValueChange={field.onChange} value={field.value}>
+                <SelectTrigger className="h-12 rounded-xl"><SelectValue /></SelectTrigger>
+                <SelectContent className="bg-white dark:bg-zinc-900">
+                  {EVENT_CATEGORIES.map(cat => (
+                    <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>
                   ))}
-                </CardContent>
-              </Card>
-            )}
+                </SelectContent>
+              </Select>
+            )} />
+          </div>
 
-            <Card className="rounded-2xl">
-              <div className="px-5 py-3 border-b rounded-t-2xl">
-                <h3 className="font-semibold text-sm">Active members ({regularMembers.length})</h3>
+          <div className="space-y-1.5">
+            <Label>Avatar Image URL <span className="text-muted-foreground text-xs font-normal">(optional)</span></Label>
+            <Input {...form.register("imageUrl")} className="h-12 rounded-xl" placeholder="https://…" />
+            {form.formState.errors.imageUrl && <p className="text-destructive text-sm">{form.formState.errors.imageUrl.message}</p>}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Banner Image URL <span className="text-muted-foreground text-xs font-normal">(optional)</span></Label>
+            <Input {...form.register("bannerUrl")} className="h-12 rounded-xl" placeholder="https://…" />
+            {form.formState.errors.bannerUrl && <p className="text-destructive text-sm">{form.formState.errors.bannerUrl.message}</p>}
+          </div>
+
+          {/* Visibility & membership — owner only */}
+          {role === "owner" && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-border">
+              <div className="space-y-1.5">
+                <Label>Visibility</Label>
+                <Controller control={form.control} name="visibility" render={({ field }) => (
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <SelectTrigger className="h-12 rounded-xl"><SelectValue /></SelectTrigger>
+                    <SelectContent className="bg-white dark:bg-zinc-900">
+                      <SelectItem value="public">Public</SelectItem>
+                      <SelectItem value="private">Private</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )} />
               </div>
-              <CardContent className="p-4 space-y-2">
-                {regularMembers.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">No regular members yet.</p>}
-                {regularMembers.map(m => (
-                  <div key={m.id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-muted/40 transition-colors">
-                    <Avatar className="h-9 w-9"><AvatarImage src={m.avatarUrl ?? ""} /><AvatarFallback>{(m.displayName ?? "U").substring(0,2).toUpperCase()}</AvatarFallback></Avatar>
-                    <p className="flex-1 font-medium text-sm">{m.displayName ?? "Unknown"}</p>
-                    {isOwner && moderators.length < 5 && (
-                      <Button size="sm" variant="ghost" className="rounded-lg gap-1 text-xs" onClick={() => promoteMod.mutate(m.userId)}>
-                        <ShieldPlus className="w-3.5 h-3.5" /> Make mod
-                      </Button>
-                    )}
-                    <Button size="sm" variant="ghost" className="rounded-lg gap-1 text-xs text-destructive" onClick={() => banMember.mutate(m.userId)}>
-                      <XCircle className="w-3.5 h-3.5" /> Remove
-                    </Button>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Moderators tab */}
-          {isOwner && (
-            <TabsContent value="moderators">
-              <Card className="rounded-2xl">
-                <div className="px-5 py-3 border-b rounded-t-2xl flex items-center justify-between">
-                  <h3 className="font-semibold text-sm">Moderators ({moderators.length}/5)</h3>
-                </div>
-                <CardContent className="p-4 space-y-2">
-                  {moderators.length === 0 && (
-                    <p className="text-sm text-muted-foreground text-center py-4">
-                      No moderators yet. Promote active members from the Members tab.
-                    </p>
-                  )}
-                  {moderators.map(m => (
-                    <div key={m.id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-muted/40 transition-colors">
-                      <Avatar className="h-9 w-9"><AvatarImage src={m.avatarUrl ?? ""} /><AvatarFallback>{(m.displayName ?? "U").substring(0,2).toUpperCase()}</AvatarFallback></Avatar>
-                      <div className="flex-1">
-                        <p className="font-medium text-sm">{m.displayName ?? "Unknown"}</p>
-                        <p className="text-xs text-muted-foreground">Moderator</p>
-                      </div>
-                      <Button size="sm" variant="ghost" className="rounded-lg gap-1 text-xs text-muted-foreground" onClick={() => demoteMod.mutate(m.userId)}>
-                        <ShieldMinus className="w-3.5 h-3.5" /> Remove mod
-                      </Button>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-              <p className="text-xs text-muted-foreground text-center mt-4">
-                Group ownership can be transferred to a premium member by contacting{" "}
-                <a href="mailto:hello@expatevents.org" className="text-primary underline">support</a>.
-              </p>
-            </TabsContent>
+              <div className="space-y-1.5">
+                <Label>Membership</Label>
+                <Controller control={form.control} name="membershipType" render={({ field }) => (
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <SelectTrigger className="h-12 rounded-xl"><SelectValue /></SelectTrigger>
+                    <SelectContent className="bg-white dark:bg-zinc-900">
+                      <SelectItem value="open">Open (anyone can join)</SelectItem>
+                      <SelectItem value="invite_only">Invite only</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )} />
+              </div>
+            </div>
           )}
 
-          {/* Settings tab */}
-          {isOwner && (
-            <TabsContent value="settings">
-              <Card className="rounded-2xl overflow-hidden">
-                <div className="bg-primary/5 px-6 py-4 border-b border-border/50">
-                  <h3 className="font-bold font-display">Group settings</h3>
-                </div>
-                <CardContent className="p-6 space-y-5">
-                  <div className="space-y-2"><Label>Group name</Label><Input value={name} onChange={e => setName(e.target.value)} className="h-11 rounded-xl" /></div>
-                  <div className="space-y-2"><Label>Description</Label><Textarea value={description} onChange={e => setDescription(e.target.value)} className="rounded-xl resize-none" rows={3} /></div>
-                  <div className="space-y-2">
-                    <Label>Category</Label>
-                    <Select value={category} onValueChange={setCategory}>
-                      <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
-                      <SelectContent>{EVENT_CATEGORIES.map(cat => <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>)}</SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Membership type</Label>
-                    <Select value={membershipType} onValueChange={setMembershipType}>
-                      <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="open">Open — anyone can join</SelectItem>
-                        <SelectItem value="invite_only">Invite only — owner approves</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2"><Label>Logo URL</Label><Input value={imageUrl} onChange={e => setImageUrl(e.target.value)} className="h-11 rounded-xl" placeholder="https://…" /></div>
-                  <div className="space-y-2"><Label>Banner URL</Label><Input value={bannerUrl} onChange={e => setBannerUrl(e.target.value)} className="h-11 rounded-xl" placeholder="https://…" /></div>
-                  <Button onClick={() => saveSettings.mutate()} disabled={saveSettings.isPending} className="w-full rounded-xl">
-                    {saveSettings.isPending ? "Saving…" : "Save settings"}
-                  </Button>
-                </CardContent>
-              </Card>
+          <div className="flex gap-3 pt-2">
+            <Button type="submit" disabled={updateMutation.isPending} className="flex-1 h-12 rounded-xl gap-2">
+              <Save className="w-4 h-4" />
+              {updateMutation.isPending ? "Saving…" : "Save Changes"}
+            </Button>
+          </div>
+        </form>
 
-              <Card className="rounded-2xl mt-4 border-destructive/20">
-                <CardContent className="p-6">
-                  <h3 className="font-semibold text-destructive mb-2">Transfer or delete group</h3>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    To transfer ownership to another premium member, contact{" "}
-                    <a href="mailto:hello@expatevents.org" className="text-primary underline">hello@expatevents.org</a>.
-                    Ownership transfers require both parties to confirm.
-                  </p>
-                </CardContent>
-              </Card>
-            </TabsContent>
-          )}
-        </Tabs>
+        {/* Danger zone — owner only */}
+        {role === "owner" && (
+          <div className="mt-8 border border-destructive/30 rounded-3xl p-6 space-y-3">
+            <h3 className="font-semibold text-destructive">Danger Zone</h3>
+            <p className="text-sm text-muted-foreground">Deleting the group is permanent. All members will be removed and group events will be unlinked.</p>
+            <Button variant="outline" className="border-destructive/40 text-destructive hover:bg-destructive/10 rounded-xl gap-2"
+              onClick={() => setShowDelete(true)}>
+              <Trash2 className="w-4 h-4" /> Delete Group
+            </Button>
+          </div>
+        )}
       </div>
+
+      <AlertDialog open={showDelete} onOpenChange={setShowDelete}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete "{group.name}"?</AlertDialogTitle>
+            <AlertDialogDescription>This cannot be undone. The group will be suspended and all members removed.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => deleteMutation.mutate()} disabled={deleteMutation.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              {deleteMutation.isPending ? "Deleting…" : "Delete Group"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
