@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
 import type { GroupWithDetails } from "@shared/schema";
+import { MarkdownRenderer } from "@/components/groups/MarkdownDescription";
 
 const RECURRENCE_LABELS: Record<string, string> = {
   weekly: "Every week",
@@ -141,7 +142,7 @@ export default function GroupProfile() {
                     )}
                   </div>
                   {group.description && (
-                    <p className="text-muted-foreground mt-4 leading-relaxed">{group.description}</p>
+                    <MarkdownRenderer content={group.description} className="mt-4" />
                   )}
                 </div>
               </div>
