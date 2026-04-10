@@ -21,7 +21,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Ticket, CalendarDays, PlusCircle, Pencil, Trash2, Plus, Eye, EyeOff, ShieldCheck, Sparkles, Users, KeyRound, Search, ChevronDown, Check } from "lucide-react";
+import { Ticket, CalendarDays, PlusCircle, Pencil, Trash2, Plus, Eye, EyeOff, ShieldCheck, Sparkles, Users, KeyRound, Search, ChevronDown, Check, Archive } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
@@ -557,9 +557,85 @@ export default function Dashboard() {
 
         <Tabs defaultValue={defaultTab} className="w-full">
           <TabsList className="mb-8 p-1 bg-muted/50 rounded-xl flex flex-wrap gap-1 h-auto">
-            <TabsTrigger value="tickets" className="rounded-lg px-4 py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-sm">
-              <Ticket className="w-4 h-4 mr-2" /> My Tickets
-            </TabsTrigger>
+            <TabsContent value="tickets">
+  {loadingOrders ? (
+    <div className="text-center py-20">
+      <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full mx-auto" />
+    </div>
+  ) : myOrders?.length === 0 ? (
+    <div className="text-center py-24 glass rounded-3xl border-dashed">
+      <Ticket className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />
+      <h3 className="text-xl font-bold mb-2">No tickets yet</h3>
+      <p className="text-muted-foreground mb-6">You haven't purchased any tickets.</p>
+      <Button asChild variant="outline" className="rounded-full"><Link href="/">Browse Events</Link></Button>
+    </div>
+  ) : (() => {
+    const now = new Date();
+    const upcoming = myOrders?.filter(o => new Date(o.event.date) >= now) ?? [];
+    const past = myOrders?.filter(o => new Date(o.event.date) < now) ?? [];
+ 
+    return (
+      <div className="space-y-10">
+        {upcoming.length > 0 && (
+          <div>
+            <h3 className="text-lg font-semibold mb-4">Upcoming</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {upcoming.map(order => (
+                <div key={order.id} className="bg-card border border-border rounded-2xl p-6 shadow-sm hover:shadow-md transition-shadow flex flex-col">
+                  <div className="flex justify-between items-start mb-4">
+                    <div className="inline-flex px-2 py-1 rounded bg-green-100 text-green-700 text-xs font-bold uppercase tracking-wider">Confirmed</div>
+                    <span className="font-mono text-muted-foreground text-sm">#{order.id}</span>
+                  </div>
+                  <h3 className="font-display font-bold text-xl mb-1 line-clamp-1">{order.event.title}</h3>
+                  <p className="text-muted-foreground text-sm mb-6">{format(new Date(order.event.date), "MMM d, yyyy • h:mm a")}</p>
+                  <div className="mt-auto pt-4 border-t border-border flex justify-between items-center">
+                    <span className="font-bold">{order.totalAmount} ₽</span>
+                    <Button asChild variant="secondary" size="sm" className="rounded-lg">
+                      <Link href={`/orders/${order.id}`}>View Ticket</Link>
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+ 
+        {past.length > 0 && (
+          <div>
+            <h3 className="text-lg font-semibold mb-4 text-muted-foreground flex items-center gap-2">
+              <Archive className="w-4 h-4" /> Past Events
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 opacity-75">
+              {past.map(order => (
+                <div key={order.id} className="bg-card border border-border/60 rounded-2xl p-6 shadow-sm flex flex-col">
+                  <div className="flex justify-between items-start mb-4">
+                    <div className="inline-flex px-2 py-1 rounded bg-muted text-muted-foreground text-xs font-bold uppercase tracking-wider">Past</div>
+                    <span className="font-mono text-muted-foreground text-sm">#{order.id}</span>
+                  </div>
+                  <h3 className="font-display font-bold text-xl mb-1 line-clamp-1 text-muted-foreground">{order.event.title}</h3>
+                  <p className="text-muted-foreground text-sm mb-6">{format(new Date(order.event.date), "MMM d, yyyy • h:mm a")}</p>
+                  <div className="mt-auto pt-4 border-t border-border flex justify-between items-center">
+                    <span className="font-bold text-muted-foreground">{order.totalAmount} ₽</span>
+                    <Button asChild variant="outline" size="sm" className="rounded-lg">
+                      <Link href={`/orders/${order.id}`}>View</Link>
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+ 
+        {upcoming.length === 0 && past.length > 0 && (
+          <div className="text-center py-6">
+            <p className="text-muted-foreground">No upcoming events — browse to find your next one.</p>
+            <Button asChild variant="outline" className="rounded-full mt-3"><Link href="/">Browse Events</Link></Button>
+          </div>
+        )}
+      </div>
+    );
+  })()}
+</TabsContent>
             <TabsTrigger value="events" className="rounded-lg px-4 py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-sm">
               <CalendarDays className="w-4 h-4 mr-2" /> My Events
             </TabsTrigger>
