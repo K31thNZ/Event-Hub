@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, serial, integer, boolean, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, varchar } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -9,7 +9,7 @@ import { users } from "./models/auth";
 // ── Events ────────────────────────────────────────────────────────────────
 export const events = pgTable("events", {
   id:           serial("id").primaryKey(),
-  organizerId:  integer("organizer_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  organizerId:  varchar("organizer_id").notNull().references(() => users.id, { onDelete: "cascade" }), // FK → users.id (varchar/uuid)
   groupId:      integer("group_id").references(() => groups.id, { onDelete: "set null" }),
   title:        text("title").notNull(),
   description:  text("description").notNull(),
@@ -20,12 +20,12 @@ export const events = pgTable("events", {
   venueCity:    text("venue_city").notNull(),
   imageUrl:     text("image_url"),
   published:    boolean("published").default(true).notNull(),
-  isPrivate:    boolean("is_private").default(false).notNull(), // group-members-only
+  isPrivate:    boolean("is_private").default(false).notNull(),
   // Recurring events
-  recurrence:      text("recurrence"),       // null | "weekly" | "biweekly" | "monthly"
-  recurrenceDay:   integer("recurrence_day"), // 0=Sun…6=Sat
+  recurrence:      text("recurrence"),
+  recurrenceDay:   integer("recurrence_day"),
   recurrenceUntil: timestamp("recurrence_until", { withTimezone: true }),
-  parentEventId:   integer("parent_event_id"), // links instances to the original
+  parentEventId:   integer("parent_event_id"),
   createdAt:    timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
@@ -42,7 +42,7 @@ export const ticketTypes = pgTable("ticket_types", {
 // ── Orders ────────────────────────────────────────────────────────────────
 export const orders = pgTable("orders", {
   id:            serial("id").primaryKey(),
-  attendeeId:    integer("attendee_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  attendeeId:    varchar("attendee_id").notNull().references(() => users.id, { onDelete: "cascade" }), // FK → users.id (varchar/uuid)
   eventId:       integer("event_id").references(() => events.id, { onDelete: "cascade" }).notNull(),
   status:        text("status").notNull(),
   totalAmount:   integer("total_amount").notNull(),
@@ -62,7 +62,7 @@ export const orderTickets = pgTable("order_tickets", {
 // ── Curator picks ─────────────────────────────────────────────────────────
 export const curatorPicks = pgTable("curator_picks", {
   id:               serial("id").primaryKey(),
-  curatorId:        integer("curator_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  curatorId:        varchar("curator_id").notNull().references(() => users.id, { onDelete: "cascade" }), // FK → users.id (varchar/uuid)
   curatorName:      text("curator_name").notNull(),
   curatorAvatarUrl: text("curator_avatar_url"),
   curatorSpecialty: text("curator_specialty").notNull().default("Events"),
@@ -75,35 +75,30 @@ export const curatorPicks = pgTable("curator_picks", {
 });
 
 // ── Groups ────────────────────────────────────────────────────────────────
-// A group is created by a premium+ member. Requires premium membership to own.
-// Up to 5 moderators can be added by the owner.
 export const groups = pgTable("groups", {
   id:             serial("id").primaryKey(),
-  slug:           text("slug").notNull().unique(),     // URL-friendly identifier
+  slug:           text("slug").notNull().unique(),
   name:           text("name").notNull(),
   description:    text("description").notNull().default(""),
-  ownerUserId:    integer("owner_user_id").notNull().references(() => users.id),
+  ownerUserId:    varchar("owner_user_id").notNull().references(() => users.id), // FK → users.id (varchar/uuid)
   category:       text("category").notNull().default("social"),
-  imageUrl:       text("image_url"),                   // group avatar/logo
-  bannerUrl:      text("banner_url"),                  // group header banner
-  visibility:     text("visibility").notNull().default("public"),     // "public" | "private"
-  membershipType: text("membership_type").notNull().default("open"),  // "open" | "invite_only"
-  status:         text("status").notNull().default("active"),         // "active" | "suspended"
+  imageUrl:       text("image_url"),
+  bannerUrl:      text("banner_url"),
+  visibility:     text("visibility").notNull().default("public"),
+  membershipType: text("membership_type").notNull().default("open"),
+  status:         text("status").notNull().default("active"),
   createdAt:      timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt:      timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 // ── Group members ─────────────────────────────────────────────────────────
-// Tracks all membership relationships.
-// role: "owner" | "moderator" | "member"
-// status: "active" | "invited" | "pending" (join request) | "banned"
 export const groupMembers = pgTable("group_members", {
   id:          serial("id").primaryKey(),
   groupId:     integer("group_id").notNull().references(() => groups.id, { onDelete: "cascade" }),
-  userId:      integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  role:        text("role").notNull().default("member"),   // "owner"|"moderator"|"member"
-  status:      text("status").notNull().default("active"), // "active"|"invited"|"pending"|"banned"
-  displayName: text("display_name"),   // denormalised for display without auth lookup
+  userId:      varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }), // FK → users.id (varchar/uuid)
+  role:        text("role").notNull().default("member"),
+  status:      text("status").notNull().default("active"),
+  displayName: text("display_name"),
   avatarUrl:   text("avatar_url"),
   joinedAt:    timestamp("joined_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -148,7 +143,7 @@ export const groupMembersRelations = relations(groupMembers, ({ one }) => ({
 
 // ── Insert schemas ────────────────────────────────────────────────────────
 export const insertEventSchema = createInsertSchema(events, {
-  organizerId: z.number(),
+  organizerId: z.string(), // uuid string
   date: z.coerce.date(),
 }).omit({ id: true, createdAt: true });
 
@@ -157,7 +152,7 @@ export const insertTicketTypeSchema = createInsertSchema(ticketTypes, {
 }).omit({ id: true });
 
 export const insertOrderSchema = createInsertSchema(orders, {
-  attendeeId: z.number(),
+  attendeeId: z.string(), // uuid string
   eventId: z.number(),
   totalAmount: z.number(),
   status: z.string().default("pending"),
@@ -169,18 +164,18 @@ export const insertOrderTicketSchema = createInsertSchema(orderTickets, {
 }).omit({ id: true });
 
 export const insertCuratorPicksSchema = createInsertSchema(curatorPicks, {
-  curatorId: z.number(),
+  curatorId: z.string(), // uuid string
   weekOf: z.coerce.date(),
   eventIds: z.array(z.number()),
 }).omit({ id: true, createdAt: true, updatedAt: true });
 
 export const insertGroupSchema = createInsertSchema(groups, {
-  ownerUserId: z.number(),
+  ownerUserId: z.string(), // uuid string
 }).omit({ id: true, createdAt: true, updatedAt: true });
 
 export const insertGroupMemberSchema = createInsertSchema(groupMembers, {
   groupId: z.number(),
-  userId: z.number(),
+  userId: z.string(), // uuid string
 }).omit({ id: true, joinedAt: true });
 
 // ── Types ─────────────────────────────────────────────────────────────────
@@ -212,7 +207,7 @@ export type GroupWithDetails = Group & {
 
 // ── Request types ─────────────────────────────────────────────────────────
 export type CreateEventRequest = {
-  organizerId: number;
+  organizerId: string; // uuid string
   groupId?: number | null;
   title: string;
   description: string;
@@ -232,7 +227,7 @@ export type CreateEventRequest = {
 export type UpdateEventRequest = Partial<Omit<CreateEventRequest, "organizerId">>;
 
 export type CreateOrderRequest = {
-  attendeeId: number;
+  attendeeId: string; // uuid string
   eventId: number;
   attendeeName: string;
   attendeeEmail: string;
