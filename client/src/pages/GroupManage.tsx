@@ -3,13 +3,11 @@ import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { getQueryFn, apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
-import { useForm, Controller } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm, Controller } from "react-hook-form";import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Save, Trash2 } from "lucide-react";
@@ -18,6 +16,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { useState } from "react";
 import { EVENT_CATEGORIES } from "@shared/categories";
 import type { GroupWithDetails } from "@shared/schema";
+import { MarkdownEditor } from "@/components/groups/MarkdownDescription";
 
 const editGroupSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
@@ -125,7 +124,13 @@ export default function GroupManage() {
 
           <div className="space-y-1.5">
             <Label>Description</Label>
-            <Textarea {...form.register("description")} className="rounded-xl min-h-[100px]" placeholder="Tell people what this group is about…" />
+            <Controller control={form.control} name="description" render={({ field }) => (
+              <MarkdownEditor
+                value={field.value ?? ""}
+                onChange={field.onChange}
+                placeholder="Tell people what this group is about… supports **bold**, _italic_, ## headings, - lists"
+              />
+            )} />
           </div>
 
           <div className="space-y-1.5">
