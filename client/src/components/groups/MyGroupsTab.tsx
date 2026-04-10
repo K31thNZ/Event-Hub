@@ -1,6 +1,3 @@
-// client/src/components/groups/MyGroupsTab.tsx
-// Drop this into Dashboard.tsx as a component, then add the tab trigger and content.
-
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
@@ -14,7 +11,6 @@ const PREMIUM_ROLES = ["premium", "host", "curator", "admin"];
 
 export function MyGroupsTab() {
   const { user } = useAuth();
-
   const { data: myGroups = [], isLoading } = useQuery<GroupWithMeta[]>({
     queryKey: ["/api/groups/my"],
     queryFn: async () => {
@@ -65,14 +61,24 @@ export function MyGroupsTab() {
         <div className="space-y-3">
           {myGroups.map(group => (
             <div key={group.id} className="flex items-center gap-4 bg-card border border-border rounded-2xl px-5 py-4 hover:shadow-md transition-shadow">
-              {/* Avatar */}
-              <div className="w-12 h-12 rounded-xl bg-primary/10 overflow-hidden shrink-0 flex items-center justify-center">
+
+              {/* Avatar — fixed 48×48, aspect-ratio locks the box so object-cover fills it */}
+              <div className="shrink-0" style={{ width: 48, height: 48 }}>
                 {group.imageUrl ? (
-                  <img src={group.imageUrl} alt={group.name} className="w-full h-full object-cover" />
+                  <img
+                    src={group.imageUrl}
+                    alt={group.name}
+                    style={{ width: 48, height: 48, objectFit: "cover", borderRadius: 12, display: "block" }}
+                  />
                 ) : (
-                  <span className="font-display font-bold text-primary text-lg">
-                    {group.name.substring(0, 1).toUpperCase()}
-                  </span>
+                  <div
+                    style={{ width: 48, height: 48, borderRadius: 12 }}
+                    className="bg-primary/10 flex items-center justify-center"
+                  >
+                    <span className="font-display font-bold text-primary text-lg">
+                      {group.name.substring(0, 1).toUpperCase()}
+                    </span>
+                  </div>
                 )}
               </div>
 
