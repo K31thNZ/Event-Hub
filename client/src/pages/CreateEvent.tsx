@@ -2,9 +2,11 @@ import { useState, useEffect } from "react";
 import { useForm, useFieldArray, Controller, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { useQuery } from "@tanstack/react-query";
 import { useCreateEvent } from "@/hooks/use-events";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation, useParams } from "wouter";
+import { getQueryFn } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,7 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Trash2, Plus, CalendarPlus, Image as ImageIcon, AlertCircle, RefreshCw, Lock } from "lucide-react";
+import { Trash2, Plus, CalendarPlus, Image as ImageIcon, AlertCircle, RefreshCw, Users } from "lucide-react";
 import { motion } from "framer-motion";
 import { EVENT_CATEGORIES, EVENT_CATEGORY_VALUES } from "@shared/categories";
 
@@ -45,7 +47,6 @@ const createEventSchema = z.object({
       })
     )
     .min(1, "Add at least one ticket type"),
-  // New group fields
   groupId: z.number().optional().nullable(),
   isPrivate: z.boolean().optional().default(false),
   recurrence: z.enum(["weekly", "biweekly", "monthly"]).optional().nullable(),
@@ -62,6 +63,18 @@ export default function CreateEvent() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [showRecurrence, setShowRecurrence] = useState(false);
 
+  // Fetch groups the current user is a member of (owner or moderator)
+  const { data: myGroups } = useQuery<any[]>({
+    queryKey: ["/api/groups/my"],
+    queryFn: getQueryFn({ on401: "returnNull" }),
+    enabled: !!user,
+  });
+
+  // Only show groups where user can post events (owner or moderator)
+  const eligibleGroups = (myGroups ?? []).filter(
+    g => g.currentUserRole === "owner" || g.currentUserRole === "moderator"
+  );
+
   const {
     register,
     control,
@@ -76,6 +89,7 @@ export default function CreateEvent() {
         { name: "General Admission", price: 0, quantity: 100, maxPerOrder: 5 },
       ],
       isPrivate: false,
+      groupId: null,
     },
   });
 
@@ -125,7 +139,6 @@ export default function CreateEvent() {
     }
   };
 
-  // Not signed in — show prompt instead of the form
   if (!isLoading && !user) {
     return (
       <div className="min-h-screen bg-muted/20 flex flex-col items-center justify-center gap-6 px-4">
@@ -163,8 +176,6 @@ export default function CreateEvent() {
           </div>
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
-            {/* Hidden groupId field if set from URL */}
-            {watchedGroupId && <input type="hidden" {...register("groupId")} />}
 
             {/* ── Basic Information ─────────────────────────────────── */}
             <Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
@@ -179,9 +190,7 @@ export default function CreateEvent() {
                     className="h-12 rounded-xl text-lg"
                     placeholder="Moscow Summer Tech Mixer"
                   />
-                  {errors.title && (
-                    <p className="text-destructive text-sm">{errors.title.message}</p>
-                  )}
+                  {errors.title && <p className="text-destructive text-sm">{errors.title.message}</p>}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -197,37 +206,25 @@ export default function CreateEvent() {
                           </SelectTrigger>
                           <SelectContent className="bg-white dark:bg-gray-800">
                             {EVENT_CATEGORIES.map((cat) => (
-                              <SelectItem key={cat.value} value={cat.value}>
-                                {cat.label}
-                              </SelectItem>
+                              <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
                       )}
                     />
-                    {errors.category && (
-                      <p className="text-destructive text-sm">{errors.category.message}</p>
-                    )}
+                    {errors.category && <p className="text-destructive text-sm">{errors.category.message}</p>}
                   </div>
 
                   <div className="space-y-2">
                     <Label>Date & Time</Label>
-                    <Input
-                      {...register("date")}
-                      type="datetime-local"
-                      className="h-12 rounded-xl"
-                    />
-                    {errors.date && (
-                      <p className="text-destructive text-sm">{errors.date.message}</p>
-                    )}
+                    <Input {...register("date")} type="datetime-local" className="h-12 rounded-xl" />
+                    {errors.date && <p className="text-destructive text-sm">{errors.date.message}</p>}
                   </div>
                 </div>
 
                 {watchedCategory && (
                   <div className="space-y-2">
-                    <Label>
-                      Second Category <span className="text-muted-foreground font-normal">(optional)</span>
-                    </Label>
+                    <Label>Second Category <span className="text-muted-foreground font-normal">(optional)</span></Label>
                     <Controller
                       control={control}
                       name="category2"
@@ -242,9 +239,7 @@ export default function CreateEvent() {
                           <SelectContent className="bg-white dark:bg-gray-800">
                             <SelectItem value="__none__">— None —</SelectItem>
                             {EVENT_CATEGORIES.filter((cat) => cat.value !== watchedCategory).map((cat) => (
-                              <SelectItem key={cat.value} value={cat.value}>
-                                {cat.label}
-                              </SelectItem>
+                              <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
@@ -260,12 +255,44 @@ export default function CreateEvent() {
                     className="rounded-xl min-h-[120px]"
                     placeholder="Tell people what to expect…"
                   />
-                  {errors.description && (
-                    <p className="text-destructive text-sm">{errors.description.message}</p>
-                  )}
+                  {errors.description && <p className="text-destructive text-sm">{errors.description.message}</p>}
                 </div>
 
-                {/* Group-only options – shown when a groupId is present */}
+                {/* ── Group association ──────────────────────────────── */}
+                {eligibleGroups.length > 0 && (
+                  <div className="space-y-2 pt-2 border-t border-border">
+                    <Label className="flex items-center gap-2">
+                      <Users className="w-4 h-4 text-primary" />
+                      Link to a Group <span className="text-muted-foreground font-normal">(optional)</span>
+                    </Label>
+                    <Controller
+                      control={control}
+                      name="groupId"
+                      render={({ field }) => (
+                        <Select
+                          onValueChange={(v) => field.onChange(v === "__none__" ? null : parseInt(v))}
+                          value={field.value != null ? String(field.value) : "__none__"}
+                        >
+                          <SelectTrigger className="h-12 rounded-xl">
+                            <SelectValue placeholder="No group (public event)" />
+                          </SelectTrigger>
+                          <SelectContent className="bg-white dark:bg-gray-800">
+                            <SelectItem value="__none__">— No group (public event) —</SelectItem>
+                            {eligibleGroups.map((g) => (
+                              <SelectItem key={g.id} value={String(g.id)}>
+                                {g.name}
+                                {g.currentUserRole === "owner" ? " (owner)" : " (moderator)"}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                    <p className="text-xs text-muted-foreground">Linking to a group makes this event appear on the group page.</p>
+                  </div>
+                )}
+
+                {/* Group-only options — shown when a groupId is selected */}
                 {watchedGroupId && (
                   <div className="space-y-4 pt-2 border-t border-border">
                     <div className="flex items-center justify-between">
@@ -323,25 +350,13 @@ export default function CreateEvent() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <Label>Venue Address</Label>
-                    <Input
-                      {...register("venueAddress")}
-                      className="h-12 rounded-xl"
-                      placeholder="Tverskaya St, 1"
-                    />
-                    {errors.venueAddress && (
-                      <p className="text-destructive text-sm">{errors.venueAddress.message}</p>
-                    )}
+                    <Input {...register("venueAddress")} className="h-12 rounded-xl" placeholder="Tverskaya St, 1" />
+                    {errors.venueAddress && <p className="text-destructive text-sm">{errors.venueAddress.message}</p>}
                   </div>
                   <div className="space-y-2">
                     <Label>City</Label>
-                    <Input
-                      {...register("venueCity")}
-                      className="h-12 rounded-xl"
-                      placeholder="Moscow"
-                    />
-                    {errors.venueCity && (
-                      <p className="text-destructive text-sm">{errors.venueCity.message}</p>
-                    )}
+                    <Input {...register("venueCity")} className="h-12 rounded-xl" placeholder="Moscow" />
+                    {errors.venueCity && <p className="text-destructive text-sm">{errors.venueCity.message}</p>}
                   </div>
                 </div>
 
@@ -349,14 +364,8 @@ export default function CreateEvent() {
                   <Label className="flex items-center gap-2">
                     <ImageIcon className="w-4 h-4" /> Cover Image URL
                   </Label>
-                  <Input
-                    {...register("imageUrl")}
-                    className="h-12 rounded-xl"
-                    placeholder="https://images.unsplash.com/…"
-                  />
-                  {errors.imageUrl && (
-                    <p className="text-destructive text-sm">{errors.imageUrl.message}</p>
-                  )}
+                  <Input {...register("imageUrl")} className="h-12 rounded-xl" placeholder="https://images.unsplash.com/…" />
+                  {errors.imageUrl && <p className="text-destructive text-sm">{errors.imageUrl.message}</p>}
                 </div>
               </CardContent>
             </Card>
@@ -369,9 +378,7 @@ export default function CreateEvent() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() =>
-                    append({ name: "", price: 0, quantity: 50, maxPerOrder: 4 })
-                  }
+                  onClick={() => append({ name: "", price: 0, quantity: 50, maxPerOrder: 4 })}
                   className="rounded-full bg-white"
                 >
                   <Plus className="w-4 h-4 mr-1" /> Add Ticket
@@ -392,46 +399,24 @@ export default function CreateEvent() {
                         <Trash2 className="w-5 h-5" />
                       </button>
                     )}
-
                     <div className="flex-1 w-full space-y-2">
                       <Label>Ticket Name</Label>
-                      <Input
-                        {...register(`ticketTypes.${index}.name`)}
-                        placeholder="VIP Access"
-                        className="h-11 rounded-xl"
-                      />
+                      <Input {...register(`ticketTypes.${index}.name`)} placeholder="VIP Access" className="h-11 rounded-xl" />
                       {errors.ticketTypes?.[index]?.name && (
-                        <p className="text-destructive text-xs">
-                          {errors.ticketTypes[index].name.message}
-                        </p>
+                        <p className="text-destructive text-xs">{errors.ticketTypes[index].name.message}</p>
                       )}
                     </div>
-
                     <div className="w-full md:w-28 space-y-2">
                       <Label>Price (₽)</Label>
-                      <Input
-                        type="number"
-                        {...register(`ticketTypes.${index}.price`)}
-                        className="h-11 rounded-xl"
-                      />
+                      <Input type="number" {...register(`ticketTypes.${index}.price`)} className="h-11 rounded-xl" />
                     </div>
-
                     <div className="w-full md:w-28 space-y-2">
                       <Label>Total Qty</Label>
-                      <Input
-                        type="number"
-                        {...register(`ticketTypes.${index}.quantity`)}
-                        className="h-11 rounded-xl"
-                      />
+                      <Input type="number" {...register(`ticketTypes.${index}.quantity`)} className="h-11 rounded-xl" />
                     </div>
-
                     <div className="w-full md:w-28 space-y-2">
                       <Label>Max / Order</Label>
-                      <Input
-                        type="number"
-                        {...register(`ticketTypes.${index}.maxPerOrder`)}
-                        className="h-11 rounded-xl"
-                      />
+                      <Input type="number" {...register(`ticketTypes.${index}.maxPerOrder`)} className="h-11 rounded-xl" />
                     </div>
                   </div>
                 ))}
@@ -441,7 +426,6 @@ export default function CreateEvent() {
               </CardContent>
             </Card>
 
-            {/* ── Submit error ───────────────────────────────────────── */}
             {submitError && (
               <div className="flex items-start gap-3 p-4 rounded-2xl bg-destructive/10 border border-destructive/20">
                 <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
