@@ -5,13 +5,13 @@ import { eq, desc, and, inArray } from "drizzle-orm";
 import { requireAuth, requireAdmin } from "./auth-client";
 import { storage } from "./storage";
 
-// ✅ Safe middleware: checks req.user exists and has valid role
-async function requireCuratorOrAdmin(req: Request, res: Response, next: Function) {
+// ✅ Role comes from req.user (populated by requireAuth from meh-auth),
+//    NOT from the local DB which has no role column.
+function requireCuratorOrAdmin(req: Request, res: Response, next: Function) {
   const user = (req as any).user;
   if (!user?.id) {
     return res.status(401).json({ message: "Not authenticated" });
   }
-  // Role comes from meh-auth via requireAuth, not the local DB
   if (!["curator", "admin"].includes(user.role ?? "")) {
     return res.status(403).json({ message: "Curator or admin access required" });
   }
@@ -84,9 +84,7 @@ export function registerPicksRoutes(app: Express) {
 
   app.post("/api/curator/picks", requireAuth, requireCuratorOrAdmin, async (req: any, res) => {
     try {
-      const user = await storage.getUser(req.user.id);
-      if (!user) return res.status(401).json({ message: "User not found" });
-
+      const user = req.user; // use meh-auth user directly
       const { intro, eventIds, weekOf, curatorSpecialty } = req.body;
       if (!intro || !Array.isArray(eventIds) || eventIds.length === 0) {
         return res.status(400).json({ message: "intro and eventIds are required" });
@@ -98,7 +96,7 @@ export function registerPicksRoutes(app: Express) {
       const [pick] = await db.insert(curatorPicks).values({
         curatorId: String(user.id),
         curatorName: user.displayName ?? user.username,
-        curatorAvatarUrl: user.avatarUrl,
+        curatorAvatarUrl: user.avatarUrl ?? null,
         curatorSpecialty: curatorSpecialty ?? "Events",
         weekOf: weekOf ? new Date(weekOf) : new Date(),
         intro,
@@ -118,9 +116,8 @@ export function registerPicksRoutes(app: Express) {
       const [existing] = await db.select().from(curatorPicks).where(eq(curatorPicks.id, pickId));
       if (!existing) return res.status(404).json({ message: "Pick not found" });
 
-      if (existing.curatorId !== String(req.user.id)) {
-        const user = await storage.getUser(req.user.id);
-        if (user?.role !== "admin") return res.status(403).json({ message: "Not your pick" });
+      if (existing.curatorId !== String(req.user.id) && req.user.role !== "admin") {
+        return res.status(403).json({ message: "Not your pick" });
       }
 
       const { intro, eventIds, weekOf, curatorSpecialty, published, curatorName, curatorAvatarUrl } = req.body;
@@ -150,9 +147,8 @@ export function registerPicksRoutes(app: Express) {
       const [existing] = await db.select().from(curatorPicks).where(eq(curatorPicks.id, pickId));
       if (!existing) return res.status(404).json({ message: "Pick not found" });
 
-      if (existing.curatorId !== String(req.user.id)) {
-        const user = await storage.getUser(req.user.id);
-        if (user?.role !== "admin") return res.status(403).json({ message: "Not your pick" });
+      if (existing.curatorId !== String(req.user.id) && req.user.role !== "admin") {
+        return res.status(403).json({ message: "Not your pick" });
       }
 
       await db.delete(curatorPicks).where(eq(curatorPicks.id, pickId));
@@ -187,7 +183,6 @@ export function registerPicksRoutes(app: Express) {
       if (!validRoles.includes(role)) {
         return res.status(400).json({ message: `Invalid role. Must be one of: ${validRoles.join(", ")}` });
       }
-
       const authUrl = process.env.AUTH_SERVICE_URL ?? "https://auth.expatevents.org";
       const response = await fetch(`${authUrl}/api/admin/users/${userId}/role`, {
         method: "PATCH",
