@@ -5,10 +5,19 @@ import { groups, groupMembers, events, ticketTypes } from "@shared/schema";
 import { eq, and, desc, sql, inArray, ne } from "drizzle-orm";
 import { addWeeks } from "date-fns";
 import { storage } from "./storage";
-import { requireAuth } from "./auth-client"; // ← unified auth, same as routes.ts & picks-routes.ts
+import { requireAuth, getUser } from "./auth-client";
 
 const MAX_MODERATORS = 5;
 const MAX_RECURRING_INSTANCES = 12;
+
+// ── Optional auth ─────────────────────────────────────────────────────────
+// Populates req.user if a valid session exists, but never rejects unauthenticated requests.
+// Used on public routes so currentUserRole/currentUserStatus can be returned.
+async function optionalAuth(req: Request, _res: Response, next: Function) {
+  const user = await getUser(req);
+  if (user) (req as any).user = user;
+  next();
+}
 
 async function getMembership(groupId: number, userId: number | string | undefined) {
   if (!userId) return null;
@@ -41,8 +50,8 @@ function buildRecurringDates(
 
 export function registerGroupRoutes(app: Express) {
 
-  // ── GET /api/groups (public) ──────────────────────────────────────────
-  app.get("/api/groups", async (req: any, res) => {
+  // ── GET /api/groups (public + optional auth) ──────────────────────────
+  app.get("/api/groups", optionalAuth, async (req: any, res) => {
     try {
       const { category } = req.query;
       const userId = req.user?.id;
@@ -83,8 +92,8 @@ export function registerGroupRoutes(app: Express) {
     }
   });
 
-  // ── GET /api/groups/:slug (public) ────────────────────────────────────
-  app.get("/api/groups/:slug", async (req: any, res) => {
+  // ── GET /api/groups/:slug (public + optional auth) ────────────────────
+  app.get("/api/groups/:slug", optionalAuth, async (req: any, res) => {
     try {
       const userId = req.user?.id;
       const [group] = await db.select().from(groups)
@@ -188,8 +197,8 @@ export function registerGroupRoutes(app: Express) {
     try {
       const groupId = parseInt(req.params.id);
       const membership = await getMembership(groupId, req.user.id);
-      if (membership?.role !== "owner") {
-        return res.status(403).json({ message: "Only the group owner can edit settings" });
+      if (!["owner", "moderator"].includes(membership?.role ?? "")) {
+        return res.status(403).json({ message: "Only the group owner or moderators can edit settings" });
       }
 
       const { name, description, category, imageUrl, bannerUrl, visibility, membershipType } = req.body;
@@ -199,8 +208,9 @@ export function registerGroupRoutes(app: Express) {
         ...(category !== undefined && { category }),
         ...(imageUrl !== undefined && { imageUrl }),
         ...(bannerUrl !== undefined && { bannerUrl }),
-        ...(visibility !== undefined && { visibility }),
-        ...(membershipType !== undefined && { membershipType }),
+        // Only owner can change visibility/membershipType
+        ...(visibility !== undefined && membership?.role === "owner" && { visibility }),
+        ...(membershipType !== undefined && membership?.role === "owner" && { membershipType }),
         updatedAt: new Date(),
       }).where(eq(groups.id, groupId)).returning();
 
@@ -280,13 +290,11 @@ export function registerGroupRoutes(app: Express) {
       if (membership?.role !== "owner") {
         return res.status(403).json({ message: "Only the owner can add moderators" });
       }
-
       const mods = await db.select().from(groupMembers)
         .where(and(eq(groupMembers.groupId, groupId), eq(groupMembers.role, "moderator")));
       if (mods.length >= MAX_MODERATORS) {
         return res.status(400).json({ message: `Maximum ${MAX_MODERATORS} moderators allowed` });
       }
-
       const { userId } = req.body;
       const targetMembership = await getMembership(groupId, userId);
       if (!targetMembership || targetMembership.status !== "active") {
