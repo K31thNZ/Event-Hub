@@ -53,17 +53,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get(api.events.get.path, async (req, res) => {
-    try {
-      const event = await storage.getEvent(Number(req.params.id));
-      if (!event) return res.status(404).json({ message: "Event not found" });
-      res.json(event);
-    } catch (e) {
-      res.status(500).json({ message: "Failed to fetch event" });
-    }
-  });
-
-  // Admins see all events; regular users see only their own.
+  // MUST be before /:id or Express treats "me" as an id
   app.get(api.events.myEvents.path, requireAuth, async (req: any, res) => {
     try {
       const events = req.user.role === "admin"
@@ -72,6 +62,16 @@ export async function registerRoutes(
       res.json(events);
     } catch (e) {
       res.status(500).json({ message: "Failed to fetch your events" });
+    }
+  });
+
+  app.get(api.events.get.path, async (req, res) => {
+    try {
+      const event = await storage.getEvent(Number(req.params.id));
+      if (!event) return res.status(404).json({ message: "Event not found" });
+      res.json(event);
+    } catch (e) {
+      res.status(500).json({ message: "Failed to fetch event" });
     }
   });
 
@@ -126,6 +126,7 @@ export async function registerRoutes(
   });
 
   // ── Orders ────────────────────────────────────────────────────────────
+  // MUST be before /:id — same rule as events/me
   app.get(api.orders.myOrders.path, requireAuth, async (req: any, res) => {
     try {
       const orders = await storage.getOrdersByAttendee(String(req.user.id));
