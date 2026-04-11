@@ -92,6 +92,32 @@ export function registerGroupRoutes(app: Express) {
     }
   });
 
+  // ── GET /api/groups/my ────────────────────────────────────────────────
+  // MUST be registered before /:slug or Express treats "my" as a slug value.
+  app.get("/api/groups/my", requireAuth, async (req: any, res) => {
+    try {
+      const memberships = await db.select({
+        membership: groupMembers,
+        group: groups,
+      })
+      .from(groupMembers)
+      .innerJoin(groups, eq(groupMembers.groupId, groups.id))
+      .where(and(
+        eq(groupMembers.userId, String(req.user.id)),
+        eq(groupMembers.status, "active"),
+        eq(groups.status, "active"),
+      ))
+      .orderBy(desc(groupMembers.joinedAt));
+
+      res.json(memberships.map(r => ({
+        ...r.group,
+        currentUserRole: r.membership.role,
+      })));
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // ── GET /api/groups/:slug (public + optional auth) ────────────────────
   app.get("/api/groups/:slug", optionalAuth, async (req: any, res) => {
     try {
@@ -417,31 +443,6 @@ export function registerGroupRoutes(app: Express) {
       }
 
       res.status(201).json({ event: baseEvent, instances: createdInstances.length });
-    } catch (err: any) {
-      res.status(500).json({ message: err.message });
-    }
-  });
-
-  // ── GET /api/groups/my ────────────────────────────────────────────────
-  app.get("/api/groups/my", requireAuth, async (req: any, res) => {
-    try {
-      const memberships = await db.select({
-        membership: groupMembers,
-        group: groups,
-      })
-      .from(groupMembers)
-      .innerJoin(groups, eq(groupMembers.groupId, groups.id))
-      .where(and(
-        eq(groupMembers.userId, String(req.user.id)),
-        eq(groupMembers.status, "active"),
-        eq(groups.status, "active"),
-      ))
-      .orderBy(desc(groupMembers.joinedAt));
-
-      res.json(memberships.map(r => ({
-        ...r.group,
-        currentUserRole: r.membership.role,
-      })));
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
