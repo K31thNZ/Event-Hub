@@ -18,12 +18,11 @@ async function notifyNewEvent(event: EventWithTickets): Promise<void> {
   const secret  = process.env.SERVICE_SECRET;
 
   if (!secret) {
-    console.warn("[notify] SERVICE_SECRET not set — skipping Telegram notifications");
-    return;
+    console.warn("[notify] SERVICE_SECRET not set — notifications will fire without auth (dev mode)");
   }
 
   try {
-    const res = await fetch(`${authUrl}/api/internal/notify-event`, {
+    const res = await fetch(`${authUrl}/api/notify/event`, {
       method:  "POST",
       headers: {
         "Content-Type":     "application/json",
