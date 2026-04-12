@@ -55,7 +55,7 @@ const createEventSchema = z.object({
 
 type FormValues = z.infer<typeof createEventSchema>;
 
-export default function CreateEvent() {
+export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) {
   const [, setLocation] = useLocation();
   const params = useParams<{ groupId?: string }>();
   const createEvent = useCreateEvent();
@@ -93,15 +93,17 @@ export default function CreateEvent() {
     },
   });
 
-  // Set groupId from URL if present
+  // When arriving via /groups/:slug/create-event, resolve slug → numeric group id
+  // and pre-select it. Also works with the old ?groupId= numeric URL param.
   useEffect(() => {
-    if (params.groupId) {
+    if (groupSlug && myGroups) {
+      const group = myGroups.find((g: any) => g.slug === groupSlug);
+      if (group) setValue("groupId", group.id);
+    } else if (params.groupId) {
       const numericId = parseInt(params.groupId, 10);
-      if (!isNaN(numericId)) {
-        setValue("groupId", numericId);
-      }
+      if (!isNaN(numericId)) setValue("groupId", numericId);
     }
-  }, [params.groupId, setValue]);
+  }, [groupSlug, myGroups, params.groupId, setValue]);
 
   const { fields, append, remove } = useFieldArray({
     control,
