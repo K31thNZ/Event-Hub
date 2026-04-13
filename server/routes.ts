@@ -1,4 +1,5 @@
 import { registerGroupRoutes } from "./group-routes";
+import { scheduleTicketReminders } from "./ticket-reminders";
 import { registerPicksRoutes } from "./picks-routes";
 import type { Express } from "express";
 import type { Server } from "http";
@@ -166,6 +167,7 @@ export async function registerRoutes(
   });
 
   await seedDatabase();
+  scheduleTicketReminders();
   return httpServer;
 }
 
