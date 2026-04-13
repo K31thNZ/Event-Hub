@@ -1,3 +1,4 @@
+import { scheduleReminders } from "./reminder-scheduler";
 import express, { type Request, Response, NextFunction } from "express";
 import cors from "cors";
 import { registerRoutes } from "./routes";
@@ -34,7 +35,6 @@ app.use(
     },
   }),
 );
-
 app.use(express.urlencoded({ extended: false }));
 
 export function log(message: string, source = "express") {
@@ -68,6 +68,7 @@ app.use((req, res, next) => {
       log(logLine);
     }
   });
+
   next();
 });
 
@@ -85,7 +86,6 @@ app.use((req, res, next) => {
   });
 
   // Keep-alive ping — must be registered BEFORE serveStatic
-  // serveStatic adds a catch-all that would swallow /ping in production
   app.get("/ping", (_req, res) => res.send("OK"));
 
   // Static file serving / Vite dev server — always last
@@ -105,6 +105,7 @@ app.use((req, res, next) => {
     },
     () => {
       log(`serving on port ${port}`);
+      scheduleReminders();
     },
   );
 })();
