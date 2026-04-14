@@ -23,4 +23,7 @@ export default defineConfig({
       strict: true,
     },
   },
+  optimizeDeps: {
+    include: ['lucide-react']   // Add this to force pre-bundling
+  }
 });
