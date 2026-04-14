@@ -18,7 +18,6 @@ import { motion } from "framer-motion";
 // ── Countdown hook ────────────────────────────────────────────────────────
 function useCountdown(targetDate: Date) {
   const [timeLeft, setTimeLeft] = useState<string | null>(null);
-
   useEffect(() => {
     const tick = () => {
       const diff = targetDate.getTime() - Date.now();
@@ -33,30 +32,27 @@ function useCountdown(targetDate: Date) {
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, [targetDate]);
-
   return timeLeft;
 }
 
-// ── Checkout schema ──────────────────────────────────────────────────────
+// ── Checkout schema ───────────────────────────────────────────────────────
 const checkoutSchema = z.object({
   attendeeEmail: z.string().email("Please enter a valid email"),
   notes: z.string().optional(),
   ticketNames: z.record(z.string().min(1, "Name is required")),
 });
-
 type CheckoutForm = z.infer<typeof checkoutSchema>;
 
 export default function EventDetails() {
   const { id } = useParams();
   const [, setLocation] = useLocation();
   const { data: event, isLoading } = useEvent(Number(id));
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, login } = useAuth();
   const createOrder = useCreateOrder();
 
   const [selectedTickets, setSelectedTickets] = useState<Record<number, number>>({});
   const [isTicketPanelOpen, setIsTicketPanelOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
-
   const countdown = useCountdown(event ? new Date(event.date) : new Date(0));
 
   const { register, handleSubmit, setValue, formState: { errors } } = useForm<CheckoutForm>({
@@ -73,6 +69,7 @@ export default function EventDetails() {
       <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full" />
     </div>
   );
+
   if (!event) return (
     <div className="text-center py-32">
       <h2 className="text-3xl font-display font-bold">Event not found</h2>
@@ -131,13 +128,9 @@ export default function EventDetails() {
   return (
     <div className="min-h-screen bg-background">
 
-      {/* Hero Banner - smaller decorative bar */}
+      {/* Hero Banner */}
       <div className="w-full h-48 md:h-64 relative">
-        <img
-          src={event.imageUrl || fallbackImage}
-          alt={event.title}
-          className="w-full h-full object-cover"
-        />
+        <img src={event.imageUrl || fallbackImage} alt={event.title} className="w-full h-full object-cover" />
         <div className="absolute inset-0 bg-gradient-to-t from-background to-transparent" />
       </div>
 
@@ -145,40 +138,31 @@ export default function EventDetails() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
         <div className="flex flex-col lg:flex-row gap-12">
 
-          {/* Main Content (left column) */}
+          {/* Left column */}
           <div className="flex-1 space-y-8">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="bg-card rounded-3xl p-6 md:p-10 border border-border shadow-lg"
-            >
-              {/* Category badge */}
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+              className="bg-card rounded-3xl p-6 md:p-10 border border-border shadow-lg">
+
               <div className="inline-flex px-4 py-1.5 rounded-full bg-primary/10 text-primary font-bold text-sm tracking-wider uppercase mb-6">
                 {event.category}
               </div>
 
-              {/* Title */}
               <h1 className="text-3xl md:text-5xl font-display font-bold text-foreground leading-tight mb-6">
                 {event.title}
               </h1>
 
-              {/* Event details row */}
               <div className="flex flex-wrap gap-6 text-muted-foreground border-t border-b border-border py-6 mb-8">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-primary/5 flex items-center justify-center">
                     <Calendar className="w-4 h-4 text-primary" />
                   </div>
-                  <p className="font-semibold text-foreground">
-                    {format(new Date(event.date), "EEEE, MMMM d, yyyy")}
-                  </p>
+                  <p className="font-semibold text-foreground">{format(new Date(event.date), "EEEE, MMMM d, yyyy")}</p>
                 </div>
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-primary/5 flex items-center justify-center">
                     <Clock className="w-4 h-4 text-primary" />
                   </div>
-                  <p className="font-semibold text-foreground">
-                    {format(new Date(event.date), "h:mm a")}
-                  </p>
+                  <p className="font-semibold text-foreground">{format(new Date(event.date), "h:mm a")}</p>
                 </div>
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-primary/5 flex items-center justify-center">
@@ -191,7 +175,6 @@ export default function EventDetails() {
                 </div>
               </div>
 
-              {/* Description */}
               <div>
                 <h3 className="text-2xl font-display font-bold mb-4">About this event</h3>
                 <div className="prose prose-lg dark:prose-invert max-w-none text-muted-foreground whitespace-pre-wrap">
@@ -199,7 +182,6 @@ export default function EventDetails() {
                 </div>
               </div>
 
-              {/* Countdown (if within 10 hours) */}
               {countdown && (
                 <div className="mt-8 flex items-center gap-3 bg-destructive/10 border border-destructive/20 text-destructive px-5 py-3 rounded-2xl">
                   <Timer className="w-5 h-5 shrink-0" />
@@ -209,27 +191,21 @@ export default function EventDetails() {
                   </div>
                 </div>
               )}
-
-              {/* The large "Get Tickets" button has been REMOVED */}
             </motion.div>
           </div>
 
-          {/* Sidebar (right column) – contains the only "Get Tickets" button */}
+          {/* Sidebar */}
           <div className="lg:w-[320px]">
-            <motion.div
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.2 }}
-              className="sticky top-28 bg-card border border-border shadow-xl rounded-3xl p-6 space-y-5"
-            >
+            <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.2 }}
+              className="sticky top-28 bg-card border border-border shadow-xl rounded-3xl p-6 space-y-5">
+
               <h3 className="text-lg font-display font-bold text-foreground">Event Details</h3>
+
               <div className="space-y-4 text-sm text-muted-foreground">
                 <div className="flex items-start gap-3">
                   <Calendar className="w-4 h-4 text-primary mt-0.5 shrink-0" />
                   <div>
-                    <p className="font-semibold text-foreground">
-                      {format(new Date(event.date), "EEEE, MMMM d, yyyy")}
-                    </p>
+                    <p className="font-semibold text-foreground">{format(new Date(event.date), "EEEE, MMMM d, yyyy")}</p>
                     <p>{format(new Date(event.date), "h:mm a")}</p>
                   </div>
                 </div>
@@ -255,9 +231,13 @@ export default function EventDetails() {
                 </div>
               </div>
 
+              {/* ── Sign in / Get Tickets button ───────────────────────── */}
               {!isAuthenticated ? (
-                <Button asChild className="w-full rounded-xl shadow-lg shadow-primary/20">
-                  <a href="/api/login">Login to Get Tickets</a>
+                <Button
+                  onClick={login}
+                  className="w-full rounded-xl shadow-lg shadow-primary/20"
+                >
+                  Sign in to get tickets
                 </Button>
               ) : (
                 <Button
@@ -271,10 +251,11 @@ export default function EventDetails() {
               )}
             </motion.div>
           </div>
+
         </div>
       </div>
 
-      {/* Ticket selector panel (unchanged) */}
+      {/* Ticket selector panel */}
       <Sheet open={isTicketPanelOpen} onOpenChange={setIsTicketPanelOpen}>
         <SheetContent className="w-full sm:max-w-md overflow-y-auto border-l-0 sm:rounded-l-3xl shadow-2xl">
           <SheetHeader className="mb-6">
@@ -301,17 +282,13 @@ export default function EventDetails() {
                         className="w-8 h-8 rounded-full bg-background flex items-center justify-center shadow-sm hover:text-primary transition-colors disabled:opacity-50"
                         onClick={() => updateQuantity(ticket.id, -1, ticket.maxPerOrder)}
                         disabled={qty === 0}
-                      >
-                        <Minus className="w-4 h-4" />
-                      </button>
+                      ><Minus className="w-4 h-4" /></button>
                       <span className="w-4 text-center font-bold">{qty}</span>
                       <button
                         className="w-8 h-8 rounded-full bg-background flex items-center justify-center shadow-sm hover:text-primary transition-colors disabled:opacity-50"
                         onClick={() => updateQuantity(ticket.id, 1, ticket.maxPerOrder)}
                         disabled={qty >= ticket.maxPerOrder}
-                      >
-                        <Plus className="w-4 h-4" />
-                      </button>
+                      ><Plus className="w-4 h-4" /></button>
                     </div>
                   </div>
                   <p className="text-xs text-muted-foreground text-right">Max {ticket.maxPerOrder} per order</p>
@@ -338,7 +315,7 @@ export default function EventDetails() {
         </SheetContent>
       </Sheet>
 
-      {/* Checkout panel (unchanged) */}
+      {/* Checkout panel */}
       <Sheet open={isCheckoutOpen} onOpenChange={setIsCheckoutOpen}>
         <SheetContent className="w-full sm:max-w-md overflow-y-auto border-l-0 sm:rounded-l-3xl shadow-2xl">
           <SheetHeader className="mb-8">
@@ -374,15 +351,9 @@ export default function EventDetails() {
                 {ticketNameFields.map(({ key, label }) => (
                   <div key={key} className="space-y-1.5">
                     <Label className="text-sm text-muted-foreground">{label}</Label>
-                    <Input
-                      {...register(`ticketNames.${key}`)}
-                      className="h-12 rounded-xl bg-background"
-                      placeholder="Full name"
-                    />
+                    <Input {...register(`ticketNames.${key}`)} className="h-12 rounded-xl bg-background" placeholder="Full name" />
                     {errors.ticketNames?.[key] && (
-                      <p className="text-destructive text-sm">
-                        {errors.ticketNames[key]?.message as string}
-                      </p>
+                      <p className="text-destructive text-sm">{errors.ticketNames[key]?.message as string}</p>
                     )}
                   </div>
                 ))}
@@ -391,32 +362,16 @@ export default function EventDetails() {
 
             <div className="space-y-2">
               <Label>Email Address</Label>
-              <Input
-                {...register("attendeeEmail")}
-                type="email"
-                className="h-12 rounded-xl bg-background"
-                placeholder="your@email.com"
-              />
-              {errors.attendeeEmail?.message && (
-                <p className="text-destructive text-sm">{errors.attendeeEmail.message}</p>
-              )}
+              <Input {...register("attendeeEmail")} type="email" className="h-12 rounded-xl bg-background" placeholder="your@email.com" />
+              {errors.attendeeEmail?.message && <p className="text-destructive text-sm">{errors.attendeeEmail.message}</p>}
             </div>
 
             <div className="space-y-2">
               <Label>Special Notes (Optional)</Label>
-              <Textarea
-                {...register("notes")}
-                className="resize-none rounded-xl bg-background"
-                rows={3}
-                placeholder="Dietary requirements, accessibility needs…"
-              />
+              <Textarea {...register("notes")} className="resize-none rounded-xl bg-background" rows={3} placeholder="Dietary requirements, accessibility needs…" />
             </div>
 
-            <Button
-              type="submit"
-              disabled={createOrder.isPending}
-              className="w-full h-14 rounded-xl text-lg shadow-xl shadow-primary/20 mt-8"
-            >
+            <Button type="submit" disabled={createOrder.isPending} className="w-full h-14 rounded-xl text-lg shadow-xl shadow-primary/20 mt-8">
               {createOrder.isPending ? "Processing…" : `Pay ${totalAmount} ₽`}
             </Button>
             <p className="text-center text-xs text-muted-foreground mt-4">
@@ -425,6 +380,7 @@ export default function EventDetails() {
           </form>
         </SheetContent>
       </Sheet>
+
     </div>
   );
 }
