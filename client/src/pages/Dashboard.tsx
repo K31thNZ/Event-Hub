@@ -23,7 +23,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Ticket, CalendarDays, PlusCircle, Pencil, Trash2, Plus, Eye, EyeOff,
-  ShieldCheck, Sparkles, Users, KeyRound, Search, ChevronDown, Check,
+  ShieldCheck, Sparkles, UsersRound, KeyRound, Search, ChevronDown, Check,
   Archive,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -586,7 +586,7 @@ export default function Dashboard() {
               <CalendarDays className="w-4 h-4 mr-2" /> My Events
             </TabsTrigger>
             <TabsTrigger value="groups" className="rounded-lg px-4 py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-sm">
-              <Users className="w-4 h-4 mr-2" /> My Groups
+              <UsersRound className="w-4 h-4 mr-2" /> My Groups
             </TabsTrigger>
             {isCurator && (
               <TabsTrigger value="curator" className="rounded-lg px-4 py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-sm">
@@ -595,7 +595,7 @@ export default function Dashboard() {
             )}
             {isAdmin && (
               <TabsTrigger value="admin" className="rounded-lg px-4 py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-sm">
-                <Users className="w-4 h-4 mr-2" /> Users
+                <UsersRound className="w-4 h-4 mr-2" /> Users
               </TabsTrigger>
             )}
             <TabsTrigger value="password" className="rounded-lg px-4 py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-sm">
