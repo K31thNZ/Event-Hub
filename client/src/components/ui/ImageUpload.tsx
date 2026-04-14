@@ -12,7 +12,7 @@ import { useRef, useState, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Upload, X, Image as ImageIcon, Loader2 } from "lucide-react";
-import { VisuallyHidden } from "@/components/ui/visually-hidden";
+//import { VisuallyHidden } from "@/components/ui/visually-hidden";
 
 const CLOUDINARY_CLOUD = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME ?? "";
 const CLOUDINARY_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET ?? "";
