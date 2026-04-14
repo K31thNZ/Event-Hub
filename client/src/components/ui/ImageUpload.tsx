@@ -188,7 +188,7 @@ export function ImageUpload({
           value={urlInput}
           onChange={handleUrlChange}
           className="h-11 rounded-xl flex-1"
-          placeholder="https://images.unsplash.com/…"
+          placeholder="link for image"
         />
         {canUpload && (
           <button
