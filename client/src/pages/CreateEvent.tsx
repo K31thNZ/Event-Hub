@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Trash2, Plus, CalendarPlus, AlertCircle, ArrowLeft, ArrowRight, Check } from "lucide-react";
+import { Trash2, Plus, CalendarPlus, AlertCircle, ArrowLeft, ArrowRight, Check, Users } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { EVENT_CATEGORIES, EVENT_CATEGORY_VALUES } from "@shared/categories";
 import { ImageUpload } from "@/components/ui/ImageUpload";
@@ -106,7 +106,9 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
 
   const watchedCategory = watch("category");
   const watchedImageUrl = watch("imageUrl");
-  const watchedGroupId = watch("groupId");   // ← This was missing
+  const watchedGroupId = watch("groupId");
+  const watchedDate = watch("date");
+  const watchedTime = watch("time");
 
   // Auto-fill default image
   useEffect(() => {
