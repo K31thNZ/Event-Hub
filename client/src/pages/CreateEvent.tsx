@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Trash2, Plus, CalendarPlus, AlertCircle, ArrowLeft, ArrowRight, Check, Users } from "lucide-react";
+import { Trash2, Plus, CalendarPlus, AlertCircle, ArrowLeft, ArrowRight, Check, UsersRound } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { EVENT_CATEGORIES, EVENT_CATEGORY_VALUES } from "@shared/categories";
 import { ImageUpload } from "@/components/ui/ImageUpload";
@@ -171,16 +171,9 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
   };
 
   const goToStep = (targetStep: number) => {
-    // Allow going back to any previous step, and also forward only if the target step is not ahead of current? 
-    // To keep it simple, we allow any step ≤ current step (go back) and also allow skipping forward? 
-    // The user may want to click on step 4 directly from step 1, but that might cause missing data. 
-    // We'll restrict to only steps <= current step for safety, but you can change if needed.
+    // Allow going back to any previous step, but not forward (use Next button)
     if (targetStep <= step) {
       setStep(targetStep);
-    } else {
-      // Optionally, you could validate required fields before allowing forward jump.
-      // For now, just use Next button for forward navigation.
-      console.log("Cannot jump forward; use Next button.");
     }
   };
 
@@ -239,6 +232,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
   }
 
   if (authLoading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+
   if (!user) {
     return (
       <div className="min-h-screen bg-muted/20 flex flex-col items-center justify-center gap-6 px-4">
@@ -247,7 +241,9 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
         </div>
         <h1 className="text-3xl font-bold">Host an Event</h1>
         <p className="text-muted-foreground">You need to be signed in.</p>
-        <Button onClick={() => window.location.href = `${AUTH_URL}/login?returnTo=${encodeURIComponent(window.location.href)}`}>
+        <Button 
+          onClick={() => window.location.href = `${AUTH_URL}/login?returnTo=${encodeURIComponent(window.location.href)}`}
+        >
           Sign In
         </Button>
       </div>
@@ -302,7 +298,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                   <CardContent className="p-8 space-y-6">
                     <div className="space-y-2">
                       <Label>Event Title</Label>
-                      <Input {...register("title")} className="h-12 rounded-xl" placeholder="Moscow Summer Tech Mixer" />
+                      <Input {...register("title")} className="h-12 rounded-xl text-lg" placeholder="Moscow Summer Tech Mixer" />
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -317,6 +313,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                           </Select>
                         )} />
                       </div>
+
                       {watchedCategory && (
                         <div className="space-y-2">
                           <Label>Second Category (optional)</Label>
@@ -342,7 +339,9 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
 
                     {eligibleGroups.length > 0 && (
                       <div className="pt-4 border-t space-y-2">
-                        <Label className="flex items-center gap-2"><Users className="w-4 h-4" /> Link to a Group (optional)</Label>
+                        <Label className="flex items-center gap-2">
+                          <UsersRound className="w-4 h-4" /> Link to a Group (optional)
+                        </Label>
                         <Controller control={control} name="groupId" render={({ field }) => (
                           <Select onValueChange={(v) => field.onChange(v === "__none__" ? null : parseInt(v))} value={field.value != null ? String(field.value) : "__none__"}>
                             <SelectTrigger className="h-12"><SelectValue placeholder="No group (public event)" /></SelectTrigger>
@@ -417,9 +416,13 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                       <Input {...register("yandexMapLink")} placeholder="https://yandex.ru/maps/..." />
                     </div>
 
-                    <Controller control={control} name="imageUrl" render={({ field }) => (
-                      <ImageUpload value={field.value} onChange={field.onChange} label="Cover Image" aspectRatio="wide" />
-                    )} />
+                    <Controller
+                      control={control}
+                      name="imageUrl"
+                      render={({ field }) => (
+                        <ImageUpload value={field.value} onChange={field.onChange} label="Cover Image" aspectRatio="wide" />
+                      )}
+                    />
                   </CardContent>
                 </Card>
               </motion.div>
