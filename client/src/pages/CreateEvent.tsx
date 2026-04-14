@@ -20,11 +20,52 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Trash2, Plus, CalendarPlus, Image as ImageIcon, AlertCircle, RefreshCw, Users } from "lucide-react";
+import { Trash2, Plus, CalendarPlus, AlertCircle, RefreshCw, Users } from "lucide-react";
 import { motion } from "framer-motion";
 import { EVENT_CATEGORIES, EVENT_CATEGORY_VALUES } from "@shared/categories";
+import { ImageUpload } from "@/components/ui/ImageUpload";
+
+// ── Category default images ───────────────────────────────────────────────
+// Curated Unsplash photos that match each event category.
+// Used to pre-fill the image field when a category is selected.
+const CATEGORY_DEFAULT_IMAGES: Record<string, string> = {
+  networking:  "https://images.unsplash.com/photo-1511795409834-ef04bbd61622?w=800&q=80",
+  tech:        "https://images.unsplash.com/photo-1518770660439-4636190af475?w=800&q=80",
+  culture:     "https://images.unsplash.com/photo-1561214115-f2f134cc4912?w=800&q=80",
+  food:        "https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=800&q=80",
+  sports:      "https://images.unsplash.com/photo-1461896836934-ffe607ba8211?w=800&q=80",
+  music:       "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=800&q=80",
+  language:    "https://images.unsplash.com/photo-1546410531-bb4caa6b424d?w=800&q=80",
+  outdoor:     "https://images.unsplash.com/photo-1501854140801-50d01698950b?w=800&q=80",
+  games:       "https://images.unsplash.com/photo-1606503825008-909a67e63c3d?w=800&q=80",
+  business:    "https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?w=800&q=80",
+  wellness:    "https://images.unsplash.com/photo-1545205597-3d9d02c29597?w=800&q=80",
+  family:      "https://images.unsplash.com/photo-1516627145497-ae6968895b74?w=800&q=80",
+  social:      "https://images.unsplash.com/photo-1529543544282-ea669407fca3?w=800&q=80",
+  volunteering:"https://images.unsplash.com/photo-1559027615-cd4628902d4a?w=800&q=80",
+  other:       "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=800&q=80",
+};
 
 const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? "https://auth.expatevents.org";
+
+// ── Default cover images per category (Unsplash, free to use) ────────────
+const CATEGORY_DEFAULT_IMAGES: Record<string, string> = {
+  networking:  "https://images.unsplash.com/photo-1511795409834-ef04bbd61622?w=1200&auto=format&fit=crop",
+  tech:        "https://images.unsplash.com/photo-1504384308090-c894fdcc538d?w=1200&auto=format&fit=crop",
+  culture:     "https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=1200&auto=format&fit=crop",
+  food:        "https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=1200&auto=format&fit=crop",
+  sports:      "https://images.unsplash.com/photo-1461896836934-ffe607ba8211?w=1200&auto=format&fit=crop",
+  music:       "https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?w=1200&auto=format&fit=crop",
+  language:    "https://images.unsplash.com/photo-1546410531-bb4caa6b424d?w=1200&auto=format&fit=crop",
+  outdoor:     "https://images.unsplash.com/photo-1533692328991-08159ff19fca?w=1200&auto=format&fit=crop",
+  games:       "https://images.unsplash.com/photo-1493711662062-fa541adb3fc8?w=1200&auto=format&fit=crop",
+  business:    "https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=1200&auto=format&fit=crop",
+  wellness:    "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=1200&auto=format&fit=crop",
+  family:      "https://images.unsplash.com/photo-1478131143081-80f7f84ca84d?w=1200&auto=format&fit=crop",
+  social:      "https://images.unsplash.com/photo-1529543544282-ea669407fca3?w=1200&auto=format&fit=crop",
+  volunteering:"https://images.unsplash.com/photo-1593113598332-cd288d649433?w=1200&auto=format&fit=crop",
+  other:       "https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=1200&auto=format&fit=crop",
+};
 
 const createEventSchema = z.object({
   title: z.string().min(3, "Title must be at least 3 characters"),
@@ -36,7 +77,7 @@ const createEventSchema = z.object({
   date: z.coerce.date({ required_error: "Valid date is required" }),
   venueAddress: z.string().min(3, "Address is required"),
   venueCity: z.string().min(2, "City is required"),
-  imageUrl: z.string().url("Must be a valid URL").optional().or(z.literal("")),
+  imageUrl: z.string().optional().nullable(),
   ticketTypes: z
     .array(
       z.object({
@@ -111,7 +152,27 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
   });
 
   const watchedCategory = useWatch({ control, name: "category" });
-  const watchedGroupId = watch("groupId");
+  const watchedGroupId  = watch("groupId");
+  const watchedImageUrl = watch("imageUrl");
+
+  // When a category is selected and no image URL has been set yet,
+  // auto-fill with the default image for that category.
+  useEffect(() => {
+    if (watchedCategory && !watchedImageUrl) {
+      const def = CATEGORY_DEFAULT_IMAGES[watchedCategory];
+      if (def) setValue("imageUrl", def);
+    }
+  }, [watchedCategory]);
+  const watchedImageUrl = watch("imageUrl");
+
+  // When a category is selected and no custom image has been set yet,
+  // pre-fill with the category's default image.
+  useEffect(() => {
+    if (watchedCategory && !watchedImageUrl) {
+      const defaultImg = CATEGORY_DEFAULT_IMAGES[watchedCategory];
+      if (defaultImg) setValue("imageUrl", defaultImg);
+    }
+  }, [watchedCategory]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onSubmit = async (data: FormValues) => {
     setSubmitError(null);
@@ -378,13 +439,19 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label className="flex items-center gap-2">
-                    <ImageIcon className="w-4 h-4" /> Cover Image URL
-                  </Label>
-                  <Input {...register("imageUrl")} className="h-12 rounded-xl" placeholder="https://images.unsplash.com/…" />
-                  {errors.imageUrl && <p className="text-destructive text-sm">{errors.imageUrl.message}</p>}
-                </div>
+                <Controller
+                  control={control}
+                  name="imageUrl"
+                  render={({ field }) => (
+                    <ImageUpload
+                      value={field.value}
+                      onChange={field.onChange}
+                      label="Cover Image"
+                      hint="Upload a photo or use the default for your chosen category. Max 2MB."
+                      aspectRatio="wide"
+                    />
+                  )}
+                />
               </CardContent>
             </Card>
 
