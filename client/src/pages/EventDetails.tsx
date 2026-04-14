@@ -1,386 +1,428 @@
-import { useParams, useLocation } from "wouter";
-import { useEvent } from "@/hooks/use-events";
-import { useCreateOrder } from "@/hooks/use-orders";
+import { useState, useEffect } from "react";
+import { useForm, useFieldArray, Controller, useWatch } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { useQuery } from "@tanstack/react-query";
+import { useCreateEvent } from "@/hooks/use-events";
 import { useAuth } from "@/hooks/use-auth";
-import { format } from "date-fns";
-import { Calendar, Clock, MapPin, Ticket, Plus, Minus, ArrowRight, CheckCircle2, Timer } from "lucide-react";
+import { useLocation, useParams } from "wouter";
+import { getQueryFn } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
-import { useState, useEffect } from "react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
-import { motion } from "framer-motion";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Trash2, Plus, CalendarPlus, AlertCircle, ArrowLeft, ArrowRight, Check, Users } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { EVENT_CATEGORIES, EVENT_CATEGORY_VALUES } from "@shared/categories";
+import { ImageUpload } from "@/components/ui/ImageUpload";
 
-// ── Countdown hook ────────────────────────────────────────────────────────
-function useCountdown(targetDate: Date) {
-  const [timeLeft, setTimeLeft] = useState<string | null>(null);
-  useEffect(() => {
-    const tick = () => {
-      const diff = targetDate.getTime() - Date.now();
-      if (diff <= 0) { setTimeLeft("00:00:00"); return; }
-      if (diff > 10 * 60 * 60 * 1000) { setTimeLeft(null); return; }
-      const h = Math.floor(diff / 3_600_000);
-      const m = Math.floor((diff % 3_600_000) / 60_000);
-      const s = Math.floor((diff % 60_000) / 1_000);
-      setTimeLeft(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`);
-    };
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, [targetDate]);
-  return timeLeft;
-}
+const CATEGORY_DEFAULT_IMAGES: Record<string, string> = {
+  networking: "https://images.unsplash.com/photo-1511795409834-ef04bbd61622?w=1200&auto=format&fit=crop",
+  tech: "https://images.unsplash.com/photo-1504384308090-c894fdcc538d?w=1200&auto=format&fit=crop",
+  culture: "https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=1200&auto=format&fit=crop",
+  food: "https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=1200&auto=format&fit=crop",
+  sports: "https://images.unsplash.com/photo-1461896836934-ffe607ba8211?w=1200&auto=format&fit=crop",
+  music: "https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?w=1200&auto=format&fit=crop",
+  language: "https://images.unsplash.com/photo-1546410531-bb4caa6b424d?w=1200&auto=format&fit=crop",
+  outdoor: "https://images.unsplash.com/photo-1533692328991-08159ff19fca?w=1200&auto=format&fit=crop",
+  games: "https://images.unsplash.com/photo-1493711662062-fa541adb3fc8?w=1200&auto=format&fit=crop",
+  business: "https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=1200&auto=format&fit=crop",
+  wellness: "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=1200&auto=format&fit=crop",
+  family: "https://images.unsplash.com/photo-1478131143081-80f7f84ca84d?w=1200&auto=format&fit=crop",
+  social: "https://images.unsplash.com/photo-1529543544282-ea669407fca3?w=1200&auto=format&fit=crop",
+  volunteering: "https://images.unsplash.com/photo-1593113598332-cd288d649433?w=1200&auto=format&fit=crop",
+  other: "https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=1200&auto=format&fit=crop",
+};
 
-// ── Checkout schema ───────────────────────────────────────────────────────
-const checkoutSchema = z.object({
-  attendeeEmail: z.string().email("Please enter a valid email"),
-  notes: z.string().optional(),
-  ticketNames: z.record(z.string().min(1, "Name is required")),
+const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? "https://auth.expatevents.org";
+
+const createEventSchema = z.object({
+  title: z.string().min(3, "Title must be at least 3 characters"),
+  description: z.string().min(10, "Provide a better description"),
+  category: z.enum(EVENT_CATEGORY_VALUES as [string, ...string[]]),
+  category2: z.string().optional().nullable(),
+  date: z.coerce.date({ required_error: "Valid date is required" }),
+  time: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Select a valid time"),
+  venueAddress: z.string().min(3, "Address is required"),
+  venueCity: z.string().min(2, "City is required"),
+  yandexMapLink: z.string().url("Please enter a valid Yandex Maps link").optional().or(z.literal("")),
+  imageUrl: z.string().optional().nullable(),
+  ticketTypes: z
+    .array(
+      z.object({
+        name: z.string().min(1, "Name required"),
+        price: z.coerce.number().min(0, "Price >= 0"),
+        quantity: z.coerce.number().min(1, "Quantity > 0"),
+        maxPerOrder: z.coerce.number().min(1, "Max > 0"),
+      })
+    )
+    .min(1, "Add at least one ticket type"),
+  groupId: z.number().optional().nullable(),
+  isPrivate: z.boolean().default(false),
 });
-type CheckoutForm = z.infer<typeof checkoutSchema>;
 
-export default function EventDetails() {
-  const { id } = useParams();
+type FormValues = z.infer<typeof createEventSchema>;
+
+const STEPS = ["Event Details", "Date & Time", "Location", "Tickets", "Preview & Publish"];
+
+export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) {
   const [, setLocation] = useLocation();
-  const { data: event, isLoading } = useEvent(Number(id));
-  const { user, isAuthenticated, login } = useAuth();
-  const createOrder = useCreateOrder();
+  const params = useParams<{ groupId?: string }>();
+  const createEvent = useCreateEvent();
+  const { user, isLoading: authLoading } = useAuth();
 
-  const [selectedTickets, setSelectedTickets] = useState<Record<number, number>>({});
-  const [isTicketPanelOpen, setIsTicketPanelOpen] = useState(false);
-  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
-  const countdown = useCountdown(event ? new Date(event.date) : new Date(0));
+  const [step, setStep] = useState(0);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const { register, handleSubmit, setValue, formState: { errors } } = useForm<CheckoutForm>({
-    resolver: zodResolver(checkoutSchema),
-    defaultValues: { ticketNames: {} },
+  const { data: myGroups } = useQuery<any[]>({
+    queryKey: ["/api/groups/my"],
+    queryFn: getQueryFn({ on401: "returnNull" }),
+    enabled: !!user,
   });
 
+  const eligibleGroups = (myGroups ?? []).filter(
+    (g) => g.currentUserRole === "owner" || g.currentUserRole === "moderator"
+  );
+
+  const form = useForm<FormValues>({
+    resolver: zodResolver(createEventSchema),
+    defaultValues: {
+      ticketTypes: [{ name: "General Admission", price: 0, quantity: 100, maxPerOrder: 5 }],
+      isPrivate: false,
+      time: "18:00",
+    },
+  });
+
+  const { register, control, handleSubmit, setValue, watch } = form;
+
+  const watchedCategory = watch("category");
+  const watchedImageUrl = watch("imageUrl");
+  const watchedGroupId = watch("groupId");
+
+  // Auto-fill default image
   useEffect(() => {
-    if (user?.email) setValue("attendeeEmail", user.email);
-  }, [user, setValue]);
+    if (watchedCategory && !watchedImageUrl) {
+      const defaultImg = CATEGORY_DEFAULT_IMAGES[watchedCategory as keyof typeof CATEGORY_DEFAULT_IMAGES];
+      if (defaultImg) setValue("imageUrl", defaultImg);
+    }
+  }, [watchedCategory, watchedImageUrl, setValue]);
 
-  if (isLoading) return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full" />
-    </div>
-  );
+  // Pre-select group
+  useEffect(() => {
+    if (groupSlug && myGroups) {
+      const group = myGroups.find((g: any) => g.slug === groupSlug);
+      if (group) setValue("groupId", group.id);
+    } else if (params.groupId) {
+      const numericId = parseInt(params.groupId, 10);
+      if (!isNaN(numericId)) setValue("groupId", numericId);
+    }
+  }, [groupSlug, myGroups, params.groupId, setValue]);
 
-  if (!event) return (
-    <div className="text-center py-32">
-      <h2 className="text-3xl font-display font-bold">Event not found</h2>
-    </div>
-  );
+  const { fields, append, remove } = useFieldArray({ control, name: "ticketTypes" });
 
-  const fallbackImage = "https://images.unsplash.com/photo-1511795409834-ef04bbd61622?q=80&w=2000&auto=format&fit=crop";
+  const onSubmit = async (data: FormValues) => {
+    if (!user) return;
 
-  const updateQuantity = (ticketId: number, delta: number, max: number) => {
-    const current = selectedTickets[ticketId] || 0;
-    const next = Math.max(0, Math.min(max, current + delta));
-    setSelectedTickets(prev => ({ ...prev, [ticketId]: next }));
-  };
-
-  const totalAmount = Object.entries(selectedTickets).reduce((sum, [tId, qty]) => {
-    const t = event.ticketTypes.find(x => x.id === Number(tId));
-    return sum + ((t?.price || 0) * qty);
-  }, 0);
-
-  const totalQty = Object.values(selectedTickets).reduce((a, b) => a + b, 0);
-
-  const ticketNameFields: { key: string; label: string }[] = [];
-  Object.entries(selectedTickets)
-    .filter(([, qty]) => qty > 0)
-    .forEach(([tId, qty]) => {
-      const t = event.ticketTypes.find(x => x.id === Number(tId));
-      for (let i = 0; i < qty; i++) {
-        ticketNameFields.push({
-          key: `${tId}_${i}`,
-          label: qty > 1 ? `${t?.name} — ticket ${i + 1}` : t?.name ?? "Ticket",
-        });
-      }
-    });
-
-  const onSubmitCheckout = async (data: CheckoutForm) => {
-    const primaryName = Object.values(data.ticketNames)[0] ?? "";
-    const payload = {
-      eventId: event.id,
-      attendeeName: primaryName,
-      attendeeEmail: data.attendeeEmail,
-      notes: data.notes,
-      tickets: Object.entries(selectedTickets)
-        .filter(([, qty]) => qty > 0)
-        .map(([tId, qty]) => ({ ticketTypeId: Number(tId), quantity: qty })),
-    };
     try {
-      const order = await createOrder.mutateAsync(payload);
-      setIsCheckoutOpen(false);
-      setIsTicketPanelOpen(false);
-      setLocation(`/orders/${order.id}`);
-    } catch {
-      // error handled by mutation
+      const [hours, minutes] = data.time.split(":").map(Number);
+      const eventDate = new Date(data.date);
+      eventDate.setHours(hours, minutes);
+
+      const result = await createEvent.mutateAsync({
+        ...data,
+        date: eventDate,
+        published: true,
+        groupId: data.groupId ?? null,
+      } as any);
+
+      setLocation(`/events/${result.id}`);
+    } catch (e: any) {
+      setSubmitError(e?.message || "Failed to create event");
     }
   };
 
-  return (
-    <div className="min-h-screen bg-background">
+  const nextStep = () => setStep((s) => Math.min(s + 1, 4));
+  const prevStep = () => setStep((s) => Math.max(s - 1, 0));
 
-      {/* Hero Banner */}
-      <div className="w-full h-48 md:h-64 relative">
-        <img src={event.imageUrl || fallbackImage} alt={event.title} className="w-full h-full object-cover" />
-        <div className="absolute inset-0 bg-gradient-to-t from-background to-transparent" />
-      </div>
+  const timeSlots: string[] = [];
+  for (let h = 0; h < 24; h++) {
+    for (let m = 0; m < 60; m += 15) {
+      timeSlots.push(`${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`);
+    }
+  }
 
-      {/* Main content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
-        <div className="flex flex-col lg:flex-row gap-12">
+  if (authLoading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
 
-          {/* Left column */}
-          <div className="flex-1 space-y-8">
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-              className="bg-card rounded-3xl p-6 md:p-10 border border-border shadow-lg">
-
-              <div className="inline-flex px-4 py-1.5 rounded-full bg-primary/10 text-primary font-bold text-sm tracking-wider uppercase mb-6">
-                {event.category}
-              </div>
-
-              <h1 className="text-3xl md:text-5xl font-display font-bold text-foreground leading-tight mb-6">
-                {event.title}
-              </h1>
-
-              <div className="flex flex-wrap gap-6 text-muted-foreground border-t border-b border-border py-6 mb-8">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-primary/5 flex items-center justify-center">
-                    <Calendar className="w-4 h-4 text-primary" />
-                  </div>
-                  <p className="font-semibold text-foreground">{format(new Date(event.date), "EEEE, MMMM d, yyyy")}</p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-primary/5 flex items-center justify-center">
-                    <Clock className="w-4 h-4 text-primary" />
-                  </div>
-                  <p className="font-semibold text-foreground">{format(new Date(event.date), "h:mm a")}</p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-primary/5 flex items-center justify-center">
-                    <MapPin className="w-4 h-4 text-primary" />
-                  </div>
-                  <div>
-                    <p className="font-semibold text-foreground">{event.venueAddress}</p>
-                    <p className="text-sm">{event.venueCity}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-2xl font-display font-bold mb-4">About this event</h3>
-                <div className="prose prose-lg dark:prose-invert max-w-none text-muted-foreground whitespace-pre-wrap">
-                  {event.description}
-                </div>
-              </div>
-
-              {countdown && (
-                <div className="mt-8 flex items-center gap-3 bg-destructive/10 border border-destructive/20 text-destructive px-5 py-3 rounded-2xl">
-                  <Timer className="w-5 h-5 shrink-0" />
-                  <div>
-                    <p className="text-xs font-medium">Event starts in</p>
-                    <p className="font-mono font-bold text-xl tracking-widest">{countdown}</p>
-                  </div>
-                </div>
-              )}
-            </motion.div>
-          </div>
-
-          {/* Sidebar */}
-          <div className="lg:w-[320px]">
-            <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.2 }}
-              className="sticky top-28 bg-card border border-border shadow-xl rounded-3xl p-6 space-y-5">
-
-              <h3 className="text-lg font-display font-bold text-foreground">Event Details</h3>
-
-              <div className="space-y-4 text-sm text-muted-foreground">
-                <div className="flex items-start gap-3">
-                  <Calendar className="w-4 h-4 text-primary mt-0.5 shrink-0" />
-                  <div>
-                    <p className="font-semibold text-foreground">{format(new Date(event.date), "EEEE, MMMM d, yyyy")}</p>
-                    <p>{format(new Date(event.date), "h:mm a")}</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <MapPin className="w-4 h-4 text-primary mt-0.5 shrink-0" />
-                  <div>
-                    <p className="font-semibold text-foreground">{event.venueAddress}</p>
-                    <p>{event.venueCity}</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <Ticket className="w-4 h-4 text-primary mt-0.5 shrink-0" />
-                  <div>
-                    <p className="font-semibold text-foreground">
-                      {event.ticketTypes.length} ticket type{event.ticketTypes.length !== 1 ? "s" : ""}
-                    </p>
-                    <p>
-                      from {Math.min(...event.ticketTypes.map(t => t.price)) === 0
-                        ? "Free"
-                        : `${Math.min(...event.ticketTypes.map(t => t.price))} ₽`}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* ── Sign in / Get Tickets button ───────────────────────── */}
-              {!isAuthenticated ? (
-                <Button
-                  onClick={login}
-                  className="w-full rounded-xl shadow-lg shadow-primary/20"
-                >
-                  Sign in to get tickets
-                </Button>
-              ) : (
-                <Button
-                  onClick={() => setIsTicketPanelOpen(true)}
-                  className="w-full rounded-xl shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all hover:-translate-y-0.5 group"
-                >
-                  <Ticket className="w-4 h-4 mr-2" />
-                  Get Tickets
-                  <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
-                </Button>
-              )}
-            </motion.div>
-          </div>
-
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-muted/20 flex flex-col items-center justify-center gap-6 px-4">
+        <div className="w-16 h-16 bg-primary/10 text-primary rounded-2xl flex items-center justify-center">
+          <CalendarPlus className="w-8 h-8" />
         </div>
+        <h1 className="text-3xl font-bold">Host an Event</h1>
+        <p className="text-muted-foreground">You need to be signed in.</p>
+        <Button 
+          onClick={() => window.location.href = `${AUTH_URL}/login?returnTo=${encodeURIComponent(window.location.href)}`}
+        >
+          Sign In
+        </Button>
       </div>
+    );
+  }
 
-      {/* Ticket selector panel */}
-      <Sheet open={isTicketPanelOpen} onOpenChange={setIsTicketPanelOpen}>
-        <SheetContent className="w-full sm:max-w-md overflow-y-auto border-l-0 sm:rounded-l-3xl shadow-2xl">
-          <SheetHeader className="mb-6">
-            <SheetTitle className="font-display text-2xl flex items-center gap-2">
-              <Ticket className="w-5 h-5 text-primary" /> Select Tickets
-            </SheetTitle>
-            <SheetDescription>{event.title}</SheetDescription>
-          </SheetHeader>
-
-          <div className="space-y-4 mb-8">
-            {event.ticketTypes.map(ticket => {
-              const qty = selectedTickets[ticket.id] || 0;
-              return (
-                <div key={ticket.id} className="p-4 rounded-2xl border border-border bg-background flex flex-col gap-3">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <p className="font-bold text-lg">{ticket.name}</p>
-                      <p className="text-primary font-semibold">
-                        {ticket.price > 0 ? `${ticket.price} ₽` : "Free"}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-3 bg-muted rounded-full p-1 border border-border/50">
-                      <button
-                        className="w-8 h-8 rounded-full bg-background flex items-center justify-center shadow-sm hover:text-primary transition-colors disabled:opacity-50"
-                        onClick={() => updateQuantity(ticket.id, -1, ticket.maxPerOrder)}
-                        disabled={qty === 0}
-                      ><Minus className="w-4 h-4" /></button>
-                      <span className="w-4 text-center font-bold">{qty}</span>
-                      <button
-                        className="w-8 h-8 rounded-full bg-background flex items-center justify-center shadow-sm hover:text-primary transition-colors disabled:opacity-50"
-                        onClick={() => updateQuantity(ticket.id, 1, ticket.maxPerOrder)}
-                        disabled={qty >= ticket.maxPerOrder}
-                      ><Plus className="w-4 h-4" /></button>
-                    </div>
-                  </div>
-                  <p className="text-xs text-muted-foreground text-right">Max {ticket.maxPerOrder} per order</p>
+  return (
+    <div className="min-h-screen bg-muted/20 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-3xl mx-auto">
+        {/* Stepper */}
+        <div className="mb-10">
+          <div className="flex justify-between mb-4">
+            {STEPS.map((label, i) => (
+              <div key={i} className={`flex flex-col items-center ${i <= step ? "text-primary" : "text-muted-foreground"}`}>
+                <div className={`w-9 h-9 rounded-full flex items-center justify-center border-2 ${i < step ? "bg-primary border-primary text-white" : i === step ? "border-primary" : "border-muted"}`}>
+                  {i < step ? <Check className="w-5 h-5" /> : i + 1}
                 </div>
-              );
-            })}
-          </div>
-
-          <div className="pt-5 border-t border-dashed border-border mb-6">
-            <div className="flex justify-between items-end">
-              <span className="text-muted-foreground">Total ({totalQty} ticket{totalQty !== 1 ? "s" : ""})</span>
-              <span className="text-3xl font-bold">{totalAmount} ₽</span>
-            </div>
-          </div>
-
-          <Button
-            onClick={() => { setIsTicketPanelOpen(false); setIsCheckoutOpen(true); }}
-            disabled={totalQty === 0}
-            className="w-full py-6 rounded-xl text-lg shadow-xl shadow-primary/20 hover:shadow-primary/30 transition-all hover:-translate-y-0.5 group"
-          >
-            Continue to Checkout
-            <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
-          </Button>
-        </SheetContent>
-      </Sheet>
-
-      {/* Checkout panel */}
-      <Sheet open={isCheckoutOpen} onOpenChange={setIsCheckoutOpen}>
-        <SheetContent className="w-full sm:max-w-md overflow-y-auto border-l-0 sm:rounded-l-3xl shadow-2xl">
-          <SheetHeader className="mb-8">
-            <SheetTitle className="font-display text-3xl">Secure Checkout</SheetTitle>
-            <SheetDescription>Please provide your details to complete the order.</SheetDescription>
-          </SheetHeader>
-
-          <div className="bg-primary/5 rounded-2xl p-5 mb-8 border border-primary/10">
-            <h4 className="font-semibold text-primary flex items-center gap-2 mb-3">
-              <CheckCircle2 className="w-4 h-4" /> Order Summary
-            </h4>
-            <div className="space-y-2 text-sm font-medium">
-              {Object.entries(selectedTickets).filter(([, q]) => q > 0).map(([id, q]) => {
-                const t = event.ticketTypes.find(x => x.id === Number(id));
-                return (
-                  <div key={id} className="flex justify-between">
-                    <span>{q}x {t?.name}</span>
-                    <span>{(t?.price || 0) * q} ₽</span>
-                  </div>
-                );
-              })}
-              <div className="pt-3 border-t border-primary/20 flex justify-between font-bold text-lg text-foreground">
-                <span>Total</span>
-                <span>{totalAmount} ₽</span>
+                <span className="text-xs mt-2 hidden sm:block">{label}</span>
               </div>
-            </div>
+            ))}
           </div>
+        </div>
 
-          <form onSubmit={handleSubmit(onSubmitCheckout)} className="space-y-5">
-            {ticketNameFields.length > 0 && (
-              <div className="space-y-4">
-                <Label className="text-base font-semibold">Name on the ticket</Label>
-                {ticketNameFields.map(({ key, label }) => (
-                  <div key={key} className="space-y-1.5">
-                    <Label className="text-sm text-muted-foreground">{label}</Label>
-                    <Input {...register(`ticketNames.${key}`)} className="h-12 rounded-xl bg-background" placeholder="Full name" />
-                    {errors.ticketNames?.[key] && (
-                      <p className="text-destructive text-sm">{errors.ticketNames[key]?.message as string}</p>
+        <form onSubmit={handleSubmit(onSubmit)}>
+          <AnimatePresence mode="wait">
+            {/* Step 1: Event Details */}
+            {step === 0 && (
+              <motion.div key="step1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+                <Card className="rounded-3xl shadow-lg">
+                  <div className="bg-primary/5 px-8 py-4 border-b"><h2 className="text-xl font-bold">Event Details</h2></div>
+                  <CardContent className="p-8 space-y-6">
+                    <div className="space-y-2">
+                      <Label>Event Title</Label>
+                      <Input {...register("title")} className="h-12 rounded-xl text-lg" placeholder="Moscow Summer Tech Mixer" />
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <Label>Category</Label>
+                        <Controller control={control} name="category" render={({ field }) => (
+                          <Select onValueChange={field.onChange} value={field.value}>
+                            <SelectTrigger className="h-12"><SelectValue placeholder="Select a category" /></SelectTrigger>
+                            <SelectContent>
+                              {EVENT_CATEGORIES.map(cat => <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        )} />
+                      </div>
+
+                      {watchedCategory && (
+                        <div className="space-y-2">
+                          <Label>Second Category (optional)</Label>
+                          <Controller control={control} name="category2" render={({ field }) => (
+                            <Select onValueChange={(v) => field.onChange(v === "__none__" ? null : v)} value={field.value ?? "__none__"}>
+                              <SelectTrigger className="h-12"><SelectValue placeholder="None" /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__none__">— None —</SelectItem>
+                                {EVENT_CATEGORIES.filter(c => c.value !== watchedCategory).map(c => (
+                                  <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )} />
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Description</Label>
+                      <Textarea {...register("description")} className="min-h-[120px] rounded-xl" placeholder="Tell people what to expect…" />
+                    </div>
+
+                    {eligibleGroups.length > 0 && (
+                      <div className="pt-4 border-t space-y-2">
+                        <Label className="flex items-center gap-2">
+                          <Users className="w-4 h-4" /> Link to a Group (optional)
+                        </Label>
+                        <Controller control={control} name="groupId" render={({ field }) => (
+                          <Select onValueChange={(v) => field.onChange(v === "__none__" ? null : parseInt(v))} value={field.value != null ? String(field.value) : "__none__"}>
+                            <SelectTrigger className="h-12"><SelectValue placeholder="No group (public event)" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__none__">— No group —</SelectItem>
+                              {eligibleGroups.map(g => <SelectItem key={g.id} value={String(g.id)}>{g.name}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        )} />
+                      </div>
                     )}
-                  </div>
-                ))}
-              </div>
+
+                    {watchedGroupId && (
+                      <div className="flex justify-between items-center pt-4 border-t">
+                        <div>
+                          <p className="font-medium">Private event</p>
+                          <p className="text-xs text-muted-foreground">Only group members can see this event</p>
+                        </div>
+                        <Controller control={control} name="isPrivate" render={({ field }) => <Switch checked={!!field.value} onCheckedChange={field.onChange} />} />
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </motion.div>
             )}
 
-            <div className="space-y-2">
-              <Label>Email Address</Label>
-              <Input {...register("attendeeEmail")} type="email" className="h-12 rounded-xl bg-background" placeholder="your@email.com" />
-              {errors.attendeeEmail?.message && <p className="text-destructive text-sm">{errors.attendeeEmail.message}</p>}
-            </div>
+            {/* Step 2: Date & Time */}
+            {step === 1 && (
+              <motion.div key="step2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+                <Card className="rounded-3xl shadow-lg">
+                  <div className="bg-primary/5 px-8 py-4 border-b"><h2 className="text-xl font-bold">Date & Time</h2></div>
+                  <CardContent className="p-8 space-y-6">
+                    <div className="space-y-2">
+                      <Label>Date</Label>
+                      <Input type="date" {...register("date")} className="h-12" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Time (15-minute increments)</Label>
+                      <Controller control={control} name="time" render={({ field }) => (
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <SelectTrigger className="h-12"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {timeSlots.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      )} />
+                    </div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            )}
 
-            <div className="space-y-2">
-              <Label>Special Notes (Optional)</Label>
-              <Textarea {...register("notes")} className="resize-none rounded-xl bg-background" rows={3} placeholder="Dietary requirements, accessibility needs…" />
-            </div>
+            {/* Step 3: Location */}
+            {step === 2 && (
+              <motion.div key="step3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+                <Card className="rounded-3xl shadow-lg">
+                  <div className="bg-primary/5 px-8 py-4 border-b"><h2 className="text-xl font-bold">Location & Media</h2></div>
+                  <CardContent className="p-8 space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <Label>Venue Address</Label>
+                        <Input {...register("venueAddress")} placeholder="Tverskaya St, 1" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>City</Label>
+                        <Input {...register("venueCity")} placeholder="Moscow" />
+                      </div>
+                    </div>
 
-            <Button type="submit" disabled={createOrder.isPending} className="w-full h-14 rounded-xl text-lg shadow-xl shadow-primary/20 mt-8">
-              {createOrder.isPending ? "Processing…" : `Pay ${totalAmount} ₽`}
-            </Button>
-            <p className="text-center text-xs text-muted-foreground mt-4">
-              This is a mock payment. No real charges will be made.
-            </p>
-          </form>
-        </SheetContent>
-      </Sheet>
+                    <div className="space-y-2">
+                      <Label>Yandex Maps Share Link (optional)</Label>
+                      <Input {...register("yandexMapLink")} placeholder="https://yandex.ru/maps/..." />
+                    </div>
 
+                    <Controller
+                      control={control}
+                      name="imageUrl"
+                      render={({ field }) => (
+                        <ImageUpload value={field.value} onChange={field.onChange} label="Cover Image" aspectRatio="wide" />
+                      )}
+                    />
+                  </CardContent>
+                </Card>
+              </motion.div>
+            )}
+
+            {/* Step 4: Tickets */}
+            {step === 3 && (
+              <motion.div key="step4" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+                <Card className="rounded-3xl shadow-lg">
+                  <div className="bg-primary/5 px-8 py-4 border-b flex justify-between items-center">
+                    <h2 className="text-xl font-bold">Tickets</h2>
+                    <Button type="button" variant="outline" size="sm" onClick={() => append({ name: "", price: 0, quantity: 50, maxPerOrder: 4 })}>
+                      <Plus className="mr-1 w-4 h-4" /> Add Ticket
+                    </Button>
+                  </div>
+                  <CardContent className="p-8 space-y-6">
+                    {fields.map((field, index) => (
+                      <div key={field.id} className="relative bg-card p-6 rounded-2xl border flex flex-col md:flex-row gap-4">
+                        {fields.length > 1 && (
+                          <button type="button" onClick={() => remove(index)} className="absolute top-4 right-4 text-destructive">
+                            <Trash2 className="w-5 h-5" />
+                          </button>
+                        )}
+                        <div className="flex-1 space-y-2">
+                          <Label>Ticket Name</Label>
+                          <Input {...register(`ticketTypes.${index}.name`)} placeholder="General Admission" />
+                        </div>
+                        <div className="w-28 space-y-2">
+                          <Label>Price (₽)</Label>
+                          <Input type="number" {...register(`ticketTypes.${index}.price`)} />
+                        </div>
+                        <div className="w-28 space-y-2">
+                          <Label>Qty</Label>
+                          <Input type="number" {...register(`ticketTypes.${index}.quantity`)} />
+                        </div>
+                        <div className="w-28 space-y-2">
+                          <Label>Max/Order</Label>
+                          <Input type="number" {...register(`ticketTypes.${index}.maxPerOrder`)} />
+                        </div>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              </motion.div>
+            )}
+
+            {/* Step 5: Preview & Publish */}
+            {step === 4 && (
+              <motion.div key="step5" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+                <Card className="rounded-3xl shadow-lg">
+                  <CardContent className="p-8">
+                    <h2 className="text-2xl font-bold mb-6">Preview & Publish</h2>
+
+                    <div className="border rounded-2xl p-6 mb-8 bg-card">
+                      {watchedImageUrl && <img src={watchedImageUrl} alt="preview" className="w-full h-48 object-cover rounded-xl mb-4" />}
+                      <h3 className="text-2xl font-semibold">{watch("title") || "Untitled Event"}</h3>
+                      <p className="mt-3 text-muted-foreground line-clamp-3">{watch("description")}</p>
+                      <div className="mt-4 text-sm space-y-1">
+                        <p>📍 {watch("venueAddress")}, {watch("venueCity")}</p>
+                        <p>🕒 {watchedDate ? new Date(watchedDate).toLocaleDateString("ru-RU") : "—"} at {watchedTime}</p>
+                      </div>
+                    </div>
+
+                    <div className="bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-2xl p-6 text-sm mb-8">
+                      ExpatEvents provides the infrastructure to organise activities. The voluntary organisers do not represent ExpatEvents as vicarious agents. In the case of gross negligence by the organisers, ExpatEvents therefore does not accept any legal responsibility for resulting damages. Neither ExpatEvents nor the event organisers assume liability for any loss of or damage to personal property, nor shall they be held responsible in the event of financial, physical, or emotional damage.
+                    </div>
+
+                    <Button type="submit" className="w-full h-14 text-lg" disabled={createEvent.isPending}>
+                      {createEvent.isPending ? "Publishing..." : "Publish Event"}
+                    </Button>
+
+                    {submitError && <p className="mt-4 text-destructive text-center">{submitError}</p>}
+                  </CardContent>
+                </Card>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <div className="flex justify-between mt-10">
+            {step > 0 && (
+              <Button type="button" variant="outline" onClick={prevStep}>
+                <ArrowLeft className="mr-2 w-4 h-4" /> Back
+              </Button>
+            )}
+            {step < 4 && (
+              <Button type="button" onClick={nextStep} className="ml-auto">
+                Next <ArrowRight className="ml-2 w-4 h-4" />
+              </Button>
+            )}
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
