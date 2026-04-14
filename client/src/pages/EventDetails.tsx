@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Trash2, Plus, CalendarPlus, AlertCircle, ArrowLeft, ArrowRight, Check, Users } from "lucide-react";
+import { Trash2, Plus, CalendarPlus, AlertCircle, ArrowLeft, ArrowRight, Check, UsersRound } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { EVENT_CATEGORIES, EVENT_CATEGORY_VALUES } from "@shared/categories";
 import { ImageUpload } from "@/components/ui/ImageUpload";
@@ -107,6 +107,8 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
   const watchedCategory = watch("category");
   const watchedImageUrl = watch("imageUrl");
   const watchedGroupId = watch("groupId");
+  const watchedDate = watch("date");
+  const watchedTime = watch("time");
 
   // Auto-fill default image
   useEffect(() => {
@@ -248,7 +250,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                     {eligibleGroups.length > 0 && (
                       <div className="pt-4 border-t space-y-2">
                         <Label className="flex items-center gap-2">
-                          <Users className="w-4 h-4" /> Link to a Group (optional)
+                          <UsersRound className="w-4 h-4" /> Link to a Group (optional)
                         </Label>
                         <Controller control={control} name="groupId" render={({ field }) => (
                           <Select onValueChange={(v) => field.onChange(v === "__none__" ? null : parseInt(v))} value={field.value != null ? String(field.value) : "__none__"}>
