@@ -1,16 +1,45 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { User, Bell, Calendar } from "lucide-react";
+import { User, Bell, Calendar, Camera, Pencil, Check, X } from "lucide-react";
 import { motion } from "framer-motion";
 import { EVENT_CATEGORIES } from "@shared/categories";
 import { TelegramConnect } from "@/components/TelegramConnect";
 
 const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? "https://auth.expatevents.org";
+
+// ── Cloudinary unsigned upload ─────────────────────────────────────────────
+// Set these in your .env / Render environment variables:
+//   VITE_CLOUDINARY_CLOUD_NAME=your_cloud_name
+//   VITE_CLOUDINARY_UPLOAD_PRESET=your_unsigned_preset
+//
+// To set up: cloudinary.com → Settings → Upload → Upload presets → Add unsigned preset
+const CLOUDINARY_CLOUD   = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME ?? "";
+const CLOUDINARY_PRESET  = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET ?? "";
+
+async function uploadImageToCloudinary(file: File): Promise<string> {
+  if (!CLOUDINARY_CLOUD || !CLOUDINARY_PRESET) {
+    throw new Error("Cloudinary not configured — set VITE_CLOUDINARY_CLOUD_NAME and VITE_CLOUDINARY_UPLOAD_PRESET");
+  }
+  const form = new FormData();
+  form.append("file", file);
+  form.append("upload_preset", CLOUDINARY_PRESET);
+  form.append("folder", "expatevents/avatars");
+
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) throw new Error("Image upload failed");
+  const data = await res.json();
+  return data.secure_url as string;
+}
 
 const CATEGORY_ICONS: Record<string, string> = {
   networking: "🔗", tech: "💻", culture: "🎨", food: "🍔",
@@ -19,7 +48,7 @@ const CATEGORY_ICONS: Record<string, string> = {
   social: "🤝", volunteering: "🙌", other: "📌",
 };
 
-const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const DAYS  = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const HOURS = Array.from({ length: 16 }, (_, i) => i + 8);
 
 type Slot = { day: number; hour: number };
@@ -27,16 +56,34 @@ type Slot = { day: number; hour: number };
 export default function Profile() {
   const { user, isLoading } = useAuth();
   const queryClient = useQueryClient();
-  const [interests, setInterests] = useState<string[]>([]);
-  const [slots, setSlots] = useState<Slot[]>([]);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [isMouseDown, setIsMouseDown] = useState(false);
-  const [dragMode, setDragMode] = useState<"add" | "remove">("add");
+
+  const [interests,    setInterests]    = useState<string[]>([]);
+  const [slots,        setSlots]        = useState<Slot[]>([]);
+  const [displayName,  setDisplayName]  = useState("");
+  const [avatarUrl,    setAvatarUrl]    = useState("");
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [avatarFile,   setAvatarFile]   = useState<File | null>(null);
+
+  const [editingName,  setEditingName]  = useState(false);
+  const [nameInput,    setNameInput]    = useState("");
+
+  const [saving,       setSaving]       = useState(false);
+  const [saved,        setSaved]        = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [avatarError,  setAvatarError]  = useState<string | null>(null);
+
+  const [isMouseDown,  setIsMouseDown]  = useState(false);
+  const [dragMode,     setDragMode]     = useState<"add" | "remove">("add");
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!user) return;
     setInterests(user.interests ?? []);
+    setDisplayName(user.displayName ?? user.username ?? "");
+    setNameInput(user.displayName ?? user.username ?? "");
+    setAvatarUrl(user.avatarUrl ?? "");
+
     fetch(`${AUTH_URL}/api/availability`, { credentials: "include" })
       .then(r => r.json())
       .then((data: Slot[]) => setSlots(data))
@@ -73,23 +120,79 @@ export default function Profile() {
     });
   };
 
+  // ── Avatar file selection ──────────────────────────────────────────────
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      setAvatarError("Image must be under 5 MB");
+      return;
+    }
+    setAvatarError(null);
+    setAvatarFile(file);
+    setAvatarPreview(URL.createObjectURL(file));
+  };
+
+  const cancelAvatarChange = () => {
+    setAvatarFile(null);
+    setAvatarPreview(null);
+    setAvatarError(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  // ── Save all ───────────────────────────────────────────────────────────
   const saveAll = async () => {
     setSaving(true);
     try {
+      let finalAvatarUrl = avatarUrl;
+
+      // Upload new avatar if one was selected
+      if (avatarFile) {
+        setUploadingAvatar(true);
+        try {
+          finalAvatarUrl = await uploadImageToCloudinary(avatarFile);
+          setAvatarUrl(finalAvatarUrl);
+          setAvatarPreview(null);
+          setAvatarFile(null);
+        } catch (err: any) {
+          setAvatarError(err.message ?? "Upload failed");
+          setSaving(false);
+          setUploadingAvatar(false);
+          return;
+        }
+        setUploadingAvatar(false);
+      }
+
       await Promise.all([
+        // Save interests
         fetch(`${AUTH_URL}/api/user/interests`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
           body: JSON.stringify({ interests }),
         }),
+        // Save availability
         fetch(`${AUTH_URL}/api/availability`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
           body: JSON.stringify({ slots }),
         }),
+        // Save profile (displayName + avatarUrl)
+        fetch(`${AUTH_URL}/api/user/profile`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            displayName: displayName.trim() || undefined,
+            avatarUrl: finalAvatarUrl || undefined,
+          }),
+        }),
       ]);
+
+      // Refresh cached user so Navbar and other components update immediately
+      queryClient.invalidateQueries({ queryKey: ["auth-user"] });
+
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch (err) {
@@ -118,7 +221,8 @@ export default function Profile() {
     );
   }
 
-  const initials = (user.displayName ?? user.username ?? "U").substring(0, 2).toUpperCase();
+  const initials = (displayName || user.username || "U").substring(0, 2).toUpperCase();
+  const currentAvatar = avatarPreview ?? avatarUrl;
 
   return (
     <div
@@ -127,7 +231,7 @@ export default function Profile() {
       onMouseLeave={() => setIsMouseDown(false)}
     >
       <div className="max-w-3xl mx-auto space-y-8">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
 
           {/* ── Identity ─────────────────────────────────────────────────── */}
           <Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
@@ -135,18 +239,91 @@ export default function Profile() {
               <User className="w-5 h-5 text-primary" />
               <h2 className="text-xl font-bold font-display">Your Profile</h2>
             </div>
-            <CardContent className="p-8 flex items-center gap-6">
-              <Avatar className="h-20 w-20">
-                <AvatarImage src={user.avatarUrl ?? ""} />
-                <AvatarFallback className="bg-primary/10 text-primary text-2xl">{initials}</AvatarFallback>
-              </Avatar>
-              <div className="flex-1">
-                <h1 className="text-2xl font-bold">{user.displayName ?? user.username}</h1>
-                {user.email && <p className="text-muted-foreground text-sm">{user.email}</p>}
-                <div className="flex gap-2 mt-2 flex-wrap">
-                  {user.isExpatMember && <Badge variant="secondary">ExpatEvents</Badge>}
-                  {user.isGamesMember && <Badge variant="secondary">Games in English</Badge>}
-                  {user.role === "admin" && <Badge>Admin</Badge>}
+            <CardContent className="p-8">
+              <div className="flex items-start gap-6 flex-wrap sm:flex-nowrap">
+
+                {/* Avatar with upload button */}
+                <div className="relative shrink-0">
+                  <Avatar className="h-24 w-24 ring-2 ring-border">
+                    <AvatarImage src={currentAvatar} />
+                    <AvatarFallback className="bg-primary/10 text-primary text-2xl">{initials}</AvatarFallback>
+                  </Avatar>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center shadow-md hover:bg-primary/90 transition-colors"
+                    title="Change photo"
+                  >
+                    <Camera className="w-4 h-4" />
+                  </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    className="hidden"
+                    onChange={handleAvatarChange}
+                  />
+                </div>
+
+                <div className="flex-1 min-w-0 space-y-3">
+                  {/* Editable display name */}
+                  {editingName ? (
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={nameInput}
+                        onChange={e => setNameInput(e.target.value)}
+                        className="h-10 rounded-xl text-lg font-bold max-w-xs"
+                        autoFocus
+                        onKeyDown={e => {
+                          if (e.key === "Enter") { setDisplayName(nameInput); setEditingName(false); }
+                          if (e.key === "Escape") { setNameInput(displayName); setEditingName(false); }
+                        }}
+                      />
+                      <button onClick={() => { setDisplayName(nameInput); setEditingName(false); }}
+                        className="text-primary hover:text-primary/80">
+                        <Check className="w-5 h-5" />
+                      </button>
+                      <button onClick={() => { setNameInput(displayName); setEditingName(false); }}
+                        className="text-muted-foreground hover:text-foreground">
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <h1 className="text-2xl font-bold truncate">{displayName || user.username}</h1>
+                      <button onClick={() => setEditingName(true)}
+                        className="text-muted-foreground hover:text-primary transition-colors shrink-0"
+                        title="Edit name">
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
+
+                  {user.email && <p className="text-muted-foreground text-sm">{user.email}</p>}
+
+                  <div className="flex gap-2 flex-wrap">
+                    {user.isExpatMember && <Badge variant="secondary">ExpatEvents</Badge>}
+                    {user.isGamesMember && <Badge variant="secondary">Games in English</Badge>}
+                    {user.role === "admin" && <Badge>Admin</Badge>}
+                  </div>
+
+                  {/* Avatar preview actions */}
+                  {avatarPreview && (
+                    <div className="flex items-center gap-3 pt-1">
+                      <span className="text-sm text-muted-foreground">New photo selected — save to apply</span>
+                      <button onClick={cancelAvatarChange}
+                        className="text-xs text-destructive hover:underline">Cancel</button>
+                    </div>
+                  )}
+                  {avatarError && (
+                    <p className="text-sm text-destructive">{avatarError}</p>
+                  )}
+                  {!CLOUDINARY_CLOUD && (
+                    <p className="text-xs text-muted-foreground">
+                      Image upload requires <code>VITE_CLOUDINARY_CLOUD_NAME</code> and{" "}
+                      <code>VITE_CLOUDINARY_UPLOAD_PRESET</code> environment variables.
+                    </p>
+                  )}
                 </div>
               </div>
             </CardContent>
@@ -161,7 +338,7 @@ export default function Profile() {
             <CardContent className="p-8">
               <TelegramConnect
                 connected={!!user.telegramId}
-                onUnlinked={() => queryClient.invalidateQueries({ queryKey: ["/api/user"] })}
+                onUnlinked={() => queryClient.invalidateQueries({ queryKey: ["auth-user"] })}
               />
             </CardContent>
           </Card>
@@ -257,10 +434,10 @@ export default function Profile() {
           {/* ── Save ─────────────────────────────────────────────────────── */}
           <Button
             onClick={saveAll}
-            disabled={saving}
+            disabled={saving || uploadingAvatar}
             className="w-full h-14 text-lg rounded-2xl shadow-xl shadow-primary/20 hover:shadow-primary/30 hover:-translate-y-0.5 transition-all"
           >
-            {saving ? "Saving…" : saved ? "✓ Saved!" : "Save Profile"}
+            {uploadingAvatar ? "Uploading photo…" : saving ? "Saving…" : saved ? "✓ Saved!" : "Save Profile"}
           </Button>
 
         </motion.div>
