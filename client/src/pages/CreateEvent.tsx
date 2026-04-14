@@ -25,9 +25,7 @@ import { motion } from "framer-motion";
 import { EVENT_CATEGORIES, EVENT_CATEGORY_VALUES } from "@shared/categories";
 import { ImageUpload } from "@/components/ui/ImageUpload";
 
-// ── Category default images ───────────────────────────────────────────────
-// Curated Unsplash photos (high resolution) that match each event category.
-// Used to pre-fill the cover image when a category is selected.
+// ── Category default images (high-res Unsplash) ───────────────────────────
 const CATEGORY_DEFAULT_IMAGES: Record<string, string> = {
   networking: "https://images.unsplash.com/photo-1511795409834-ef04bbd61622?w=1200&auto=format&fit=crop",
   tech: "https://images.unsplash.com/photo-1504384308090-c894fdcc538d?w=1200&auto=format&fit=crop",
@@ -85,14 +83,12 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [showRecurrence, setShowRecurrence] = useState(false);
 
-  // Fetch groups the current user is a member of (owner or moderator)
   const { data: myGroups } = useQuery<any[]>({
     queryKey: ["/api/groups/my"],
     queryFn: getQueryFn({ on401: "returnNull" }),
     enabled: !!user,
   });
 
-  // Only show groups where user can post events (owner or moderator)
   const eligibleGroups = (myGroups ?? []).filter(
     g => g.currentUserRole === "owner" || g.currentUserRole === "moderator"
   );
@@ -115,7 +111,6 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
     },
   });
 
-  // When arriving via /groups/:slug/create-event, resolve slug → numeric group id
   useEffect(() => {
     if (groupSlug && myGroups) {
       const group = myGroups.find((g: any) => g.slug === groupSlug);
@@ -135,10 +130,10 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
   const watchedGroupId = watch("groupId");
   const watchedImageUrl = watch("imageUrl");
 
-  // Auto-fill default image when category changes and no image is set yet
+  // Auto-fill default category image
   useEffect(() => {
     if (watchedCategory && !watchedImageUrl) {
-      const defaultImg = CATEGORY_DEFAULT_IMAGES[watchedCategory];
+      const defaultImg = CATEGORY_DEFAULT_IMAGES[watchedCategory as keyof typeof CATEGORY_DEFAULT_IMAGES];
       if (defaultImg) setValue("imageUrl", defaultImg);
     }
   }, [watchedCategory, watchedImageUrl, setValue]);
@@ -216,5 +211,289 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                 <h2 className="text-xl font-bold font-display">Basic Information</h2>
               </div>
               <CardContent className="p-8 space-y-6">
-                {/* ... rest of your form stays exactly the same ... */}
-                {/* (I kept everything from here down unchanged) */}
+                <div className="space-y-2">
+                  <Label>Event Title</Label>
+                  <Input {...register("title")} className="h-12 rounded-xl text-lg" placeholder="Moscow Summer Tech Mixer" />
+                  {errors.title && <p className="text-destructive text-sm">{errors.title.message}</p>}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <Label>Category</Label>
+                    <Controller
+                      control={control}
+                      name="category"
+                      render={({ field }) => (
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <SelectTrigger className="h-12 rounded-xl">
+                            <SelectValue placeholder="Select a category…" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {EVENT_CATEGORIES.map((cat) => (
+                              <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                    {errors.category && <p className="text-destructive text-sm">{errors.category.message}</p>}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Date & Time</Label>
+                    <Input {...register("date")} type="datetime-local" className="h-12 rounded-xl" />
+                    {errors.date && <p className="text-destructive text-sm">{errors.date.message}</p>}
+                  </div>
+                </div>
+
+                {watchedCategory && (
+                  <div className="space-y-2">
+                    <Label>Second Category <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                    <Controller
+                      control={control}
+                      name="category2"
+                      render={({ field }) => (
+                        <Select
+                          onValueChange={(v) => field.onChange(v === "__none__" ? null : v)}
+                          value={field.value ?? "__none__"}
+                        >
+                          <SelectTrigger className="h-12 rounded-xl">
+                            <SelectValue placeholder="None" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__">— None —</SelectItem>
+                            {EVENT_CATEGORIES.filter((cat) => cat.value !== watchedCategory).map((cat) => (
+                              <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <Label>Description</Label>
+                  <Textarea {...register("description")} className="rounded-xl min-h-[120px]" placeholder="Tell people what to expect…" />
+                  {errors.description && <p className="text-destructive text-sm">{errors.description.message}</p>}
+                </div>
+
+                {eligibleGroups.length > 0 && (
+                  <div className="space-y-2 pt-2 border-t border-border">
+                    <Label className="flex items-center gap-2">
+                      <Users className="w-4 h-4 text-primary" />
+                      Link to a Group <span className="text-muted-foreground font-normal">(optional)</span>
+                    </Label>
+                    <Controller
+                      control={control}
+                      name="groupId"
+                      render={({ field }) => (
+                        <Select
+                          onValueChange={(v) => field.onChange(v === "__none__" ? null : parseInt(v))}
+                          value={field.value != null ? String(field.value) : "__none__"}
+                        >
+                          <SelectTrigger className="h-12 rounded-xl">
+                            <SelectValue placeholder="No group (public event)" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__">— No group (public event) —</SelectItem>
+                            {eligibleGroups.map((g) => (
+                              <SelectItem key={g.id} value={String(g.id)}>
+                                {g.name} {g.currentUserRole === "owner" ? "(owner)" : "(moderator)"}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                    <p className="text-xs text-muted-foreground">Linking to a group makes this event appear on the group page.</p>
+                  </div>
+                )}
+
+                {watchedGroupId && (
+                  <div className="flex items-center justify-between pt-2 border-t border-border">
+                    <div>
+                      <p className="font-medium text-sm">Private event</p>
+                      <p className="text-xs text-muted-foreground">Only group members can see this event</p>
+                    </div>
+                    <Controller
+                      control={control}
+                      name="isPrivate"
+                      render={({ field }) => <Switch checked={!!field.value} onCheckedChange={field.onChange} />}
+                    />
+                  </div>
+                )}
+
+                <div className="space-y-4 pt-2 border-t border-border">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-sm flex items-center gap-1.5">
+                        <RefreshCw className="w-4 h-4 text-primary" /> Recurring event
+                      </p>
+                      <p className="text-xs text-muted-foreground">Automatically create future instances</p>
+                    </div>
+                    <Switch
+                      checked={showRecurrence}
+                      onCheckedChange={(v) => {
+                        setShowRecurrence(v);
+                        if (!v) {
+                          setValue("recurrence", null);
+                          setValue("recurrenceUntil", null);
+                        }
+                      }}
+                    />
+                  </div>
+
+                  {showRecurrence && (
+                    <div className="space-y-4 pl-1">
+                      <div className="flex flex-wrap gap-3">
+                        {[
+                          { value: "weekly", label: "Weekly", desc: "Same day every week" },
+                          { value: "biweekly", label: "Fortnightly", desc: "Every 2 weeks" },
+                          { value: "monthly", label: "Monthly", desc: "Same date each month" },
+                        ].map((opt) => (
+                          <Controller
+                            key={opt.value}
+                            control={control}
+                            name="recurrence"
+                            render={({ field }) => (
+                              <button
+                                type="button"
+                                onClick={() => field.onChange(opt.value)}
+                                className={`flex flex-col items-start px-4 py-3 rounded-xl border-2 transition-all text-left w-36 ${
+                                  field.value === opt.value ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"
+                                }`}
+                              >
+                                <span className="font-semibold text-sm">{opt.label}</span>
+                                <span className="text-xs text-muted-foreground mt-0.5">{opt.desc}</span>
+                              </button>
+                            )}
+                          />
+                        ))}
+                      </div>
+                      <div className="space-y-2 max-w-xs">
+                        <Label>Repeat until <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                        <Input {...register("recurrenceUntil")} type="date" className="h-11 rounded-xl" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Location & Media */}
+            <Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
+              <div className="bg-primary/5 px-8 py-4 border-b border-border/50">
+                <h2 className="text-xl font-bold font-display">Location & Media</h2>
+              </div>
+              <CardContent className="p-8 space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <Label>Venue Address</Label>
+                    <Input {...register("venueAddress")} className="h-12 rounded-xl" placeholder="Tverskaya St, 1" />
+                    {errors.venueAddress && <p className="text-destructive text-sm">{errors.venueAddress.message}</p>}
+                  </div>
+                  <div className="space-y-2">
+                    <Label>City</Label>
+                    <Input {...register("venueCity")} className="h-12 rounded-xl" placeholder="Moscow" />
+                    {errors.venueCity && <p className="text-destructive text-sm">{errors.venueCity.message}</p>}
+                  </div>
+                </div>
+
+                <Controller
+                  control={control}
+                  name="imageUrl"
+                  render={({ field }) => (
+                    <ImageUpload
+                      value={field.value}
+                      onChange={field.onChange}
+                      label="Cover Image"
+                      hint="Upload a photo or use the default for your chosen category. Max 2MB."
+                      aspectRatio="wide"
+                    />
+                  )}
+                />
+              </CardContent>
+            </Card>
+
+            {/* Tickets */}
+            <Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
+              <div className="bg-primary/5 px-8 py-4 border-b border-border/50 flex justify-between items-center">
+                <h2 className="text-xl font-bold font-display">Tickets</h2>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => append({ name: "", price: 0, quantity: 50, maxPerOrder: 4 })}
+                  className="rounded-full"
+                >
+                  <Plus className="w-4 h-4 mr-1" /> Add Ticket
+                </Button>
+              </div>
+              <CardContent className="p-8 space-y-6 bg-muted/10">
+                {fields.map((field, index) => (
+                  <div
+                    key={field.id}
+                    className="relative bg-card p-6 rounded-2xl border border-border shadow-sm flex flex-col md:flex-row gap-4 items-start md:items-end"
+                  >
+                    {fields.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => remove(index)}
+                        className="absolute top-4 right-4 text-muted-foreground hover:text-destructive"
+                      >
+                        <Trash2 className="w-5 h-5" />
+                      </button>
+                    )}
+
+                    <div className="flex-1 w-full space-y-2">
+                      <Label>Ticket Name</Label>
+                      <Input {...register(`ticketTypes.${index}.name`)} placeholder="VIP Access" className="h-11 rounded-xl" />
+                      {errors.ticketTypes?.[index]?.name && (
+                        <p className="text-destructive text-xs">{errors.ticketTypes[index].name.message}</p>
+                      )}
+                    </div>
+
+                    <div className="w-full md:w-28 space-y-2">
+                      <Label>Price (₽)</Label>
+                      <Input type="number" {...register(`ticketTypes.${index}.price`)} className="h-11 rounded-xl" />
+                    </div>
+                    <div className="w-full md:w-28 space-y-2">
+                      <Label>Total Qty</Label>
+                      <Input type="number" {...register(`ticketTypes.${index}.quantity`)} className="h-11 rounded-xl" />
+                    </div>
+                    <div className="w-full md:w-28 space-y-2">
+                      <Label>Max / Order</Label>
+                      <Input type="number" {...register(`ticketTypes.${index}.maxPerOrder`)} className="h-11 rounded-xl" />
+                    </div>
+                  </div>
+                ))}
+
+                {errors.ticketTypes?.message && (
+                  <p className="text-destructive text-sm">{errors.ticketTypes.message}</p>
+                )}
+              </CardContent>
+            </Card>
+
+            {submitError && (
+              <div className="flex items-start gap-3 p-4 rounded-2xl bg-destructive/10 border border-destructive/20">
+                <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
+                <p className="text-destructive text-sm">{submitError}</p>
+              </div>
+            )}
+
+            <div className="pt-2">
+              <Button
+                type="submit"
+                disabled={createEvent.isPending || isLoading}
+                className="w-full h-16 text-xl rounded-2xl shadow-xl shadow-primary/20 hover:shadow-primary/30 hover:-translate-y-1 transition-all"
+              >
+                {createEvent.isPending ? "Publishing Event…" : "Publish Event"}
+              </Button>
+            </div>
+          </form>
+        </motion.div>
+      </div>
+    </div>
+  );
+}
