@@ -1,23 +1,13 @@
 // client/src/components/ui/ImageUpload.tsx
-// Reusable image input: paste a URL OR upload a file via Cloudinary.
-// Shows a live preview. Clear button removes the image.
-//
-// Env vars required:
-// VITE_CLOUDINARY_CLOUD_NAME=dydaxi392
-// VITE_CLOUDINARY_UPLOAD_PRESET=your_unsigned_preset_name
-//
-// Setup: Cloudinary → Settings → Upload → Upload presets → Create Unsigned preset
-
 import { useRef, useState, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Upload, X, Image as ImageIcon, Loader2 } from "lucide-react";
-//import { VisuallyHidden } from "@/components/ui/visually-hidden";
 
 const CLOUDINARY_CLOUD = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME ?? "";
 const CLOUDINARY_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET ?? "";
 
-// Compress image before upload (fixes most ERR_CONNECTION_CLOSED errors)
+// Stronger compression (smaller size = much lower chance of connection closed)
 async function compressImage(file: File): Promise<File> {
   return new Promise((resolve) => {
     const reader = new FileReader();
@@ -25,12 +15,16 @@ async function compressImage(file: File): Promise<File> {
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement("canvas");
-        let { width, height } = img;
-        const MAX_WIDTH = 1200;
+        let width = img.width;
+        let height = img.height;
 
-        if (width > MAX_WIDTH) {
-          height = Math.round((MAX_WIDTH / width) * height);
-          width = MAX_WIDTH;
+        const MAX_WIDTH = 1000;   // Reduced from 1200
+        const MAX_HEIGHT = 1000;
+
+        if (width > MAX_WIDTH || height > MAX_HEIGHT) {
+          const ratio = Math.min(MAX_WIDTH / width, MAX_HEIGHT / height);
+          width = Math.round(width * ratio);
+          height = Math.round(height * ratio);
         }
 
         canvas.width = width;
@@ -41,17 +35,13 @@ async function compressImage(file: File): Promise<File> {
         canvas.toBlob(
           (blob) => {
             if (blob) {
-              const compressed = new File([blob], file.name.replace(/\.\w+$/, ".jpg"), {
-                type: "image/jpeg",
-                lastModified: Date.now(),
-              });
-              resolve(compressed);
+              resolve(new File([blob], file.name.replace(/\.\w+$/, ".jpg"), { type: "image/jpeg" }));
             } else {
               resolve(file);
             }
           },
           "image/jpeg",
-          0.82
+          0.78   // Slightly lower quality for smaller size
         );
       };
       img.src = e.target?.result as string;
@@ -62,7 +52,7 @@ async function compressImage(file: File): Promise<File> {
 
 async function uploadToCloudinary(file: File, folder: string): Promise<string> {
   if (!CLOUDINARY_CLOUD || !CLOUDINARY_PRESET) {
-    throw new Error("Cloudinary is not configured. Check your VITE_ environment variables.");
+    throw new Error("Cloudinary not configured. Check VITE_ env vars.");
   }
 
   const form = new FormData();
@@ -70,19 +60,35 @@ async function uploadToCloudinary(file: File, folder: string): Promise<string> {
   form.append("upload_preset", CLOUDINARY_PRESET);
   form.append("folder", folder);
 
-  const res = await fetch(
-    `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`,
-    { method: "POST", body: form }
-  );
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60000); // 60 second timeout
 
-  if (!res.ok) {
-    const errorText = await res.text().catch(() => "");
-    console.error("Cloudinary upload failed:", res.status, errorText);
-    throw new Error(`Upload failed (${res.status}). Try a smaller image.`);
+  try {
+    const res = await fetch(
+      `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`,
+      {
+        method: "POST",
+        body: form,
+        signal: controller.signal,
+      }
+    );
+
+    clearTimeout(timeout);
+
+    if (!res.ok) {
+      const errorText = await res.text().catch(() => "");
+      console.error("Cloudinary error:", res.status, errorText);
+      throw new Error(`Upload failed (${res.status}). Try a much smaller image.`);
+    }
+
+    const data = await res.json();
+    return data.secure_url as string;
+  } catch (err: any) {
+    if (err.name === "AbortError") {
+      throw new Error("Upload timed out. Image may still be too large or connection unstable.");
+    }
+    throw err;
   }
-
-  const data = await res.json();
-  return data.secure_url as string;
 }
 
 interface ImageUploadProps {
@@ -98,7 +104,7 @@ export function ImageUpload({
   value,
   onChange,
   label = "Cover Image",
-  hint = "Upload a photo or use the default for your chosen category. Max ~8 MB after compression.",
+  hint = "Upload a photo (smaller files work best). Max ~8 MB recommended.",
   folder = "expatevents",
   aspectRatio = "wide",
 }: ImageUploadProps) {
@@ -107,36 +113,29 @@ export function ImageUpload({
   const [error, setError] = useState<string | null>(null);
   const [urlInput, setUrlInput] = useState(value ?? "");
 
-  // Sync when parent passes new value (e.g. default category image)
   useEffect(() => {
     setUrlInput(value ?? "");
   }, [value]);
 
-  const previewClass = aspectRatio === "square"
-    ? "h-40 w-40 rounded-xl"
-    : "h-40 w-full rounded-xl";
+  const previewClass = aspectRatio === "square" ? "h-40 w-40 rounded-xl" : "h-40 w-full rounded-xl";
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 10 * 1024 * 1024) {
-      setError("File must be under 10 MB");
-      return;
-    }
-
     setError(null);
     setUploading(true);
 
     try {
-      const compressedFile = await compressImage(file);
-      const url = await uploadToCloudinary(compressedFile, folder);
+      const compressed = await compressImage(file);
+      const url = await uploadToCloudinary(compressed, folder);
 
       setUrlInput(url);
       onChange(url);
+      setError(null);
     } catch (err: any) {
       console.error("Upload error:", err);
-      setError(err.message ?? "Upload failed. Please try again with a smaller photo.");
+      setError(err.message || "Upload failed. Try a smaller photo (< 2MB ideal).");
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
@@ -170,16 +169,14 @@ export function ImageUpload({
         <div className={`relative overflow-hidden bg-muted ${previewClass}`}>
           <img
             src={urlInput}
-            alt="Event cover preview"
+            alt="Preview"
             className="w-full h-full object-cover"
-            onError={(e) => {
-              (e.currentTarget as HTMLImageElement).style.opacity = "0.3";
-            }}
+            onError={(e) => { (e.currentTarget as HTMLImageElement).style.opacity = "0.3"; }}
           />
           <button
             type="button"
             onClick={handleClear}
-            className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 transition-colors"
+            className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80"
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -193,13 +190,12 @@ export function ImageUpload({
           className="h-11 rounded-xl flex-1"
           placeholder="https://images.unsplash.com/…"
         />
-
         {canUpload && (
           <button
             type="button"
             onClick={() => fileRef.current?.click()}
             disabled={uploading}
-            className="h-11 px-5 rounded-xl border border-border bg-muted hover:bg-muted/80 transition-colors flex items-center gap-2 text-sm font-medium shrink-0 disabled:opacity-60"
+            className="h-11 px-5 rounded-xl border border-border bg-muted hover:bg-muted/80 flex items-center gap-2 text-sm font-medium disabled:opacity-60"
           >
             {uploading ? (
               <>
@@ -224,18 +220,12 @@ export function ImageUpload({
         onChange={handleFile}
       />
 
-      {/* Accessibility fix for Radix Dialog / Sheet */}
-      <VisuallyHidden>
-        <div aria-label="Image upload dialog" />
-      </VisuallyHidden>
-
       {error && <p className="text-sm text-destructive">{error}</p>}
       {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
 
       {!canUpload && (
         <p className="text-xs text-muted-foreground">
-          File upload is disabled. Add <code>VITE_CLOUDINARY_CLOUD_NAME</code> and{" "}
-          <code>VITE_CLOUDINARY_UPLOAD_PRESET</code> to your environment variables.
+          Add VITE_CLOUDINARY_CLOUD_NAME and VITE_CLOUDINARY_UPLOAD_PRESET to enable uploads.
         </p>
       )}
     </div>
