@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? "https://meh-auth.onrender.com";
 
@@ -14,19 +14,17 @@ export interface User {
   isExpatMember: boolean;
   isGamesMember: boolean;
   dice: number;
+  hasPassword?: boolean; // added by meh-auth sanitize()
 }
 
 async function fetchUser(): Promise<User | null> {
   const response = await fetch(`${AUTH_URL}/api/user`, {
     credentials: "include",
   });
-  if (response.status === 401 || response.ok && (await response.clone().json()) === null) {
-    return null;
-  }
-  if (!response.ok) {
-    throw new Error(`${response.status}: ${response.statusText}`);
-  }
-  return response.json();
+  if (!response.ok) return null;
+  const data = await response.json();
+  if (data === null) return null;
+  return data as User;
 }
 
 export function useAuth() {
@@ -46,11 +44,18 @@ export function useAuth() {
     window.location.href = `${AUTH_URL}/login?returnTo=${returnTo}`;
   }
 
-  function logout() {
-    fetch(`${AUTH_URL}/api/auth/logout`, {
-      method: "POST",
-      credentials: "include",
-    }).catch(() => {});
+  async function logout() {
+    try {
+      // Wait for the session to be cleared on the server before navigating away.
+      // Without await, the browser may redirect before the cookie is invalidated,
+      // leaving the user appearing logged in on the next page load.
+      await fetch(`${AUTH_URL}/api/auth/logout`, {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch {
+      // Network error — proceed with local cleanup anyway
+    }
     queryClient.clear();
     window.location.href = "/";
   }
