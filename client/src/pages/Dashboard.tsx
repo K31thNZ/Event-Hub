@@ -418,44 +418,69 @@ function ChangePasswordTab() {
   const { toast } = useToast();
   const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? "https://auth.expatevents.org";
 
-  const schema = z.object({
+  // True if user signed in via OAuth only (Google/Yandex) with no email-based account.
+  // These users cannot set a password at all since we have no email to verify them.
+  const isOAuthOnly = (user?.googleId || user?.yandexId) && !user?.email;
+
+  // True if user has no password yet (magic code login, or OAuth user who has an email).
+  // These users see "Set password" instead of "Change password".
+  const hasNoPassword = !user?.hasPassword; // set by meh-auth sanitize(), never the raw hash
+
+  // ── Schema varies by mode ─────────────────────────────────────────────
+  const changeSchema = z.object({
     currentPassword: z.string().min(1, "Current password required"),
-    newPassword:     z.string().min(8, "Must be at least 8 characters"),
+    newPassword:     z.string().min(8, "At least 8 characters"),
     confirmPassword: z.string(),
   }).refine(d => d.newPassword === d.confirmPassword, {
     message: "Passwords don't match", path: ["confirmPassword"],
   });
 
-  const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm({ resolver: zodResolver(schema) });
+  const setSchema = z.object({
+    newPassword:     z.string().min(8, "At least 8 characters"),
+    confirmPassword: z.string(),
+  }).refine(d => d.newPassword === d.confirmPassword, {
+    message: "Passwords don't match", path: ["confirmPassword"],
+  });
 
-  const isOAuthOnly = !user?.email || user?.googleId || user?.yandexId;
+  const schema = hasNoPassword ? setSchema : changeSchema;
+
+  const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm({
+    resolver: zodResolver(schema),
+  });
 
   const onSubmit = async (data: any) => {
     try {
-      const res = await fetch(`${AUTH_URL}/api/auth/change-password`, {
+      const endpoint = hasNoPassword ? "/api/auth/set-password" : "/api/auth/change-password";
+      const body = hasNoPassword
+        ? { newPassword: data.newPassword }
+        : { currentPassword: data.currentPassword, newPassword: data.newPassword };
+
+      const res = await fetch(`${AUTH_URL}${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ currentPassword: data.currentPassword, newPassword: data.newPassword }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.error ?? "Failed to change password");
+        throw new Error(err.error ?? "Failed");
       }
-      toast({ title: "Password updated successfully" });
+      toast({ title: hasNoPassword ? "Password set successfully!" : "Password updated successfully" });
       reset();
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     }
   };
 
+  // Pure OAuth (Google/Yandex) with no email — can't set a password
   if (isOAuthOnly) {
     return (
       <div className="text-center py-16 space-y-3">
         <KeyRound className="w-10 h-10 mx-auto text-muted-foreground opacity-50" />
-        <p className="font-medium">Password not set</p>
+        <p className="font-medium">Password not available</p>
         <p className="text-sm text-muted-foreground max-w-sm mx-auto">
-          Your account uses Google or Yandex sign-in. You don't have a password to change.
+          Your account uses Google or Yandex sign-in without an email address.
+          Password sign-in is not available for this account type.
         </p>
       </div>
     );
@@ -463,12 +488,21 @@ function ChangePasswordTab() {
 
   return (
     <div className="max-w-sm space-y-5">
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-        <div className="space-y-1.5">
-          <Label>Current password</Label>
-          <Input {...register("currentPassword")} type="password" className="h-11 rounded-xl" autoComplete="current-password" />
-          {errors.currentPassword && <p className="text-destructive text-xs">{errors.currentPassword.message as string}</p>}
+      {hasNoPassword && (
+        <div className="p-4 rounded-xl bg-primary/5 border border-primary/20 text-sm text-muted-foreground">
+          <p className="font-medium text-foreground mb-1">Set a password</p>
+          You signed in with a magic code or social login. You can optionally add a password
+          to also be able to sign in with your username and password.
         </div>
+      )}
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        {!hasNoPassword && (
+          <div className="space-y-1.5">
+            <Label>Current password</Label>
+            <Input {...register("currentPassword")} type="password" className="h-11 rounded-xl" autoComplete="current-password" />
+            {errors.currentPassword && <p className="text-destructive text-xs">{errors.currentPassword.message as string}</p>}
+          </div>
+        )}
         <div className="space-y-1.5">
           <Label>New password</Label>
           <Input {...register("newPassword")} type="password" className="h-11 rounded-xl" autoComplete="new-password" />
@@ -481,7 +515,9 @@ function ChangePasswordTab() {
         </div>
         <Button type="submit" disabled={isSubmitting} className="w-full rounded-xl">
           <KeyRound className="w-4 h-4 mr-2" />
-          {isSubmitting ? "Updating…" : "Update password"}
+          {isSubmitting
+            ? (hasNoPassword ? "Setting…" : "Updating…")
+            : (hasNoPassword ? "Set password" : "Update password")}
         </Button>
       </form>
     </div>
