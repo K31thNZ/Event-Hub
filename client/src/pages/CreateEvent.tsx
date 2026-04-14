@@ -82,6 +82,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
 
   const [step, setStep] = useState(0);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [publishSuccess, setPublishSuccess] = useState<{ id: number; title: string } | null>(null);
 
   const { data: myGroups } = useQuery<any[]>({
     queryKey: ["/api/groups/my"],
@@ -122,10 +123,16 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
   useEffect(() => {
     if (groupSlug && myGroups) {
       const group = myGroups.find((g: any) => g.slug === groupSlug);
-      if (group) setValue("groupId", group.id);
+      if (group) {
+        setValue("groupId", group.id);
+        console.log("Pre-selected group from slug:", group.id);
+      }
     } else if (params.groupId) {
       const numericId = parseInt(params.groupId, 10);
-      if (!isNaN(numericId)) setValue("groupId", numericId);
+      if (!isNaN(numericId)) {
+        setValue("groupId", numericId);
+        console.log("Pre-selected group from param:", numericId);
+      }
     }
   }, [groupSlug, myGroups, params.groupId, setValue]);
 
@@ -133,26 +140,95 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
 
   const onSubmit = async (data: FormValues) => {
     if (!user) return;
+    setSubmitError(null);
+    setPublishSuccess(null);
 
     try {
       const [hours, minutes] = data.time.split(":").map(Number);
       const eventDate = new Date(data.date);
       eventDate.setHours(hours, minutes);
 
-      const result = await createEvent.mutateAsync({
+      const payload = {
         ...data,
         date: eventDate,
         published: true,
         groupId: data.groupId ?? null,
-      } as any);
+      };
+      console.log("Submitting event with payload:", payload);
 
-      setLocation(`/events/${result.id}`);
+      const result = await createEvent.mutateAsync(payload as any);
+      console.log("Event created:", result);
+
+      // Show success message and then redirect after a short delay
+      setPublishSuccess({ id: result.id, title: result.title });
+      setTimeout(() => {
+        setLocation(`/events/${result.id}`);
+      }, 2000);
     } catch (e: any) {
+      console.error("Create event error:", e);
       setSubmitError(e?.message || "Failed to create event");
     }
   };
 
-  const nextStep = () => setStep((s) => Math.min(s + 1, 4));
+  const goToStep = (targetStep: number) => {
+    // Allow going back to any previous step, and also forward only if the target step is not ahead of current? 
+    // To keep it simple, we allow any step ≤ current step (go back) and also allow skipping forward? 
+    // The user may want to click on step 4 directly from step 1, but that might cause missing data. 
+    // We'll restrict to only steps <= current step for safety, but you can change if needed.
+    if (targetStep <= step) {
+      setStep(targetStep);
+    } else {
+      // Optionally, you could validate required fields before allowing forward jump.
+      // For now, just use Next button for forward navigation.
+      console.log("Cannot jump forward; use Next button.");
+    }
+  };
+
+  const nextStep = () => {
+    // Basic validation for current step before proceeding
+    if (step === 0) {
+      const title = watch("title");
+      const description = watch("description");
+      const category = watch("category");
+      if (!title || !description || !category) {
+        setSubmitError("Please fill in all required fields on this step.");
+        return;
+      }
+    }
+    if (step === 1) {
+      const date = watch("date");
+      const time = watch("time");
+      if (!date || !time) {
+        setSubmitError("Please select date and time.");
+        return;
+      }
+    }
+    if (step === 2) {
+      const address = watch("venueAddress");
+      const city = watch("venueCity");
+      if (!address || !city) {
+        setSubmitError("Please provide venue address and city.");
+        return;
+      }
+    }
+    if (step === 3) {
+      const tickets = watch("ticketTypes");
+      if (!tickets || tickets.length === 0) {
+        setSubmitError("Please add at least one ticket type.");
+        return;
+      }
+      for (let i = 0; i < tickets.length; i++) {
+        const t = tickets[i];
+        if (!t.name || t.price === undefined || t.quantity <= 0 || t.maxPerOrder <= 0) {
+          setSubmitError(`Ticket ${i+1} has invalid fields.`);
+          return;
+        }
+      }
+    }
+    setSubmitError(null);
+    setStep((s) => Math.min(s + 1, 4));
+  };
+
   const prevStep = () => setStep((s) => Math.max(s - 1, 0));
 
   const timeSlots: string[] = [];
@@ -178,15 +254,36 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
     );
   }
 
+  // Success view after publishing
+  if (publishSuccess) {
+    return (
+      <div className="min-h-screen bg-muted/20 flex flex-col items-center justify-center gap-6 px-4">
+        <div className="w-16 h-16 bg-green-100 text-green-600 rounded-2xl flex items-center justify-center">
+          <Check className="w-8 h-8" />
+        </div>
+        <h1 className="text-3xl font-bold">Event Published!</h1>
+        <p className="text-muted-foreground">"{publishSuccess.title}" is now live.</p>
+        <p className="text-sm text-muted-foreground">Redirecting to event page...</p>
+        <Button onClick={() => setLocation(`/events/${publishSuccess.id}`)}>
+          View Event Now
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-muted/20 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-3xl mx-auto">
-        {/* Stepper */}
+        {/* Stepper - clickable circles */}
         <div className="mb-10">
           <div className="flex justify-between mb-4">
             {STEPS.map((label, i) => (
-              <div key={i} className={`flex flex-col items-center ${i <= step ? "text-primary" : "text-muted-foreground"}`}>
-                <div className={`w-9 h-9 rounded-full flex items-center justify-center border-2 ${i <= step ? "border-primary bg-primary/10" : "border-muted"}`}>
+              <div
+                key={i}
+                className={`flex flex-col items-center cursor-pointer ${i <= step ? "text-primary" : "text-muted-foreground"} ${i < step ? "hover:opacity-80" : i === step ? "cursor-default" : "cursor-not-allowed opacity-50"}`}
+                onClick={() => goToStep(i)}
+              >
+                <div className={`w-9 h-9 rounded-full flex items-center justify-center border-2 ${i < step ? "bg-primary border-primary text-white" : i === step ? "border-primary" : "border-muted"}`}>
                   {i < step ? <Check className="w-5 h-5" /> : i + 1}
                 </div>
                 <span className="text-xs mt-2 hidden sm:block">{label}</span>
