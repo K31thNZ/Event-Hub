@@ -171,14 +171,12 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
   };
 
   const goToStep = (targetStep: number) => {
-    // Allow going back to any previous step, but not forward (use Next button)
     if (targetStep <= step) {
       setStep(targetStep);
     }
   };
 
   const nextStep = () => {
-    // Basic validation for current step before proceeding
     if (step === 0) {
       const title = watch("title");
       const description = watch("description");
@@ -250,7 +248,6 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
     );
   }
 
-  // Success view after publishing
   if (publishSuccess) {
     return (
       <div className="min-h-screen bg-muted/20 flex flex-col items-center justify-center gap-6 px-4">
@@ -307,7 +304,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                         <Controller control={control} name="category" render={({ field }) => (
                           <Select onValueChange={field.onChange} value={field.value}>
                             <SelectTrigger className="h-12"><SelectValue placeholder="Select a category" /></SelectTrigger>
-                            <SelectContent>
+                            <SelectContent className="bg-white dark:bg-zinc-900">
                               {EVENT_CATEGORIES.map(cat => <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>)}
                             </SelectContent>
                           </Select>
@@ -320,7 +317,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                           <Controller control={control} name="category2" render={({ field }) => (
                             <Select onValueChange={(v) => field.onChange(v === "__none__" ? null : v)} value={field.value ?? "__none__"}>
                               <SelectTrigger className="h-12"><SelectValue placeholder="None" /></SelectTrigger>
-                              <SelectContent>
+                              <SelectContent className="bg-white dark:bg-zinc-900">
                                 <SelectItem value="__none__">— None —</SelectItem>
                                 {EVENT_CATEGORIES.filter(c => c.value !== watchedCategory).map(c => (
                                   <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
@@ -345,7 +342,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                         <Controller control={control} name="groupId" render={({ field }) => (
                           <Select onValueChange={(v) => field.onChange(v === "__none__" ? null : parseInt(v))} value={field.value != null ? String(field.value) : "__none__"}>
                             <SelectTrigger className="h-12"><SelectValue placeholder="No group (public event)" /></SelectTrigger>
-                            <SelectContent>
+                            <SelectContent className="bg-white dark:bg-zinc-900">
                               <SelectItem value="__none__">— No group —</SelectItem>
                               {eligibleGroups.map(g => <SelectItem key={g.id} value={String(g.id)}>{g.name}</SelectItem>)}
                             </SelectContent>
@@ -383,7 +380,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                       <Controller control={control} name="time" render={({ field }) => (
                         <Select onValueChange={field.onChange} value={field.value}>
                           <SelectTrigger className="h-12"><SelectValue /></SelectTrigger>
-                          <SelectContent>
+                          <SelectContent className="bg-white dark:bg-zinc-900">
                             {timeSlots.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
                           </SelectContent>
                         </Select>
