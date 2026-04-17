@@ -25,27 +25,6 @@ import { motion } from "framer-motion";
 import { EVENT_CATEGORIES, EVENT_CATEGORY_VALUES } from "@shared/categories";
 import { ImageUpload } from "@/components/ui/ImageUpload";
 
-// ── Category default images ───────────────────────────────────────────────
-// Curated Unsplash photos that match each event category.
-// Used to pre-fill the image field when a category is selected.
-const CATEGORY_DEFAULT_IMAGES: Record<string, string> = {
-  networking:  "https://images.unsplash.com/photo-1511795409834-ef04bbd61622?w=800&q=80",
-  tech:        "https://images.unsplash.com/photo-1518770660439-4636190af475?w=800&q=80",
-  culture:     "https://images.unsplash.com/photo-1561214115-f2f134cc4912?w=800&q=80",
-  food:        "https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=800&q=80",
-  sports:      "https://images.unsplash.com/photo-1461896836934-ffe607ba8211?w=800&q=80",
-  music:       "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=800&q=80",
-  language:    "https://images.unsplash.com/photo-1546410531-bb4caa6b424d?w=800&q=80",
-  outdoor:     "https://images.unsplash.com/photo-1501854140801-50d01698950b?w=800&q=80",
-  games:       "https://images.unsplash.com/photo-1606503825008-909a67e63c3d?w=800&q=80",
-  business:    "https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?w=800&q=80",
-  wellness:    "https://images.unsplash.com/photo-1545205597-3d9d02c29597?w=800&q=80",
-  family:      "https://images.unsplash.com/photo-1516627145497-ae6968895b74?w=800&q=80",
-  social:      "https://images.unsplash.com/photo-1529543544282-ea669407fca3?w=800&q=80",
-  volunteering:"https://images.unsplash.com/photo-1559027615-cd4628902d4a?w=800&q=80",
-  other:       "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=800&q=80",
-};
-
 const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? "https://auth.expatevents.org";
 
 // ── Default cover images per category (Unsplash, free to use) ────────────
