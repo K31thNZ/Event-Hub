@@ -24,6 +24,7 @@ import { Trash2, Plus, CalendarPlus, AlertCircle, RefreshCw, Users } from "lucid
 import { motion } from "framer-motion";
 import { EVENT_CATEGORIES, EVENT_CATEGORY_VALUES } from "@shared/categories";
 import { ImageUpload } from "@/components/ui/ImageUpload";
+import { LeafletLocationPicker } from "@/components/ui/LeafletLocationPicker";
 
 const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? "https://auth.expatevents.org";
 
