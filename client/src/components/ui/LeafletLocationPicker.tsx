@@ -8,7 +8,7 @@ interface Props {
   onLocationPicked: (address: string, city: string) => void;
 }
 
-// ── Geocoding helpers ─────────────────────────────────────────────────────
+// ── Geocoding helpers (no changes) ───────────────────────────────────────
 async function reverseGeocode(lat: number, lng: number): Promise<{ address: string; city: string } | null> {
   try {
     const res = await fetch(
@@ -45,8 +45,8 @@ async function forwardGeocode(query: string): Promise<{ lat: number; lng: number
 
 export function LeafletLocationPicker({ address, city, onLocationPicked }: Props) {
   const mapRef = useRef<HTMLDivElement>(null);
-  const leafletMapRef = useRef<any>(null); // L.Map
-  const markerRef = useRef<any>(null);     // L.Marker
+  const leafletMapRef = useRef<any>(null);   // L.Map
+  const markerRef = useRef<any>(null);       // L.Marker
   const [isPicking, setIsPicking] = useState(false);
   const [isGeocoding, setIsGeocoding] = useState(false);
   const isPickingRef = useRef(isPicking);
@@ -56,19 +56,19 @@ export function LeafletLocationPicker({ address, city, onLocationPicked }: Props
     isPickingRef.current = isPicking;
   }, [isPicking]);
 
-  // Load Leaflet CSS dynamically (client‑only)
+  // Load Leaflet CSS dynamically
   useEffect(() => {
     import("leaflet/dist/leaflet.css");
   }, []);
 
-  // Dynamically load Leaflet JS and initialise map
+  // Load Leaflet JS and initialise map
   useEffect(() => {
     if (mapLoaded || !mapRef.current) return;
 
     const loadLeaflet = async () => {
       const L = (await import("leaflet")).default;
 
-      // Fix marker icons (CDN icons – no build issues)
+      // Fix marker icons using CDN URLs
       const iconUrl = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png";
       const iconRetinaUrl = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png";
       const shadowUrl = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png";
@@ -111,7 +111,7 @@ export function LeafletLocationPicker({ address, city, onLocationPicked }: Props
     loadLeaflet();
   }, [mapLoaded, onLocationPicked]);
 
-  // Forward geocode when address/city changes
+  // Forward geocode when address/city change
   useEffect(() => {
     if (!leafletMapRef.current) return;
     const query = [address, city].filter(Boolean).join(", ");
