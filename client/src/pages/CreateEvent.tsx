@@ -81,7 +81,6 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
   const createEvent = useCreateEvent();
   const { user, isLoading } = useAuth();
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [showRecurrence, setShowRecurrence] = useState(false);
 
   // Fetch groups the current user is a member of (owner or moderator)
   const { data: myGroups } = useQuery<any[]>({
@@ -142,6 +141,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
       if (def) setValue("imageUrl", def);
     }
   }, [watchedCategory]);
+
   const onSubmit = async (data: FormValues) => {
     setSubmitError(null);
     if (!user) {
@@ -154,8 +154,8 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
         published: true,
         groupId: data.groupId ?? null,
         isPrivate: data.isPrivate ?? false,
-        recurrence: showRecurrence ? data.recurrence : null,
-        recurrenceUntil: showRecurrence ? data.recurrenceUntil : null,
+        recurrence: data.recurrence ?? null,
+        recurrenceUntil: data.recurrenceUntil ?? null,
       } as any);
       setLocation("/dashboard");
     } catch (e: any) {
@@ -253,50 +253,39 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                   </div>
                 </div>
 
-                {/* ── Recurring event ────────────────────────────────── */}
-                <div className="space-y-3 pt-1">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium text-sm flex items-center gap-1.5">
-                        <RefreshCw className="w-4 h-4 text-primary" /> Recurring event
-                      </p>
-                      <p className="text-xs text-muted-foreground">Automatically create future instances</p>
+                {/* ── Recurring event (always visible) ───────────────────────────── */}
+                <div className="space-y-3 pt-1 border-t border-border mt-2">
+                  <p className="font-medium text-sm flex items-center gap-1.5">
+                    <RefreshCw className="w-4 h-4 text-primary" /> Recurring event
+                  </p>
+                  <div className="space-y-3 pl-1">
+                    <div className="flex flex-wrap gap-3">
+                      {[
+                        { value: "weekly",   label: "Weekly",      desc: "Same day every week" },
+                        { value: "biweekly", label: "Fortnightly", desc: "Every 2 weeks"       },
+                        { value: "monthly",  label: "Monthly",     desc: "Same date each month"},
+                      ].map(opt => (
+                        <Controller key={opt.value} control={control} name="recurrence" render={({ field }) => (
+                          <button
+                            type="button"
+                            onClick={() => field.onChange(opt.value)}
+                            className={`flex flex-col items-start px-4 py-3 rounded-xl border-2 transition-all text-left w-36 ${
+                              field.value === opt.value
+                                ? "border-primary bg-primary/5"
+                                : "border-border hover:border-primary/40"
+                            }`}
+                          >
+                            <span className="font-semibold text-sm">{opt.label}</span>
+                            <span className="text-xs text-muted-foreground mt-0.5">{opt.desc}</span>
+                          </button>
+                        )} />
+                      ))}
                     </div>
-                    <Switch checked={showRecurrence} onCheckedChange={(v) => {
-                      setShowRecurrence(v);
-                      if (!v) { setValue("recurrence", null); setValue("recurrenceUntil", null); }
-                    }} />
+                    <div className="space-y-1 max-w-xs">
+                      <Label>Repeat until <span className="text-muted-foreground font-normal text-xs">(optional — max 12 instances)</span></Label>
+                      <Input {...register("recurrenceUntil")} type="date" className="h-11 rounded-xl" />
+                    </div>
                   </div>
-                  {showRecurrence && (
-                    <div className="space-y-3 pl-1">
-                      <div className="flex flex-wrap gap-3">
-                        {[
-                          { value: "weekly",   label: "Weekly",      desc: "Same day every week" },
-                          { value: "biweekly", label: "Fortnightly",  desc: "Every 2 weeks"       },
-                          { value: "monthly",  label: "Monthly",      desc: "Same date each month"},
-                        ].map(opt => (
-                          <Controller key={opt.value} control={control} name="recurrence" render={({ field }) => (
-                            <button
-                              type="button"
-                              onClick={() => field.onChange(opt.value)}
-                              className={`flex flex-col items-start px-4 py-3 rounded-xl border-2 transition-all text-left w-36 ${
-                                field.value === opt.value
-                                  ? "border-primary bg-primary/5"
-                                  : "border-border hover:border-primary/40"
-                              }`}
-                            >
-                              <span className="font-semibold text-sm">{opt.label}</span>
-                              <span className="text-xs text-muted-foreground mt-0.5">{opt.desc}</span>
-                            </button>
-                          )} />
-                        ))}
-                      </div>
-                      <div className="space-y-1 max-w-xs">
-                        <Label>Repeat until <span className="text-muted-foreground font-normal text-xs">(optional — max 12 instances)</span></Label>
-                        <Input {...register("recurrenceUntil")} type="date" className="h-11 rounded-xl" />
-                      </div>
-                    </div>
-                  )}
                 </div>
 
                 {watchedCategory && (
