@@ -60,8 +60,14 @@ export function LeafletLocationPicker({ address, city, onLocationPicked }: Props
   const markerRef = useRef<L.Marker | null>(null);
   const [isPicking, setIsPicking] = useState(false);
   const [isGeocoding, setIsGeocoding] = useState(false);
+  // Keep a ref to the latest isPicking value for use inside the map click handler
+  const isPickingRef = useRef(isPicking);
 
-  // Initialize map
+  useEffect(() => {
+    isPickingRef.current = isPicking;
+  }, [isPicking]);
+
+  // Initialize map only once
   useEffect(() => {
     if (!mapRef.current || leafletMapRef.current) return;
 
@@ -74,9 +80,9 @@ export function LeafletLocationPicker({ address, city, onLocationPicked }: Props
 
     leafletMapRef.current = map;
 
-    // Click handler to drop pin
+    // Click handler – uses the ref to read the current picking state
     map.on("click", async (e) => {
-      if (!isPicking) return;
+      if (!isPickingRef.current) return;
       const { lat, lng } = e.latlng;
 
       // Remove existing marker
@@ -99,7 +105,7 @@ export function LeafletLocationPicker({ address, city, onLocationPicked }: Props
       map.remove();
       leafletMapRef.current = null;
     };
-  }, [isPicking, onLocationPicked]);
+  }, [onLocationPicked]); // only depends on onLocationPicked (stable if using useCallback)
 
   // Forward geocode when address/city changes
   useEffect(() => {
