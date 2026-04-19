@@ -1,124 +1,124 @@
-// client/src/components/TelegramConnect.tsx
-// Drop this component into Profile.tsx where the Telegram section is.
-// Replaces the "copy your profile ID" instructions with a one-tap deep link button.
-
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { ExternalLink, Unlink, Loader2 } from "lucide-react";
+import { AlertCircle, CheckCircle, Loader2 } from "lucide-react";
 
-const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? "https://auth.expatevents.org";
-
-interface TelegramConnectProps {
-  connected: boolean;        // whether user already has telegramId
-  onUnlinked?: () => void;   // callback after successful unlink
+interface Props {
+  connected: boolean;
+  onUnlinked?: () => void;
 }
 
-export function TelegramConnect({ connected, onUnlinked }: TelegramConnectProps) {
-  const [loading, setLoading] = useState(false);
+export function TelegramConnect({ connected, onUnlinked }: Props) {
+  const [isLinking, setIsLinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [unlinking, setUnlinking] = useState(false);
+  const [botConfigured, setBotConfigured] = useState<boolean | null>(null);
 
-  const handleConnect = async () => {
-    setLoading(true);
+  // Check if the bot is configured on the backend
+  useEffect(() => {
+    fetch("/api/telegram/status", { credentials: "include" })
+      .then(res => res.json())
+      .then(data => setBotConfigured(data.configured))
+      .catch(() => setBotConfigured(false));
+  }, []);
+
+  const handleLink = async () => {
     setError(null);
+    setIsLinking(true);
     try {
-      const res = await fetch(`${AUTH_URL}/api/telegram/link-token`, {
+      const res = await fetch("/api/telegram/link", {
         method: "POST",
         credentials: "include",
       });
-
-      if (!res.ok) {
-        const data = await res.json();
-        setError(data.error ?? "Failed to generate link. Please try again.");
-        return;
-      }
-
-      const { deepLink } = await res.json();
-      // Open the Telegram deep link — on mobile this opens the Telegram app directly
-      window.open(deepLink, "_blank");
-    } catch {
-      setError("Network error. Please try again.");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to start linking");
+      // Open the bot's deep link in a new tab
+      window.open(data.url, "_blank");
+    } catch (err: any) {
+      setError(err.message);
     } finally {
-      setLoading(false);
+      setIsLinking(false);
     }
   };
 
   const handleUnlink = async () => {
-    setUnlinking(true);
     setError(null);
+    setIsLinking(true);
     try {
-      await fetch(`${AUTH_URL}/api/telegram/unlink`, {
+      const res = await fetch("/api/telegram/unlink", {
         method: "POST",
         credentials: "include",
       });
-      onUnlinked?.();
-    } catch {
-      setError("Failed to unlink. Please try again.");
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.message || "Failed to unlink");
+      }
+      if (onUnlinked) onUnlinked();
+    } catch (err: any) {
+      setError(err.message);
     } finally {
-      setUnlinking(false);
+      setIsLinking(false);
     }
   };
 
-  if (connected) {
+  // If bot is not configured, show a warning instead of the buttons
+  if (botConfigured === false) {
     return (
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-blue-50 dark:bg-blue-950 flex items-center justify-center text-lg">
-            ✈️
-          </div>
-          <div>
-            <p className="font-medium text-sm">Telegram connected</p>
-            <p className="text-xs text-muted-foreground">
-              You'll receive event notifications via Telegram
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Badge variant="secondary" className="text-xs">Connected</Badge>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleUnlink}
-            disabled={unlinking}
-            className="text-muted-foreground hover:text-destructive text-xs h-7 px-2"
-          >
-            {unlinking ? <Loader2 className="w-3 h-3 animate-spin" /> : <Unlink className="w-3 h-3 mr-1" />}
-            Unlink
-          </Button>
-        </div>
+      <div className="flex items-center gap-2 text-amber-600 bg-amber-50 dark:bg-amber-950/30 p-3 rounded-xl">
+        <AlertCircle className="w-5 h-5 shrink-0" />
+        <span className="text-sm">
+          Telegram notifications are currently unavailable. Please contact the site administrator.
+        </span>
+      </div>
+    );
+  }
+
+  if (botConfigured === null) {
+    return (
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <Loader2 className="w-4 h-4 animate-spin" />
+        <span className="text-sm">Checking Telegram status…</span>
       </div>
     );
   }
 
   return (
     <div className="space-y-3">
-      <p className="text-sm text-muted-foreground">
-        Connect Telegram to get event notifications and availability alerts
-        directly in your phone — no app to check, no emails to miss.
-      </p>
-
-      <Button
-        onClick={handleConnect}
-        disabled={loading}
-        className="w-full gap-2 rounded-xl"
-        variant="outline"
-      >
-        {loading ? (
-          <Loader2 className="w-4 h-4 animate-spin" />
-        ) : (
-          <ExternalLink className="w-4 h-4" />
-        )}
-        {loading ? "Generating link…" : "Connect Telegram"}
-      </Button>
-
       {error && (
-        <p className="text-xs text-destructive text-center">{error}</p>
+        <div className="flex items-start gap-2 p-3 rounded-xl bg-destructive/10 text-destructive text-sm">
+          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+          <span>{error}</span>
+        </div>
       )}
 
-      <p className="text-xs text-muted-foreground text-center">
-        Tapping the button opens Telegram. The bot will confirm once your accounts are linked.
-      </p>
+      {connected ? (
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
+            <CheckCircle className="w-5 h-5" />
+            <span className="text-sm font-medium">Connected to Telegram</span>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleUnlink}
+            disabled={isLinking}
+            className="self-start"
+          >
+            {isLinking ? "Disconnecting…" : "Disconnect Telegram"}
+          </Button>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <p className="text-sm text-muted-foreground">
+            Connect your Telegram account to receive event notifications.
+          </p>
+          <Button
+            onClick={handleLink}
+            disabled={isLinking}
+            className="self-start"
+          >
+            {isLinking ? "Creating link…" : "Connect Telegram"}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
