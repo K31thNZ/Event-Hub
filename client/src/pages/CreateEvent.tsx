@@ -374,40 +374,50 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
               </CardContent>
             </Card>
 
-            {/* ── Location & Media ───────────────────────────────────── */}
-            <Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
-              <div className="bg-primary/5 px-8 py-4 border-b border-border/50">
-                <h2 className="text-xl font-bold font-display">Location & Media</h2>
-              </div>
-              <CardContent className="p-8 space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <Label>Venue Address</Label>
-                    <Input {...register("venueAddress")} className="h-12 rounded-xl" placeholder="Tverskaya St, 1" />
-                    {errors.venueAddress && <p className="text-destructive text-sm">{errors.venueAddress.message}</p>}
-                  </div>
-                  <div className="space-y-2">
-                    <Label>City</Label>
-                    <Input {...register("venueCity")} className="h-12 rounded-xl" placeholder="Moscow" />
-                    {errors.venueCity && <p className="text-destructive text-sm">{errors.venueCity.message}</p>}
-                  </div>
-                </div>
+           {/* ── Location & Media ───────────────────────────────────── */}
+<Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
+  <div className="bg-primary/5 px-8 py-4 border-b border-border/50">
+    <h2 className="text-xl font-bold font-display">Location & Media</h2>
+  </div>
+  <CardContent className="p-8 space-y-6">
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="space-y-2">
+        <Label>Venue Address</Label>
+        <Input {...register("venueAddress")} className="h-12 rounded-xl" placeholder="Tverskaya St, 1" />
+        {errors.venueAddress && <p className="text-destructive text-sm">{errors.venueAddress.message}</p>}
+      </div>
+      <div className="space-y-2">
+        <Label>City</Label>
+        <Input {...register("venueCity")} className="h-12 rounded-xl" placeholder="Moscow" />
+        {errors.venueCity && <p className="text-destructive text-sm">{errors.venueCity.message}</p>}
+      </div>
+    </div>
 
-                <Controller
-                  control={control}
-                  name="imageUrl"
-                  render={({ field }) => (
-                    <ImageUpload
-                      value={field.value}
-                      onChange={field.onChange}
-                      label="Cover Image"
-                      hint="Upload a photo or use the default for your chosen category. Max 2MB."
-                      aspectRatio="wide"
-                    />
-                  )}
-                />
-              </CardContent>
-            </Card>
+    {/* Leaflet Location Picker */}
+    <LeafletLocationPicker
+      address={watch("venueAddress")}
+      city={watch("venueCity")}
+      onLocationPicked={(address, city) => {
+        setValue("venueAddress", address);
+        setValue("venueCity", city);
+      }}
+    />
+
+    <Controller
+      control={control}
+      name="imageUrl"
+      render={({ field }) => (
+        <ImageUpload
+          value={field.value}
+          onChange={field.onChange}
+          label="Cover Image"
+          hint="Upload a photo or use the default for your chosen category. Max 2MB."
+          aspectRatio="wide"
+        />
+      )}
+    />
+  </CardContent>
+</Card>
 
             {/* ── Tickets ────────────────────────────────────────────── */}
             <Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
