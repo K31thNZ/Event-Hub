@@ -182,18 +182,6 @@ export default function EventDetails() {
                 </div>
               </div>
 
-              {/* ── Legal disclaimer ───────────────────────────────── */}
-              <div className="mt-6 p-4 rounded-2xl bg-muted/50 border border-border/60">
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  ExpatEvents provides the infrastructure to organise activities. The voluntary organisers
-                  do not represent ExpatEvents as vicarious agents. In the case of gross negligence by the
-                  organisers, ExpatEvents therefore does not accept any legal responsibility for resulting
-                  damages. Neither ExpatEvents nor the event organisers assume liability for any loss of or
-                  damage to personal property, nor shall they be held responsible in the event of financial,
-                  physical, or emotional damage.
-                </p>
-              </div>
-
               {countdown && (
                 <div className="mt-8 flex items-center gap-3 bg-destructive/10 border border-destructive/20 text-destructive px-5 py-3 rounded-2xl">
                   <Timer className="w-5 h-5 shrink-0" />
@@ -392,6 +380,18 @@ export default function EventDetails() {
           </form>
         </SheetContent>
       </Sheet>
+
+      {/* ── Legal disclaimer at the very bottom ───────────────────────────── */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 mt-8 border-t border-border/50">
+        <p className="text-center text-xs text-muted-foreground/70 leading-relaxed">
+          ExpatEvents provides the infrastructure to organise activities. The voluntary organisers
+          do not represent ExpatEvents as vicarious agents. In the case of gross negligence by the
+          organisers, ExpatEvents therefore does not accept any legal responsibility for resulting
+          damages. Neither ExpatEvents nor the event organisers assume liability for any loss of or
+          damage to personal property, nor shall they be held responsible in the event of financial,
+          physical, or emotional damage.
+        </p>
+      </div>
 
     </div>
   );
