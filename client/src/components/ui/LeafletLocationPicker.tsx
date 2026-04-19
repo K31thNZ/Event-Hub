@@ -8,7 +8,7 @@ interface Props {
   onLocationPicked: (address: string, city: string) => void;
 }
 
-// ── Geocoding helpers (no changes) ───────────────────────────────────────
+// ── Geocoding helpers ─────────────────────────────────────────────────────
 async function reverseGeocode(lat: number, lng: number): Promise<{ address: string; city: string } | null> {
   try {
     const res = await fetch(
@@ -20,7 +20,8 @@ async function reverseGeocode(lat: number, lng: number): Promise<{ address: stri
     const a = data.address ?? {};
     const road = a.road ?? a.pedestrian ?? a.footway ?? "";
     const houseNo = a.house_number ?? "";
-    const address = [road, houseNo].filter(Boolean).join(", ") || (data.display_name ?? "").split(",")[0] ?? "";
+    // FIXED: added parentheses around the ?? chain after ||
+    const address = [road, houseNo].filter(Boolean).join(", ") || ((data.display_name ?? "").split(",")[0] ?? "");
     const city = a.city ?? a.town ?? a.village ?? a.county ?? "";
     return { address, city };
   } catch {
@@ -45,8 +46,8 @@ async function forwardGeocode(query: string): Promise<{ lat: number; lng: number
 
 export function LeafletLocationPicker({ address, city, onLocationPicked }: Props) {
   const mapRef = useRef<HTMLDivElement>(null);
-  const leafletMapRef = useRef<any>(null);   // L.Map
-  const markerRef = useRef<any>(null);       // L.Marker
+  const leafletMapRef = useRef<any>(null);
+  const markerRef = useRef<any>(null);
   const [isPicking, setIsPicking] = useState(false);
   const [isGeocoding, setIsGeocoding] = useState(false);
   const isPickingRef = useRef(isPicking);
