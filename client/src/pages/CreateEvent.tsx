@@ -360,7 +360,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                         <Input
                           {...register("title")}
                           className="h-12 rounded-xl text-lg"
-                          placeholder="Tallinn Summer Tech Mixer"
+                          placeholder="Moscow Summer Tech Mixer"
                         />
                         {errors.title && <p className="text-destructive text-sm">{errors.title.message}</p>}
                       </div>
