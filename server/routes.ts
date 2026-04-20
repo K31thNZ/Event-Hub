@@ -4,13 +4,13 @@ import { registerPicksRoutes } from "./picks-routes";
 import type { Express } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
-import { api } from "@shared/routes";
+import { api, buildUrl } from "@shared/routes";
 import { requireAuth, getUser } from "./auth-client";
 import { z } from "zod";
 import { db } from "./db";
 import { users } from "@shared/models/auth";
 import { eq } from "drizzle-orm";
-import crypto from "crypto"; // for generating unique tokens
+import crypto from "crypto";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -44,56 +44,40 @@ export async function registerRoutes(
     }
   });
 
-  // ========== TELEGRAM ROUTES ==========
-  const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-  const BOT_USERNAME = process.env.TELEGRAM_BOT_USERNAME ?? "meh_auth_bot"; // fallback
+  // ── Telegram routes ───────────────────────────────────────────────────
+  const BOT_TOKEN    = process.env.TELEGRAM_BOT_TOKEN;
+  const BOT_USERNAME = process.env.TELEGRAM_BOT_USERNAME ?? "meh_auth_bot";
 
-  // Helper to generate a unique token for linking
   const generateLinkToken = () => crypto.randomBytes(32).toString("hex");
-
-  // In-memory store for link tokens (use Redis in production)
   const linkTokens = new Map<string, { userId: string; expires: number }>();
 
-  // Status endpoint – tells frontend if bot is configured
-  app.get("/api/telegram/status", (req, res) => {
+  app.get("/api/telegram/status", (_req, res) => {
     res.json({ configured: !!BOT_TOKEN });
   });
 
-  // Generate a deep link for the user to start the bot and link their account
   app.post("/api/telegram/link", requireAuth, async (req: any, res) => {
     if (!BOT_TOKEN) {
       return res.status(503).json({ message: "Telegram bot is not configured" });
     }
-
     const userId = String(req.user.id);
-    const token = generateLinkToken();
-    // Token valid for 10 minutes
+    const token  = generateLinkToken();
     linkTokens.set(token, { userId, expires: Date.now() + 10 * 60 * 1000 });
-
-    // Deep link format: https://t.me/BOT_USERNAME?start=link_TOKEN
     const deepLink = `https://t.me/${BOT_USERNAME}?start=link_${token}`;
     res.json({ url: deepLink });
   });
 
-  // Webhook endpoint that the bot will call when a user clicks /start with a token
-  // You need to set this webhook URL in your bot configuration (e.g., via setWebhook)
   app.post("/api/telegram/webhook", async (req, res) => {
     const update = req.body;
     try {
-      // Handle /start command with a token
       if (update.message?.text?.startsWith("/start")) {
-        const text = update.message.text;
-        const match = text.match(/\/start link_([a-f0-9]+)/);
+        const match = update.message.text.match(/\/start link_([a-f0-9]+)/);
         if (match) {
           const token = match[1];
-          const data = linkTokens.get(token);
+          const data  = linkTokens.get(token);
           if (data && data.expires > Date.now()) {
             const telegramId = String(update.message.from.id);
-            // Update the user's record with telegramId
             await db.update(users).set({ telegramId }).where(eq(users.id, data.userId));
             linkTokens.delete(token);
-            // Send confirmation message to the user
-            // You'd need a bot instance to reply; for simplicity, we just return OK
           }
         }
       }
@@ -104,11 +88,9 @@ export async function registerRoutes(
     }
   });
 
-  // Unlink Telegram account
   app.post("/api/telegram/unlink", requireAuth, async (req: any, res) => {
-    const userId = String(req.user.id);
     try {
-      await db.update(users).set({ telegramId: null }).where(eq(users.id, userId));
+      await db.update(users).set({ telegramId: null }).where(eq(users.id, String(req.user.id)));
       res.json({ success: true });
     } catch (err) {
       console.error("Unlink error:", err);
@@ -117,18 +99,186 @@ export async function registerRoutes(
   });
 
   // ── Events ────────────────────────────────────────────────────────────
+
+  // GET /api/events — list all published events with optional filters
   app.get(api.events.list.path, async (req, res) => {
-    // ... existing code ...
+    try {
+      const { search, category, city } = req.query as Record<string, string>;
+      const events = await storage.getEvents({
+        search:   search   || undefined,
+        category: category || undefined,
+        city:     city     || undefined,
+      });
+      res.json(events);
+    } catch (err) {
+      console.error("[GET /api/events]", err);
+      res.status(500).json({ message: "Failed to fetch events" });
+    }
   });
 
-  // ... (all your existing event, order, and seeding code unchanged) ...
+  // GET /api/events/me — events created by the current user
+  app.get(api.events.myEvents.path, requireAuth, async (req: any, res) => {
+    try {
+      const events = await storage.getEventsByOrganizer(String(req.user.id));
+      res.json(events);
+    } catch (err) {
+      console.error("[GET /api/events/me]", err);
+      res.status(500).json({ message: "Failed to fetch your events" });
+    }
+  });
+
+  // GET /api/events/:id — single event
+  app.get(api.events.get.path, async (req, res) => {
+    try {
+      const id    = parseInt(req.params.id, 10);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid event ID" });
+      const event = await storage.getEvent(id);
+      if (!event)   return res.status(404).json({ message: "Event not found" });
+      res.json(event);
+    } catch (err) {
+      console.error("[GET /api/events/:id]", err);
+      res.status(500).json({ message: "Failed to fetch event" });
+    }
+  });
+
+  // POST /api/events — create a new event
+  app.post(api.events.create.path, requireAuth, async (req: any, res) => {
+    try {
+      const parsed = api.events.create.input.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          message: parsed.error.errors[0]?.message ?? "Validation error",
+          field:   parsed.error.errors[0]?.path?.join("."),
+        });
+      }
+      const event = await storage.createEvent(String(req.user.id), parsed.data);
+      res.status(201).json(event);
+    } catch (err: any) {
+      console.error("[POST /api/events]", err);
+      res.status(500).json({ message: err.message ?? "Failed to create event" });
+    }
+  });
+
+  // PATCH /api/events/:id — update an event
+  app.patch(api.events.update.path, requireAuth, async (req: any, res) => {
+    try {
+      const id    = parseInt(req.params.id, 10);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid event ID" });
+
+      const existing = await storage.getEvent(id);
+      if (!existing)  return res.status(404).json({ message: "Event not found" });
+
+      // Only organizer or admin may update
+      const localUser = await db.query.users.findFirst({
+        where: eq(users.id, String(req.user.id)),
+      });
+      if (existing.organizerId !== String(req.user.id) && !localUser?.isAdmin) {
+        return res.status(403).json({ message: "Not authorized to update this event" });
+      }
+
+      const parsed = api.events.update.input.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          message: parsed.error.errors[0]?.message ?? "Validation error",
+        });
+      }
+
+      const updated = await storage.updateEvent(id, parsed.data);
+      res.json(updated);
+    } catch (err: any) {
+      console.error("[PATCH /api/events/:id]", err);
+      res.status(500).json({ message: err.message ?? "Failed to update event" });
+    }
+  });
+
+  // DELETE /api/events/:id — delete an event
+  app.delete(api.events.delete.path, requireAuth, async (req: any, res) => {
+    try {
+      const id    = parseInt(req.params.id, 10);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid event ID" });
+
+      const existing = await storage.getEvent(id);
+      if (!existing)  return res.status(404).json({ message: "Event not found" });
+
+      const localUser = await db.query.users.findFirst({
+        where: eq(users.id, String(req.user.id)),
+      });
+      if (existing.organizerId !== String(req.user.id) && !localUser?.isAdmin) {
+        return res.status(403).json({ message: "Not authorized to delete this event" });
+      }
+
+      await storage.deleteEvent(id);
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("[DELETE /api/events/:id]", err);
+      res.status(500).json({ message: err.message ?? "Failed to delete event" });
+    }
+  });
+
+  // ── Orders ────────────────────────────────────────────────────────────
+
+  // GET /api/orders/me — orders placed by the current user
+  app.get(api.orders.myOrders.path, requireAuth, async (req: any, res) => {
+    try {
+      const orders = await storage.getOrdersByAttendee(String(req.user.id));
+      res.json(orders);
+    } catch (err) {
+      console.error("[GET /api/orders/me]", err);
+      res.status(500).json({ message: "Failed to fetch orders" });
+    }
+  });
+
+  // GET /api/orders/:id — single order
+  app.get(api.orders.get.path, requireAuth, async (req: any, res) => {
+    try {
+      const id    = parseInt(req.params.id, 10);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid order ID" });
+
+      const order = await storage.getOrder(id);
+      if (!order)   return res.status(404).json({ message: "Order not found" });
+
+      // Only the attendee or an admin may view an order
+      const localUser = await db.query.users.findFirst({
+        where: eq(users.id, String(req.user.id)),
+      });
+      if (order.attendeeId !== String(req.user.id) && !localUser?.isAdmin) {
+        return res.status(403).json({ message: "Not authorized to view this order" });
+      }
+
+      res.json(order);
+    } catch (err) {
+      console.error("[GET /api/orders/:id]", err);
+      res.status(500).json({ message: "Failed to fetch order" });
+    }
+  });
+
+  // POST /api/orders — place an order
+  app.post(api.orders.create.path, requireAuth, async (req: any, res) => {
+    try {
+      const parsed = api.orders.create.input.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          message: parsed.error.errors[0]?.message ?? "Validation error",
+          field:   parsed.error.errors[0]?.path?.join("."),
+        });
+      }
+
+      const event = await storage.getEvent(parsed.data.eventId);
+      if (!event) return res.status(404).json({ message: "Event not found" });
+
+      const order = await storage.createOrder(String(req.user.id), parsed.data);
+      res.status(201).json(order);
+    } catch (err: any) {
+      console.error("[POST /api/orders]", err);
+      res.status(500).json({ message: err.message ?? "Failed to create order" });
+    }
+  });
 
   await seedDatabase();
   scheduleTicketReminders();
   return httpServer;
 }
 
-// Keep your existing seedDatabase function unchanged
 async function seedDatabase() {
-  // ... unchanged ...
+  // Add any seed logic here if needed
 }
