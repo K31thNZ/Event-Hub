@@ -11,6 +11,7 @@ import { User, Bell, Calendar, Camera, Pencil, Check, X } from "lucide-react";
 import { motion } from "framer-motion";
 import { EVENT_CATEGORIES } from "@shared/categories";
 import { TelegramConnect } from "@/components/TelegramConnect";
+import { isTelegramMiniApp } from "@/hooks/use-telegram-miniapp-auth";
 
 const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? "https://auth.expatevents.org";
 
@@ -330,19 +331,21 @@ export default function Profile() {
           </Card>
 
           {/* ── Telegram ─────────────────────────────────────────────────── */}
-          <Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
-            <div className="bg-primary/5 px-8 py-4 border-b border-border/50 flex items-center gap-2">
-              <Bell className="w-5 h-5 text-primary" />
-              <h2 className="text-xl font-bold font-display">Telegram Notifications</h2>
-            </div>
-            <CardContent className="p-8">
-              <TelegramConnect
-                connected={!!user.telegramId}
-                onUnlinked={() => queryClient.invalidateQueries({ queryKey: ["auth-user"] })}
-              />
-            </CardContent>
-          </Card>
 
+          {!isTelegramMiniApp() && (
+  <Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
+    <div className="bg-primary/5 px-8 py-4 border-b border-border/50 flex items-center gap-2">
+      <Bell className="w-5 h-5 text-primary" />
+      <h2 className="text-xl font-bold font-display">Telegram Notifications</h2>
+    </div>
+    <CardContent className="p-8">
+      <TelegramConnect
+        connected={!!user.telegramId}
+        onUnlinked={() => queryClient.invalidateQueries({ queryKey: ["auth-user"] })}
+      />
+    </CardContent>
+  </Card>
+)}
           {/* ── Interests ────────────────────────────────────────────────── */}
           <Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
             <div className="bg-primary/5 px-8 py-4 border-b border-border/50">
