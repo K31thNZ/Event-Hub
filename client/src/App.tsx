@@ -21,7 +21,9 @@ import Picks from "@/pages/Picks";
 import PitchDeck from "./pages/PitchDeck";
 import { useTelegramMiniAppAuth } from "@/hooks/use-telegram-miniapp-auth";
 
-// Loading spinner component (you may already have one)
+const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? "https://auth.expatevents.org";
+
+// Loading spinner component
 const FullPageLoader = () => (
   <div className="min-h-screen flex items-center justify-center">
     <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full" />
@@ -33,7 +35,7 @@ function ProtectedRoute({ component: Component }: { component: any }) {
   const { isAuthenticated, isLoading } = useAuth();
   if (isLoading) return <FullPageLoader />;
   if (!isAuthenticated) {
-    window.location.href = "/api/login";
+    window.location.href = `${AUTH_URL}/login?returnTo=${encodeURIComponent(window.location.href)}`;
     return null;
   }
   return <Component />;
@@ -53,7 +55,51 @@ function Router() {
       <Navbar />
       <main className="flex-1 flex flex-col">
         <Switch>
-          {/* ... all your existing routes ... */}
+          {/* ── General ─────────────────────────────────────────────── */}
+          <Route path="/" component={Home} />
+          <Route path="/picks" component={Picks} />
+          <Route path="/profile">
+            <ProtectedRoute component={Profile} />
+          </Route>
+
+          {/* ── Events ──────────────────────────────────────────────── */}
+          <Route path="/create-event">
+            <ProtectedRoute component={CreateEvent} />
+          </Route>
+          <Route path="/events/:id" component={EventDetails} />
+
+          {/* ── Orders ──────────────────────────────────────────────── */}
+          <Route path="/orders/:id">
+            <ProtectedRoute component={OrderView} />
+          </Route>
+
+          {/* ── Dashboard ───────────────────────────────────────────── */}
+          <Route path="/dashboard">
+            <ProtectedRoute component={Dashboard} />
+          </Route>
+
+          {/* ── Groups ──────────────────────────────────────────────── */}
+          <Route path="/groups" component={Groups} />
+          <Route path="/groups/create">
+            <ProtectedRoute component={CreateGroup} />
+          </Route>
+
+          {/* /groups/:slug/create-event — pre-links the event to the group */}
+          <Route path="/groups/:slug/create-event">
+            {(params) => (
+              <ProtectedRoute component={() => <CreateEvent groupSlug={params.slug} />} />
+            )}
+          </Route>
+
+          {/* /groups/:slug/manage — edit group settings */}
+          <Route path="/groups/:slug/manage">
+            <ProtectedRoute component={GroupManage} />
+          </Route>
+
+          {/* /groups/:slug — public group profile (must be last of the group routes) */}
+          <Route path="/groups/:slug" component={GroupProfile} />
+
+          {/* ── Fallback ─────────────────────────────────────────────── */}
           <Route component={NotFound} />
         </Switch>
       </main>
@@ -64,17 +110,12 @@ function Router() {
 // ── Authentication Gate ───────────────────────────────────────────────────
 // Waits for Mini App auth (if applicable) and user session to be ready.
 function AuthGate({ children }: { children: React.ReactNode }) {
-  const { isAuthenticating: isMiniAppAuth, error: miniAppError } = useTelegramMiniAppAuth();
+  const { isAuthenticating: isMiniAppAuth } = useTelegramMiniAppAuth();
   const { isLoading: isAuthLoading } = useAuth();
 
-  // Show loader while either Mini App auth is in progress or the main auth is loading
   if (isMiniAppAuth || isAuthLoading) {
     return <FullPageLoader />;
   }
-
-  // If Mini App auth failed, you might want to show an error, but typically
-  // we just proceed and let the protected routes redirect to login.
-  // We can ignore miniAppError for now.
 
   return <>{children}</>;
 }
