@@ -104,7 +104,7 @@ export function Navbar() {
                   <DropdownMenuItem asChild className="cursor-pointer">
                     <Link href="/profile" className="w-full flex items-center">
                       <Settings className="mr-2 h-4 w-4" />
-                      <span>Profile & Interests</span>
+                      <span>Profile</span>
                     </Link>
                   </DropdownMenuItem>
                   {(user?.role === "curator" || user?.role === "admin") && (
