@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { User, Bell, Calendar, Camera, Pencil, Check, X } from "lucide-react";
+import { User, Bell, Calendar, Camera, Pencil, Check, X, Languages, MapPin, Plus, Trash2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { EVENT_CATEGORIES } from "@shared/categories";
 import { TelegramConnect } from "@/components/TelegramConnect";
@@ -15,12 +15,6 @@ import { isTelegramMiniApp } from "@/hooks/use-telegram-miniapp-auth";
 
 const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? "https://auth.expatevents.org";
 
-// ── Cloudinary unsigned upload ─────────────────────────────────────────────
-// Set these in your .env / Render environment variables:
-//   VITE_CLOUDINARY_CLOUD_NAME=your_cloud_name
-//   VITE_CLOUDINARY_UPLOAD_PRESET=your_unsigned_preset
-//
-// To set up: cloudinary.com → Settings → Upload → Upload presets → Add unsigned preset
 const CLOUDINARY_CLOUD   = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME ?? "";
 const CLOUDINARY_PRESET  = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET ?? "";
 
@@ -32,7 +26,6 @@ async function uploadImageToCloudinary(file: File): Promise<string> {
   form.append("file", file);
   form.append("upload_preset", CLOUDINARY_PRESET);
   form.append("folder", "expatevents/avatars");
-
   const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`, {
     method: "POST",
     body: form,
@@ -49,11 +42,211 @@ const CATEGORY_ICONS: Record<string, string> = {
   social: "🤝", volunteering: "🙌", other: "📌",
 };
 
+// ── Language data ─────────────────────────────────────────────────────────────
+const PROFICIENCY_LEVELS = [
+  { value: "A1", label: "A1 — Beginner" },
+  { value: "A2", label: "A2 — Elementary" },
+  { value: "B1", label: "B1 — Intermediate" },
+  { value: "B2", label: "B2 — Upper-intermediate" },
+  { value: "C1", label: "C1 — Advanced" },
+  { value: "C2", label: "C2 — Mastery" },
+] as const;
+
+export type ProficiencyLevel = (typeof PROFICIENCY_LEVELS)[number]["value"];
+
+export interface LanguageEntry {
+  code: string;       // ISO 639-1 code e.g. "en"
+  proficiency: ProficiencyLevel;
+}
+
+// Common languages expats encounter / speak — extend as needed
+const LANGUAGES = [
+  { code: "en", label: "English", flag: "🇬🇧" },
+  { code: "ru", label: "Russian", flag: "🇷🇺" },
+  { code: "de", label: "German", flag: "🇩🇪" },
+  { code: "fr", label: "French", flag: "🇫🇷" },
+  { code: "es", label: "Spanish", flag: "🇪🇸" },
+  { code: "it", label: "Italian", flag: "🇮🇹" },
+  { code: "pt", label: "Portuguese", flag: "🇵🇹" },
+  { code: "nl", label: "Dutch", flag: "🇳🇱" },
+  { code: "pl", label: "Polish", flag: "🇵🇱" },
+  { code: "sv", label: "Swedish", flag: "🇸🇪" },
+  { code: "no", label: "Norwegian", flag: "🇳🇴" },
+  { code: "da", label: "Danish", flag: "🇩🇰" },
+  { code: "fi", label: "Finnish", flag: "🇫🇮" },
+  { code: "cs", label: "Czech", flag: "🇨🇿" },
+  { code: "sk", label: "Slovak", flag: "🇸🇰" },
+  { code: "hu", label: "Hungarian", flag: "🇭🇺" },
+  { code: "ro", label: "Romanian", flag: "🇷🇴" },
+  { code: "uk", label: "Ukrainian", flag: "🇺🇦" },
+  { code: "ar", label: "Arabic", flag: "🇸🇦" },
+  { code: "zh", label: "Chinese (Mandarin)", flag: "🇨🇳" },
+  { code: "ja", label: "Japanese", flag: "🇯🇵" },
+  { code: "ko", label: "Korean", flag: "🇰🇷" },
+  { code: "hi", label: "Hindi", flag: "🇮🇳" },
+  { code: "fa", label: "Persian (Farsi)", flag: "🇮🇷" },
+  { code: "tr", label: "Turkish", flag: "🇹🇷" },
+  { code: "he", label: "Hebrew", flag: "🇮🇱" },
+  { code: "el", label: "Greek", flag: "🇬🇷" },
+  { code: "id", label: "Indonesian", flag: "🇮🇩" },
+  { code: "th", label: "Thai", flag: "🇹🇭" },
+  { code: "vi", label: "Vietnamese", flag: "🇻🇳" },
+];
+
+// ── Moscow Metro stations grouped by line ─────────────────────────────────────
+// Line colours match the official Moscow Metro map
+export const METRO_LINES: { line: string; color: string; stations: string[] }[] = [
+  {
+    line: "1 — Sokolnicheskaya (Red)",
+    color: "#EF3340",
+    stations: [
+      "Bulvar Rokossovskogo", "Shchёlkovskaya", "Pervomayskaya", "Izmaylovskaya",
+      "Partizanskaya", "Semyonovskaya", "Elektrozavodskaya", "Baumanskaya",
+      "Komsomolskaya", "Krasnye Vorota", "Chistye Prudy", "Lubyanka",
+      "Okhotny Ryad", "Biblioteka imeni Lenina", "Kropotkinskaya",
+      "Park Kultury", "Frunzenskaya", "Sportivnaya", "Vorobyovy Gory",
+      "Universitet", "Prospekt Vernadskogo", "Yugo-Zapadnaya",
+      "Troparyovo", "Rumyantsevo", "Salaryevo",
+    ],
+  },
+  {
+    line: "2 — Zamoskvoretskaya (Green)",
+    color: "#4DAA4B",
+    stations: [
+      "Khimki", "Ховrino", "Belorusskaya", "Mayakovskaya", "Tverskaya",
+      "Teatralnaya", "Novokuznetskaya", "Paveletskaya", "Avtozavodskaya",
+      "Technopark", "Kolomenskaya", "Kashirskaya", "Kantemirovskaya",
+      "Tsaritsyno", "Orekhovo", "Domodedovskaya", "Krasnogvardeyskaya",
+      "Alma-Atinskaya",
+    ],
+  },
+  {
+    line: "3 — Arbatsko-Pokrovskaya (Dark Blue)",
+    color: "#0952A5",
+    stations: [
+      "Shchyolkovskaya", "Cherkizovskaya (Arbatsko)", "Preobrazhenskaya Ploshchad",
+      "Sokolniki", "Krasnoselskaya", "Komsomolskaya (Arbatsko)", "Kurskaya",
+      "Ploshchad Revolyutsii", "Arbatskaya", "Smolenskaya", "Kiyevskaya",
+      "Park Pobedy", "Kuntsevskaya", "Molodёzhnaya", "Krylatskoye",
+      "Strogino", "Shodnya", "Mitino", "Volok Lamskoe",
+    ],
+  },
+  {
+    line: "4 — Filyovskaya (Light Blue)",
+    color: "#17A9E1",
+    stations: [
+      "Aleksandrovsky Sad", "Arbatskaya (Filyovskaya)", "Smolenskaya (Filyovskaya)",
+      "Kiyevskaya (Filyovskaya)", "Studencheskaya", "Kutuzovskaya",
+      "Fili", "Bagrationovskaya", "Filyovsk Park", "Kuntsevskaya (Filyovskaya)",
+      "Pionerskaya", "Slavyansky Bulvar",
+    ],
+  },
+  {
+    line: "5 — Koltsevaya (Brown/Circle)",
+    color: "#8E5C2B",
+    stations: [
+      "Park Kultury (Circle)", "Oktyabrskaya (Circle)", "Dobryninskaya",
+      "Paveletskaya (Circle)", "Taganskaya (Circle)", "Kurskaya (Circle)",
+      "Komsomolskaya (Circle)", "Prospekt Mira (Circle)", "Novoslobodskaya",
+      "Belorusskaya (Circle)", "Krasnopresnenskaya", "Kiyevskaya (Circle)",
+    ],
+  },
+  {
+    line: "6 — Kaluzhsko-Rizhskaya (Orange)",
+    color: "#F5891F",
+    stations: [
+      "Medvedkovo", "Babushkinskaya", "Sviblovo", "Botanichesky Sad",
+      "VDNKh", "Alekseyevskaya", "Rizhskaya", "Prospekt Mira",
+      "Sukharevskaya", "Turgenevskaya", "Kitay-Gorod", "Tretyakovskaya",
+      "Oktyabrskaya", "Leninsky Prospekt", "Akademicheskaya", "Profsoyuznaya",
+      "Novye Cheremushki", "Kaluzhskaya", "Belyayevo", "Konkovo",
+      "Tyoply Stan", "Yasenevo", "Bittsevsky Park",
+    ],
+  },
+  {
+    line: "7 — Tagansko-Krasnopresnenskaya (Purple)",
+    color: "#8B2F8B",
+    stations: [
+      "Planernaya", "Sходня", "Tushinskaya", "Spasatel'naya", "Strogino (Taganka)",
+      "Myakinino", "Volokolamskaya", "Tushino", "Shchukino",
+      "Oktyabrskoye Pole", "Polezhayevskaya", "Begovaya",
+      "Ulitsa 1905 Goda", "Krasnopresnenskaya (Taganka)", "Barrikadnaya",
+      "Pushkinskaya", "Kuznetsky Most", "Kitay-Gorod (Taganka)",
+      "Taganskaya", "Proletarskaya", "Volgogradsky Prospekt",
+      "Tekstilshchiki", "Pechatniki", "Kuzminki", "Ryazansky Prospekt",
+      "Vykhino", "Zhulebino", "Kotelniky",
+    ],
+  },
+  {
+    line: "8 — Kaluzhsko-Serpukhovskaya (Grey)",
+    color: "#8E8E8E",
+    stations: [
+      "Bulvar Dmitriya Donskogo", "Annino", "Ulitsa Akademika Yangelya",
+      "Prazhskaya", "Chertanovskaya", "Yuzhnaya", "Nagornaya",
+      "Nakhimovsky Prospekt", "Sebastopolskaya", "Nagatinskaya",
+      "Tul'skaya", "Serpukhovskaya", "Polyanka", "Borovitskaya",
+      "Okhotny Ryad (Serpukhovskaya)", "Chekhovskaya", "Tsvetnoy Bulvar",
+      "Mendeleyevskaya", "Savyolovskaya", "Dmitrovskaya",
+      "Timiryazevskaya", "Petrovsko-Razumovskaya", "Vladykino",
+      "Otradnoye", "Bibirevo", "Altufyevo",
+    ],
+  },
+  {
+    line: "9 — Lyublinsko-Dmitrovskaya (Yellow-Green)",
+    color: "#BAC938",
+    stations: [
+      "Zябликово", "Shipilovo", "Domodedovskaya (Lyublinsko)", "Krasnogvardeyskaya (Lyublinsko)",
+      "Борисово", "Shcherbinka", "Pechatniki (Lyublinsko)", "Volzhskaya",
+      "Lyublino", "Bratislavskaya", "Maryino", "Zябlikово",
+      "Dubrovskoye", "Krestyanskaya Zastava", "Proletarskaya (Lyublinsko)",
+      "Rimskaya", "Крестьянская застава", "Trubная", "Sretensky Bulvar",
+      "Chkalovskaya", "Kozhukhovo",
+    ],
+  },
+  {
+    line: "10 — Nekrasovskaya (Pink)",
+    color: "#E6878A",
+    stations: [
+      "Kosino", "Ulitsa Dmitrievskogo", "Lermontovsky Prospekt",
+      "Zhulebino (Nekrasovskaya)", "Lyubertsy Fields", "Nekrasovka",
+      "Lavochkina", "Yunona", "Minsk",
+    ],
+  },
+  {
+    line: "BKL — Big Circle Line",
+    color: "#82C0CC",
+    stations: [
+      "Savyolovskaya (BKL)", "Delovoy Tsentr", "Shelepikha",
+      "Khoroshyovo", "Mnyovniki", "Streshnevo",
+      "Zyuzino", "Oktyabrskoye Pole (BKL)", "Shelepikhа",
+      "Kuntsevskaya (BKL)", "Davydkovo", "Аминьевская",
+      "Michurinsky Prospekt", "Prospekt Vernadskogo (BKL)",
+      "Novatorskaya", "Vorontsovskaya", "Zyablikovo (BKL)",
+      "Kakhovskaya", "Varshavskaya", "Kashirskaya (BKL)",
+      "Nagatinskaya Zaton", "Pechatniki (BKL)", "Tekstilshchiki (BKL)",
+      "Avtozavodskaya (BKL)", "Лефортово", "Sokolniki (BKL)",
+      "Rижская", "Maryin Grove", "Shelepikha (BKL)",
+    ],
+  },
+  {
+    line: "МЦД / Overground",
+    color: "#6DB8D4",
+    stations: [
+      "Vnukovo", "Aeroport (МЦД)", "Airport Sheremetyevo",
+      "Khimki (МЦД)", "Ленинградская", "Tushino (МЦД)",
+    ],
+  },
+];
+
+const ALL_STATIONS = METRO_LINES.flatMap(l => l.stations.map(s => ({ station: s, line: l.line, color: l.color })));
+
+// ── Availability grid constants ───────────────────────────────────────────────
 const DAYS  = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const HOURS = Array.from({ length: 16 }, (_, i) => i + 8);
 
 type Slot = { day: number; hour: number };
 
+// ── Main component ─────────────────────────────────────────────────────────────
 export default function Profile() {
   const { user, isLoading } = useAuth();
   const queryClient = useQueryClient();
@@ -76,7 +269,28 @@ export default function Profile() {
   const [isMouseDown,  setIsMouseDown]  = useState(false);
   const [dragMode,     setDragMode]     = useState<"add" | "remove">("add");
 
+  // ── Phase 1: Language state ──────────────────────────────────────────────
+  const [nativeLanguage,    setNativeLanguage]    = useState<string>("");
+  const [learningLanguages, setLearningLanguages] = useState<LanguageEntry[]>([]);
+
+  // ── Phase 1: Location state ──────────────────────────────────────────────
+  const [metroStation, setMetroStation] = useState<string>("");
+  const [stationSearch, setStationSearch] = useState<string>("");
+  const [stationDropdownOpen, setStationDropdownOpen] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const stationRef   = useRef<HTMLDivElement>(null);
+
+  // Close station dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (stationRef.current && !stationRef.current.contains(e.target as Node)) {
+        setStationDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -85,18 +299,31 @@ export default function Profile() {
     setNameInput(user.displayName ?? user.username ?? "");
     setAvatarUrl(user.avatarUrl ?? "");
 
+    // Load availability
     fetch(`${AUTH_URL}/api/availability`, { credentials: "include" })
       .then(r => r.json())
       .then((data: Slot[]) => setSlots(data))
       .catch(() => {});
+
+    // Load language & location profile
+    fetch(`${AUTH_URL}/api/user/match-profile`, { credentials: "include" })
+      .then(r => r.json())
+      .then((data: { nativeLanguage?: string; learningLanguages?: LanguageEntry[]; metroStation?: string }) => {
+        if (data.nativeLanguage)    setNativeLanguage(data.nativeLanguage);
+        if (data.learningLanguages) setLearningLanguages(data.learningLanguages);
+        if (data.metroStation)      setMetroStation(data.metroStation);
+      })
+      .catch(() => {});
   }, [user]);
 
+  // ── Interest helpers ─────────────────────────────────────────────────────
   const toggleInterest = (value: string) => {
     setInterests(prev =>
       prev.includes(value) ? prev.filter(i => i !== value) : [...prev, value]
     );
   };
 
+  // ── Availability helpers ──────────────────────────────────────────────────
   const isSlotActive = (day: number, hour: number) =>
     slots.some(s => s.day === day && s.hour === hour);
 
@@ -115,20 +342,61 @@ export default function Profile() {
   const toggleSlot = (day: number, hour: number, mode: "add" | "remove") => {
     setSlots(prev => {
       const exists = prev.some(s => s.day === day && s.hour === hour);
-      if (mode === "add" && !exists) return [...prev, { day, hour }];
-      if (mode === "remove" && exists) return prev.filter(s => !(s.day === day && s.hour === hour));
+      if (mode === "add"    && !exists) return [...prev, { day, hour }];
+      if (mode === "remove" && exists)  return prev.filter(s => !(s.day === day && s.hour === hour));
       return prev;
     });
   };
 
-  // ── Avatar file selection ──────────────────────────────────────────────
+  // ── Language helpers ─────────────────────────────────────────────────────
+  const addLearningLanguage = () => {
+    if (learningLanguages.length >= 3) return;
+    // Pick first language not already chosen
+    const used = new Set([nativeLanguage, ...learningLanguages.map(l => l.code)]);
+    const next = LANGUAGES.find(l => !used.has(l.code));
+    if (!next) return;
+    setLearningLanguages(prev => [...prev, { code: next.code, proficiency: "A1" }]);
+  };
+
+  const removeLearningLanguage = (index: number) => {
+    setLearningLanguages(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const updateLearningLanguage = (index: number, field: keyof LanguageEntry, value: string) => {
+    setLearningLanguages(prev =>
+      prev.map((entry, i) =>
+        i === index ? { ...entry, [field]: value } : entry
+      )
+    );
+  };
+
+  // Languages already selected (to avoid duplicates)
+  const usedLanguageCodes = new Set([
+    nativeLanguage,
+    ...learningLanguages.map(l => l.code),
+  ]);
+
+  const availableForLearning = (currentCode: string) =>
+    LANGUAGES.filter(l => l.code === currentCode || (l.code !== nativeLanguage && !learningLanguages.some(e => e.code === l.code) ) );
+
+  // ── Station search filter ─────────────────────────────────────────────────
+  const filteredStations = stationSearch.trim().length > 0
+    ? ALL_STATIONS.filter(s =>
+        s.station.toLowerCase().includes(stationSearch.toLowerCase())
+      ).slice(0, 12)
+    : [];
+
+  // Group stations by line for the default (empty search) dropdown
+  const stationsByLine = METRO_LINES.map(line => ({
+    ...line,
+    stations: line.stations,
+  }));
+
+  // ── Avatar helpers ────────────────────────────────────────────────────────
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      setAvatarError("Image must be under 5 MB");
-      return;
-    }
+    if (file.size > 5 * 1024 * 1024) { setAvatarError("Image must be under 5 MB"); return; }
     setAvatarError(null);
     setAvatarFile(file);
     setAvatarPreview(URL.createObjectURL(file));
@@ -141,13 +409,12 @@ export default function Profile() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  // ── Save all ───────────────────────────────────────────────────────────
+  // ── Save all ──────────────────────────────────────────────────────────────
   const saveAll = async () => {
     setSaving(true);
     try {
       let finalAvatarUrl = avatarUrl;
 
-      // Upload new avatar if one was selected
       if (avatarFile) {
         setUploadingAvatar(true);
         try {
@@ -189,11 +456,20 @@ export default function Profile() {
             avatarUrl: finalAvatarUrl || undefined,
           }),
         }),
+        // Save match profile (Phase 1: languages + location)
+        fetch(`${AUTH_URL}/api/user/match-profile`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            nativeLanguage:    nativeLanguage    || undefined,
+            learningLanguages: learningLanguages.length ? learningLanguages : undefined,
+            metroStation:      metroStation      || undefined,
+          }),
+        }),
       ]);
 
-      // Refresh cached user so Navbar and other components update immediately
       queryClient.invalidateQueries({ queryKey: ["auth-user"] });
-
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch (err) {
@@ -203,6 +479,7 @@ export default function Profile() {
     }
   };
 
+  // ── Loading / unauthenticated states ─────────────────────────────────────
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -222,8 +499,9 @@ export default function Profile() {
     );
   }
 
-  const initials = (displayName || user.username || "U").substring(0, 2).toUpperCase();
+  const initials     = (displayName || user.username || "U").substring(0, 2).toUpperCase();
   const currentAvatar = avatarPreview ?? avatarUrl;
+  const nativeLang   = LANGUAGES.find(l => l.code === nativeLanguage);
 
   return (
     <div
@@ -242,7 +520,6 @@ export default function Profile() {
             </div>
             <CardContent className="p-8">
               <div className="flex items-start gap-6 flex-wrap sm:flex-nowrap">
-
                 {/* Avatar with upload button */}
                 <div className="relative shrink-0">
                   <Avatar className="h-24 w-24 ring-2 ring-border">
@@ -267,7 +544,6 @@ export default function Profile() {
                 </div>
 
                 <div className="flex-1 min-w-0 space-y-3">
-                  {/* Editable display name */}
                   {editingName ? (
                     <div className="flex items-center gap-2">
                       <Input
@@ -276,7 +552,7 @@ export default function Profile() {
                         className="h-10 rounded-xl text-lg font-bold max-w-xs"
                         autoFocus
                         onKeyDown={e => {
-                          if (e.key === "Enter") { setDisplayName(nameInput); setEditingName(false); }
+                          if (e.key === "Enter")  { setDisplayName(nameInput); setEditingName(false); }
                           if (e.key === "Escape") { setNameInput(displayName); setEditingName(false); }
                         }}
                       />
@@ -308,17 +584,13 @@ export default function Profile() {
                     {user.role === "admin" && <Badge>Admin</Badge>}
                   </div>
 
-                  {/* Avatar preview actions */}
                   {avatarPreview && (
                     <div className="flex items-center gap-3 pt-1">
                       <span className="text-sm text-muted-foreground">New photo selected — save to apply</span>
-                      <button onClick={cancelAvatarChange}
-                        className="text-xs text-destructive hover:underline">Cancel</button>
+                      <button onClick={cancelAvatarChange} className="text-xs text-destructive hover:underline">Cancel</button>
                     </div>
                   )}
-                  {avatarError && (
-                    <p className="text-sm text-destructive">{avatarError}</p>
-                  )}
+                  {avatarError && <p className="text-sm text-destructive">{avatarError}</p>}
                   {!CLOUDINARY_CLOUD && (
                     <p className="text-xs text-muted-foreground">
                       Image upload requires <code>VITE_CLOUDINARY_CLOUD_NAME</code> and{" "}
@@ -331,21 +603,320 @@ export default function Profile() {
           </Card>
 
           {/* ── Telegram ─────────────────────────────────────────────────── */}
-
           {!isTelegramMiniApp() && (
-  <Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
-    <div className="bg-primary/5 px-8 py-4 border-b border-border/50 flex items-center gap-2">
-      <Bell className="w-5 h-5 text-primary" />
-      <h2 className="text-xl font-bold font-display">Telegram Notifications</h2>
-    </div>
-    <CardContent className="p-8">
-      <TelegramConnect
-        connected={!!user.telegramId}
-        onUnlinked={() => queryClient.invalidateQueries({ queryKey: ["auth-user"] })}
-      />
-    </CardContent>
-  </Card>
-)}
+            <Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
+              <div className="bg-primary/5 px-8 py-4 border-b border-border/50 flex items-center gap-2">
+                <Bell className="w-5 h-5 text-primary" />
+                <h2 className="text-xl font-bold font-display">Telegram Notifications</h2>
+              </div>
+              <CardContent className="p-8">
+                <TelegramConnect
+                  connected={!!user.telegramId}
+                  onUnlinked={() => queryClient.invalidateQueries({ queryKey: ["auth-user"] })}
+                />
+              </CardContent>
+            </Card>
+          )}
+
+          {/* ── Languages ────────────────────────────────────────────────── */}
+          <Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
+            <div className="bg-primary/5 px-8 py-4 border-b border-border/50 flex items-center gap-2">
+              <Languages className="w-5 h-5 text-primary" />
+              <div>
+                <h2 className="text-xl font-bold font-display">Languages</h2>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  Used to match you with language exchange partners
+                </p>
+              </div>
+            </div>
+            <CardContent className="p-8 space-y-6">
+
+              {/* Native language */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Native language</Label>
+                <div className="relative">
+                  <select
+                    value={nativeLanguage}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setNativeLanguage(val);
+                      // Remove from learning list if it was there
+                      setLearningLanguages(prev => prev.filter(l => l.code !== val));
+                    }}
+                    className="w-full h-10 rounded-xl border border-border bg-background px-3 pr-8 text-sm appearance-none focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  >
+                    <option value="">— Select your native language —</option>
+                    {LANGUAGES.map(l => (
+                      <option key={l.code} value={l.code}>
+                        {l.flag} {l.label}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">▾</div>
+                </div>
+                {nativeLang && (
+                  <p className="text-xs text-muted-foreground pl-1">
+                    You will appear as a native {nativeLang.label} speaker to learners
+                  </p>
+                )}
+              </div>
+
+              {/* Divider */}
+              <div className="border-t border-border/50" />
+
+              {/* Languages to learn */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-medium">Languages I want to practise</Label>
+                  {learningLanguages.length < 3 && (
+                    <button
+                      type="button"
+                      onClick={addLearningLanguage}
+                      disabled={!nativeLanguage}
+                      className="flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Add language
+                    </button>
+                  )}
+                </div>
+
+                {!nativeLanguage && (
+                  <p className="text-sm text-muted-foreground italic">
+                    Select your native language first
+                  </p>
+                )}
+
+                {learningLanguages.length === 0 && nativeLanguage && (
+                  <p className="text-sm text-muted-foreground italic">
+                    No languages added yet — click "Add language" above
+                  </p>
+                )}
+
+                <div className="space-y-3">
+                  {learningLanguages.map((entry, idx) => {
+                    const langInfo = LANGUAGES.find(l => l.code === entry.code);
+                    const profInfo = PROFICIENCY_LEVELS.find(p => p.value === entry.proficiency);
+                    return (
+                      <motion.div
+                        key={idx}
+                        initial={{ opacity: 0, y: -6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="flex items-center gap-3 p-3 rounded-xl border border-border/60 bg-muted/30"
+                      >
+                        {/* Language selector */}
+                        <div className="relative flex-1 min-w-0">
+                          <select
+                            value={entry.code}
+                            onChange={e => updateLearningLanguage(idx, "code", e.target.value)}
+                            className="w-full h-9 rounded-lg border border-border bg-background px-3 pr-7 text-sm appearance-none focus:outline-none focus:ring-2 focus:ring-primary/30"
+                          >
+                            {/* Show current selection + available options */}
+                            {LANGUAGES.filter(l =>
+                              l.code === entry.code ||
+                              (l.code !== nativeLanguage && !learningLanguages.some((e, i) => i !== idx && e.code === l.code))
+                            ).map(l => (
+                              <option key={l.code} value={l.code}>
+                                {l.flag} {l.label}
+                              </option>
+                            ))}
+                          </select>
+                          <div className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">▾</div>
+                        </div>
+
+                        {/* Proficiency selector */}
+                        <div className="relative w-44 shrink-0">
+                          <select
+                            value={entry.proficiency}
+                            onChange={e => updateLearningLanguage(idx, "proficiency", e.target.value as ProficiencyLevel)}
+                            className="w-full h-9 rounded-lg border border-border bg-background px-3 pr-7 text-sm appearance-none focus:outline-none focus:ring-2 focus:ring-primary/30"
+                          >
+                            {PROFICIENCY_LEVELS.map(p => (
+                              <option key={p.value} value={p.value}>{p.label}</option>
+                            ))}
+                          </select>
+                          <div className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">▾</div>
+                        </div>
+
+                        {/* Proficiency pill */}
+                        <span
+                          className="shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full"
+                          style={{
+                            background: proficiencyColor(entry.proficiency).bg,
+                            color:      proficiencyColor(entry.proficiency).text,
+                          }}
+                        >
+                          {entry.proficiency}
+                        </span>
+
+                        {/* Remove button */}
+                        <button
+                          type="button"
+                          onClick={() => removeLearningLanguage(idx)}
+                          className="shrink-0 text-muted-foreground hover:text-destructive transition-colors"
+                          title="Remove"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+
+                {learningLanguages.length > 0 && (
+                  <p className="text-xs text-muted-foreground pl-1">
+                    You'll be matched with native speakers of{" "}
+                    {learningLanguages.map(l => LANGUAGES.find(x => x.code === l.code)?.label).filter(Boolean).join(", ")}{" "}
+                    who want to learn {nativeLang?.label ?? "your language"}
+                  </p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* ── Location ─────────────────────────────────────────────────── */}
+          <Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
+            <div className="bg-primary/5 px-8 py-4 border-b border-border/50 flex items-center gap-2">
+              <MapPin className="w-5 h-5 text-primary" />
+              <div>
+                <h2 className="text-xl font-bold font-display">Your Location</h2>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  Used to suggest nearby meetup spots — only your metro line is shown to matches
+                </p>
+              </div>
+            </div>
+            <CardContent className="p-8 space-y-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Closest Moscow metro station</Label>
+                <div className="relative" ref={stationRef}>
+                  {/* Search / display input */}
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="Type to search stations…"
+                      value={stationSearch || metroStation}
+                      onFocus={() => { setStationSearch(""); setStationDropdownOpen(true); }}
+                      onChange={e => { setStationSearch(e.target.value); setStationDropdownOpen(true); }}
+                      className="w-full h-10 rounded-xl border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    />
+                    {metroStation && !stationDropdownOpen && (
+                      <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+                        {(() => {
+                          const s = ALL_STATIONS.find(x => x.station === metroStation);
+                          return s ? (
+                            <span
+                              className="text-xs font-semibold px-2 py-0.5 rounded-full text-white"
+                              style={{ background: s.color }}
+                            >
+                              {s.line.split("—")[0].trim()}
+                            </span>
+                          ) : null;
+                        })()}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Dropdown */}
+                  {stationDropdownOpen && (
+                    <div className="absolute z-50 mt-1 w-full max-h-64 overflow-y-auto rounded-xl border border-border bg-background shadow-xl">
+                      {stationSearch.trim().length > 0 ? (
+                        // Filtered results
+                        filteredStations.length > 0 ? (
+                          filteredStations.map(({ station, line, color }) => (
+                            <button
+                              key={station + line}
+                              type="button"
+                              className="w-full text-left px-4 py-2.5 text-sm hover:bg-muted/60 flex items-center gap-3 transition-colors"
+                              onMouseDown={() => {
+                                setMetroStation(station);
+                                setStationSearch("");
+                                setStationDropdownOpen(false);
+                              }}
+                            >
+                              <span
+                                className="w-2.5 h-2.5 rounded-full shrink-0"
+                                style={{ background: color }}
+                              />
+                              <span className="flex-1 font-medium">{station}</span>
+                              <span className="text-xs text-muted-foreground truncate max-w-[160px]">{line}</span>
+                            </button>
+                          ))
+                        ) : (
+                          <p className="px-4 py-3 text-sm text-muted-foreground">No stations found</p>
+                        )
+                      ) : (
+                        // Grouped by line (default)
+                        stationsByLine.map(lineGroup => (
+                          <div key={lineGroup.line}>
+                            <div
+                              className="px-4 py-1.5 text-xs font-semibold sticky top-0 bg-background/95 backdrop-blur-sm border-b border-border/30 flex items-center gap-2"
+                              style={{ color: lineGroup.color }}
+                            >
+                              <span
+                                className="w-2 h-2 rounded-full"
+                                style={{ background: lineGroup.color }}
+                              />
+                              {lineGroup.line}
+                            </div>
+                            {lineGroup.stations.map(station => (
+                              <button
+                                key={station}
+                                type="button"
+                                className={`
+                                  w-full text-left px-4 py-2 text-sm hover:bg-muted/60 flex items-center gap-3 transition-colors
+                                  ${metroStation === station ? "bg-primary/10 text-primary font-medium" : ""}
+                                `}
+                                onMouseDown={() => {
+                                  setMetroStation(station);
+                                  setStationSearch("");
+                                  setStationDropdownOpen(false);
+                                }}
+                              >
+                                <span
+                                  className="w-1.5 h-1.5 rounded-full shrink-0 opacity-60"
+                                  style={{ background: lineGroup.color }}
+                                />
+                                {station}
+                              </button>
+                            ))}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Selected station display */}
+                {metroStation && (
+                  <div className="flex items-center gap-2 pt-1">
+                    {(() => {
+                      const s = ALL_STATIONS.find(x => x.station === metroStation);
+                      return (
+                        <>
+                          <span
+                            className="w-2.5 h-2.5 rounded-full shrink-0"
+                            style={{ background: s?.color ?? "#888" }}
+                          />
+                          <span className="text-sm font-medium">{metroStation}</span>
+                          {s && (
+                            <span className="text-xs text-muted-foreground">· {s.line}</span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => { setMetroStation(""); setStationSearch(""); }}
+                            className="ml-auto text-xs text-muted-foreground hover:text-destructive transition-colors"
+                          >
+                            Clear
+                          </button>
+                        </>
+                      );
+                    })()}
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
           {/* ── Interests ────────────────────────────────────────────────── */}
           <Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
             <div className="bg-primary/5 px-8 py-4 border-b border-border/50">
@@ -447,4 +1018,16 @@ export default function Profile() {
       </div>
     </div>
   );
+}
+
+// ── Proficiency level colour helper ──────────────────────────────────────────
+function proficiencyColor(level: ProficiencyLevel): { bg: string; text: string } {
+  switch (level) {
+    case "A1": return { bg: "#f1f5f9", text: "#475569" };
+    case "A2": return { bg: "#dbeafe", text: "#1d4ed8" };
+    case "B1": return { bg: "#dcfce7", text: "#15803d" };
+    case "B2": return { bg: "#fef9c3", text: "#a16207" };
+    case "C1": return { bg: "#fce7f3", text: "#be185d" };
+    case "C2": return { bg: "#ede9fe", text: "#7c3aed" };
+  }
 }
