@@ -49,28 +49,4 @@ export function useTelegramMiniAppAuth() {
   }, []);
 
   return { isAuthenticating, error };
-}  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    // Only run in Mini App
-    if (!isTelegramMiniApp()) {
-      setIsAuthenticating(false);
-      return;
-    }
-
-    const authenticate = async () => {
-      try {
-        const ok = await authenticateTelegramMiniApp();
-        if (!ok) setError("Failed to sign in with Telegram");
-      } catch (err: any) {
-        setError(err.message);
-      } finally {
-        setIsAuthenticating(false);
-      }
-    };
-
-    authenticate();
-  }, []);
-
-  return { isAuthenticating, error };
 }
