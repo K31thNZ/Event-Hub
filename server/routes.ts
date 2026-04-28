@@ -12,12 +12,58 @@ import { users } from "@shared/models/auth";
 import { eq } from "drizzle-orm";
 import crypto from "crypto";
 
+// ── Cloudflare R2 SDK imports ───────────────────────────────────────────────
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
   registerPicksRoutes(app);
   registerGroupRoutes(app);
+
+  // ── Cloudflare R2: generate presigned upload URL ─────────────────────────
+  const r2Client = new S3Client({
+    region: "auto",
+    endpoint: `https://${process.env.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId: process.env.R2_ACCESS_KEY_ID!,
+      secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
+    },
+  });
+
+  app.post("/api/r2-presigned-url", async (req, res) => {
+    try {
+      const { fileName, fileType } = req.body;
+      if (!fileName || !fileType) {
+        return res.status(400).json({ error: "Missing fileName or fileType" });
+      }
+
+      // Sanitize filename
+      const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const key = `avatars/${Date.now()}-${safeName}`;
+
+      const command = new PutObjectCommand({
+        Bucket: process.env.R2_BUCKET_NAME,
+        Key: key,
+        ContentType: fileType,
+      });
+
+      const uploadUrl = await getSignedUrl(r2Client, command, { expiresIn: 3600 }); // 1 hour
+
+      // 👇 IMPORTANT: Replace this with your actual public URL base from Cloudflare R2
+      // Options:
+      // 1. If you enabled r2.dev subdomain, use: `https://pub-<your-bucket-id>.r2.dev`
+      // 2. If you set up a custom domain, use that (e.g., `https://assets.yourdomain.com`)
+      const publicUrl = `https://pub-XXXXXXXXXXXXXXXX.r2.dev/${key}`;
+
+      res.json({ uploadUrl, publicUrl });
+    } catch (error) {
+      console.error("R2 presigned URL error:", error);
+      res.status(500).json({ error: "Failed to generate upload URL" });
+    }
+  });
 
   // ── Current authenticated user ────────────────────────────────────────
   app.get("/api/user", async (req, res) => {
@@ -30,6 +76,8 @@ export async function registerRoutes(
       res.status(500).json({ error: "Failed to fetch user" });
     }
   });
+
+  // ... (the rest of your existing routes unchanged) ...
 
   // ── Current user profile (local DB) ──────────────────────────────────
   app.get("/api/me", requireAuth, async (req: any, res) => {
