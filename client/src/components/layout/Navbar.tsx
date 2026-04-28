@@ -8,7 +8,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Ticket, CalendarPlus, LogOut, User, Menu, Settings, Sparkles, ShieldCheck } from "lucide-react";
+import { Ticket, CalendarPlus, LogOut, User, Menu, Settings, Sparkles, ShieldCheck, Languages } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useState } from "react";
 
@@ -51,14 +51,19 @@ export function Navbar() {
 
         {/* Desktop Nav */}
         <nav className="hidden md:flex items-center gap-8 font-medium">
-<Link href="/picks" className="flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors">
-  <Sparkles className="w-4 h-4" />
-  Recommended
-</Link>
-<Link href="/groups" className="flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors">
-  <Users className="w-4 h-4" />
-  Groups
-</Link>
+          <Link href="/picks" className="flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors">
+            <Sparkles className="w-4 h-4" />
+            Recommended
+          </Link>
+          <Link href="/groups" className="flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors">
+            <Users className="w-4 h-4" />
+            Groups
+          </Link>
+          {/* Language Exchange link */}
+          <Link href="/language-exchange" className="flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors">
+            <Languages className="w-4 h-4" />
+            Language Exchange
+          </Link>
 
           {isAuthenticated ? (
             <div className="flex items-center gap-4">
@@ -129,7 +134,7 @@ export function Navbar() {
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     className="cursor-pointer text-destructive focus:bg-destructive/10"
-                    onClick={handleLogout}   // ✅ fixed: call logout directly
+                    onClick={handleLogout}
                   >
                     <LogOut className="mr-2 h-4 w-4" />
                     <span>Log out</span>
@@ -139,7 +144,7 @@ export function Navbar() {
             </div>
           ) : (
             <Button
-              onClick={handleLogin}   // ✅ fixed: call login directly
+              onClick={handleLogin}
               className="rounded-full px-6 shadow-lg shadow-primary/20 hover:shadow-xl hover:shadow-primary/30 transition-all hover:-translate-y-0.5"
             >
               Sign In
@@ -158,8 +163,12 @@ export function Navbar() {
                 <Sparkles className="w-5 h-5 text-primary" /> Recommended
               </Link>
               <Link href="/groups" onClick={() => setMobileMenuOpen(false)} className="text-lg font-semibold flex items-center gap-2">
-  <Users className="w-5 h-5 text-primary" /> Groups
-</Link>
+                <Users className="w-5 h-5 text-primary" /> Groups
+              </Link>
+              {/* Language Exchange mobile link */}
+              <Link href="/language-exchange" onClick={() => setMobileMenuOpen(false)} className="text-lg font-semibold flex items-center gap-2">
+                <Languages className="w-5 h-5 text-primary" /> Language Exchange
+              </Link>
               <Link href="/" onClick={() => setMobileMenuOpen(false)} className="text-lg font-semibold">All Events</Link>
               {isAuthenticated ? (
                 <>
