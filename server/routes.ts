@@ -52,9 +52,13 @@ export async function registerRoutes(
 
       let uploadUrl = await getSignedUrl(r2Client, command, { expiresIn: 3600 });
 
-      // Remove checksum query parameters that Cloudflare R2 does not support
+      // Remove unsupported query parameters that Cloudflare R2 does not support
       const url = new URL(uploadUrl);
-      const unwantedParams = ["x-amz-checksum-crc32", "x-amz-sdk-checksum-algorithm"];
+      const unwantedParams = [
+        "x-amz-checksum-crc32",
+        "x-amz-sdk-checksum-algorithm",
+        "x-id",           // 👈 added to remove the x-id parameter
+      ];
       for (const param of unwantedParams) {
         url.searchParams.delete(param);
       }
