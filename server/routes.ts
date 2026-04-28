@@ -61,6 +61,60 @@ export async function registerRoutes(
     }
   });
 
+  // ── Geocoding endpoints (forward & reverse) – free OpenStreetMap Nominatim ──
+  app.post("/api/forward-geocode", async (req, res) => {
+    try {
+      const { query } = req.body;
+      if (!query || typeof query !== "string") {
+        return res.status(400).json({ error: "Missing query" });
+      }
+      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&addressdetails=1`;
+      const response = await fetch(url, {
+        headers: { "User-Agent": "ExpatEvents/1.0" },
+      });
+      const data = await response.json();
+      if (!data || data.length === 0) {
+        return res.status(404).json({ error: "Location not found" });
+      }
+      res.json({
+        latitude: parseFloat(data[0].lat),
+        longitude: parseFloat(data[0].lon),
+      });
+    } catch (error) {
+      console.error("Forward geocode error:", error);
+      res.status(500).json({ error: "Failed to geocode" });
+    }
+  });
+
+  app.post("/api/reverse-geocode", async (req, res) => {
+    try {
+      const { lat, lng } = req.body;
+      if (typeof lat !== "number" || typeof lng !== "number") {
+        return res.status(400).json({ error: "Invalid coordinates" });
+      }
+      const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1`;
+      const response = await fetch(url, {
+        headers: { "User-Agent": "ExpatEvents/1.0" },
+      });
+      const data = await response.json();
+      if (!data || !data.address) {
+        return res.status(404).json({ error: "Address not found" });
+      }
+      const a = data.address;
+      const road = a.road ?? a.pedestrian ?? a.footway ?? "";
+      const houseNo = a.house_number ?? "";
+      let address = [road, houseNo].filter(Boolean).join(", ");
+      if (!address && data.display_name) {
+        address = data.display_name.split(",")[0];
+      }
+      const city = a.city ?? a.town ?? a.village ?? a.county ?? "";
+      res.json({ address, city });
+    } catch (error) {
+      console.error("Reverse geocode error:", error);
+      res.status(500).json({ error: "Failed to reverse geocode" });
+    }
+  });
+
   // ── Current authenticated user ────────────────────────────────────────
   app.get("/api/user", async (req, res) => {
     try {
@@ -72,8 +126,6 @@ export async function registerRoutes(
       res.status(500).json({ error: "Failed to fetch user" });
     }
   });
-
-  // ... (the rest of your existing routes unchanged) ...
 
   // ── Current user profile (local DB) ──────────────────────────────────
   app.get("/api/me", requireAuth, async (req: any, res) => {
