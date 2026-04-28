@@ -19,6 +19,12 @@ const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? "https://auth.expatevents.org"
 const R2_UPLOAD_ENDPOINT = "/api/r2-presigned-url";
 
 async function uploadImageToR2(file: File): Promise<string> {
+  // Compute MD5 hash of the file (required by Cloudflare R2 for presigned PUT)
+  const arrayBuffer = await file.arrayBuffer();
+  const hashBuffer = await crypto.subtle.digest("MD5", arrayBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const md5Base64 = btoa(String.fromCharCode(...hashArray));
+
   // 1. Request a presigned URL from your backend
   const presignRes = await fetch(R2_UPLOAD_ENDPOINT, {
     method: "POST",
@@ -37,12 +43,13 @@ async function uploadImageToR2(file: File): Promise<string> {
 
   const { uploadUrl, publicUrl } = await presignRes.json();
 
-  // 2. Upload directly to R2
+  // 2. Upload directly to R2 with the required Content-MD5 header
   const uploadRes = await fetch(uploadUrl, {
     method: "PUT",
     body: file,
     headers: {
       "Content-Type": file.type,
+      "Content-MD5": md5Base64,
     },
   });
 
