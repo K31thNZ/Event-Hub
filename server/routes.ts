@@ -52,11 +52,7 @@ export async function registerRoutes(
 
       const uploadUrl = await getSignedUrl(r2Client, command, { expiresIn: 3600 }); // 1 hour
 
-      // 👇 IMPORTANT: Replace this with your actual public URL base from Cloudflare R2
-      // Options:
-      // 1. If you enabled r2.dev subdomain, use: `https://pub-<your-bucket-id>.r2.dev`
-      // 2. If you set up a custom domain, use that (e.g., `https://assets.yourdomain.com`)
-      const publicUrl = `https://pub-XXXXXXXXXXXXXXXX.r2.dev/${key}`;
+      const publicUrl = `https://pub-bbcea9b00e1042e59b8ffab29ad09276.r2.dev/${key}`;
 
       res.json({ uploadUrl, publicUrl });
     } catch (error) {
