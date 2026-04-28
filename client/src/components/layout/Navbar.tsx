@@ -26,14 +26,11 @@ export function Navbar() {
   const getInitials = (name: string) => name?.substring(0, 2).toUpperCase() || "U";
   const roleBadge = user?.role ? ROLE_BADGE[user.role] : undefined;
 
-  // Handlers for login/logout
-  const handleLogin = () => {
-    login(); // plain function – redirects to auth service
-  };
+  // 👇 Condition: show Language Exchange only if the user has selected that interest
+  const showLanguageExchange = user?.interests?.includes("language_exchange");
 
-  const handleLogout = () => {
-    logout(); // plain function – clears session and redirects
-  };
+  const handleLogin = () => login();
+  const handleLogout = () => logout();
 
   return (
     <header className="sticky top-0 z-50 w-full glass">
@@ -59,11 +56,14 @@ export function Navbar() {
             <Users className="w-4 h-4" />
             Groups
           </Link>
-          {/* Language Exchange link */}
-          <Link href="/language-exchange" className="flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors">
-            <Languages className="w-4 h-4" />
-            Language Exchange
-          </Link>
+
+          {/* Language Exchange – only shown if user has the interest */}
+          {showLanguageExchange && (
+            <Link href="/language-exchange" className="flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors">
+              <Languages className="w-4 h-4" />
+              Language Exchange
+            </Link>
+          )}
 
           {isAuthenticated ? (
             <div className="flex items-center gap-4">
@@ -165,10 +165,13 @@ export function Navbar() {
               <Link href="/groups" onClick={() => setMobileMenuOpen(false)} className="text-lg font-semibold flex items-center gap-2">
                 <Users className="w-5 h-5 text-primary" /> Groups
               </Link>
-              {/* Language Exchange mobile link */}
-              <Link href="/language-exchange" onClick={() => setMobileMenuOpen(false)} className="text-lg font-semibold flex items-center gap-2">
-                <Languages className="w-5 h-5 text-primary" /> Language Exchange
-              </Link>
+
+              {showLanguageExchange && (
+                <Link href="/language-exchange" onClick={() => setMobileMenuOpen(false)} className="text-lg font-semibold flex items-center gap-2">
+                  <Languages className="w-5 h-5 text-primary" /> Language Exchange
+                </Link>
+              )}
+
               <Link href="/" onClick={() => setMobileMenuOpen(false)} className="text-lg font-semibold">All Events</Link>
               {isAuthenticated ? (
                 <>
