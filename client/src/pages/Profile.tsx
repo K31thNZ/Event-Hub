@@ -1,3 +1,4 @@
+import SparkMD5 from 'spark-md5';
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useQueryClient } from "@tanstack/react-query";
@@ -19,11 +20,40 @@ const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? "https://auth.expatevents.org"
 const R2_UPLOAD_ENDPOINT = "/api/r2-presigned-url";
 
 async function uploadImageToR2(file: File): Promise<string> {
-  // Compute MD5 hash of the file (required by Cloudflare R2 for presigned PUT)
-  const arrayBuffer = await file.arrayBuffer();
-  const hashBuffer = await crypto.subtle.digest("MD5", arrayBuffer);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  const md5Base64 = btoa(String.fromCharCode(...hashArray));
+  // Compute MD5 hash using SparkMD5 (works in all browsers, no HTTPS needed)
+  const md5Base64 = await new Promise<string>((resolve, reject) => {
+    const blobSlice = File.prototype.slice || File.prototype.mozSlice || File.prototype.webkitSlice;
+    const chunkSize = 2 * 1024 * 1024; // 2MB chunks
+    const chunks = Math.ceil(file.size / chunkSize);
+    let currentChunk = 0;
+    const spark = new SparkMD5.ArrayBuffer();
+    const fileReader = new FileReader();
+
+    function loadNext() {
+      const start = currentChunk * chunkSize;
+      const end = Math.min(start + chunkSize, file.size);
+      fileReader.readAsArrayBuffer(blobSlice.call(file, start, end));
+    }
+
+    fileReader.onload = (e) => {
+      spark.append(e.target?.result as ArrayBuffer);
+      currentChunk++;
+      if (currentChunk < chunks) {
+        loadNext();
+      } else {
+        const hexHash = spark.end();
+        // Convert hex to base64
+        const bytes = new Uint8Array(hexHash.length / 2);
+        for (let i = 0; i < hexHash.length; i += 2) {
+          bytes[i / 2] = parseInt(hexHash.substr(i, 2), 16);
+        }
+        const md5Base64 = btoa(String.fromCharCode(...bytes));
+        resolve(md5Base64);
+      }
+    };
+    fileReader.onerror = () => reject(new Error('Failed to read file for MD5'));
+    loadNext();
+  });
 
   // 1. Request a presigned URL from your backend
   const presignRes = await fetch(R2_UPLOAD_ENDPOINT, {
@@ -81,7 +111,7 @@ const PROFICIENCY_LEVELS = [
 export type ProficiencyLevel = (typeof PROFICIENCY_LEVELS)[number]["value"];
 
 export interface LanguageEntry {
-  code: string;       // ISO 639-1 code e.g. "en"
+  code: string;
   proficiency: ProficiencyLevel;
 }
 
@@ -521,34 +551,34 @@ export default function Profile() {
 
   return (
     <div
-      className="min-h-screen bg-muted/20 py-12 px-4 sm:px-6 lg:px-8"
+      className="min-h-screen bg-muted/20 py-8 px-4 sm:py-12 sm:px-6 lg:px-8"
       onMouseUp={() => setIsMouseDown(false)}
       onMouseLeave={() => setIsMouseDown(false)}
     >
-      <div className="max-w-3xl mx-auto space-y-8">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
+      <div className="max-w-3xl mx-auto space-y-6 sm:space-y-8">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-6 sm:space-y-8">
 
           {/* ── Identity ─────────────────────────────────────────────────── */}
-          <Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
-            <div className="bg-primary/5 px-8 py-4 border-b border-border/50 flex items-center gap-2">
-              <User className="w-5 h-5 text-primary" />
-              <h2 className="text-xl font-bold font-display">Your Profile</h2>
+          <Card className="rounded-2xl sm:rounded-3xl border-border/60 shadow-lg overflow-hidden">
+            <div className="bg-primary/5 px-5 py-3 sm:px-8 sm:py-4 border-b border-border/50 flex items-center gap-2">
+              <User className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
+              <h2 className="text-lg sm:text-xl font-bold font-display">Your Profile</h2>
             </div>
-            <CardContent className="p-8">
-              <div className="flex items-start gap-6 flex-wrap sm:flex-nowrap">
+            <CardContent className="p-5 sm:p-8">
+              <div className="flex flex-col sm:flex-row items-start gap-5 sm:gap-6">
                 {/* Avatar with upload button */}
                 <div className="relative shrink-0">
-                  <Avatar className="h-24 w-24 ring-2 ring-border">
+                  <Avatar className="h-20 w-20 sm:h-24 sm:w-24 ring-2 ring-border">
                     <AvatarImage src={currentAvatar} />
-                    <AvatarFallback className="bg-primary/10 text-primary text-2xl">{initials}</AvatarFallback>
+                    <AvatarFallback className="bg-primary/10 text-primary text-xl sm:text-2xl">{initials}</AvatarFallback>
                   </Avatar>
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center shadow-md hover:bg-primary/90 transition-colors"
+                    className="absolute -bottom-1 -right-1 w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-primary text-white flex items-center justify-center shadow-md hover:bg-primary/90 transition-colors"
                     title="Change photo"
                   >
-                    <Camera className="w-4 h-4" />
+                    <Camera className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                   </button>
                   <input
                     ref={fileInputRef}
@@ -559,13 +589,13 @@ export default function Profile() {
                   />
                 </div>
 
-                <div className="flex-1 min-w-0 space-y-3">
+                <div className="flex-1 min-w-0 space-y-2 sm:space-y-3">
                   {editingName ? (
                     <div className="flex items-center gap-2">
                       <Input
                         value={nameInput}
                         onChange={e => setNameInput(e.target.value)}
-                        className="h-10 rounded-xl text-lg font-bold max-w-xs"
+                        className="h-9 sm:h-10 rounded-xl text-base sm:text-lg font-bold max-w-xs"
                         autoFocus
                         onKeyDown={e => {
                           if (e.key === "Enter")  { setDisplayName(nameInput); setEditingName(false); }
@@ -583,7 +613,7 @@ export default function Profile() {
                     </div>
                   ) : (
                     <div className="flex items-center gap-2">
-                      <h1 className="text-2xl font-bold truncate">{displayName || user.username}</h1>
+                      <h1 className="text-xl sm:text-2xl font-bold truncate">{displayName || user.username}</h1>
                       <button onClick={() => setEditingName(true)}
                         className="text-muted-foreground hover:text-primary transition-colors shrink-0"
                         title="Edit name">
@@ -592,7 +622,7 @@ export default function Profile() {
                     </div>
                   )}
 
-                  {user.email && <p className="text-muted-foreground text-sm">{user.email}</p>}
+                  {user.email && <p className="text-muted-foreground text-xs sm:text-sm break-all">{user.email}</p>}
 
                   <div className="flex gap-2 flex-wrap">
                     {user.isExpatMember && <Badge variant="secondary">ExpatEvents</Badge>}
@@ -602,11 +632,11 @@ export default function Profile() {
 
                   {avatarPreview && (
                     <div className="flex items-center gap-3 pt-1">
-                      <span className="text-sm text-muted-foreground">New photo selected — save to apply</span>
+                      <span className="text-xs sm:text-sm text-muted-foreground">New photo selected — save to apply</span>
                       <button onClick={cancelAvatarChange} className="text-xs text-destructive hover:underline">Cancel</button>
                     </div>
                   )}
-                  {avatarError && <p className="text-sm text-destructive">{avatarError}</p>}
+                  {avatarError && <p className="text-xs sm:text-sm text-destructive">{avatarError}</p>}
                 </div>
               </div>
             </CardContent>
@@ -614,12 +644,12 @@ export default function Profile() {
 
           {/* ── Telegram ─────────────────────────────────────────────────── */}
           {!isTelegramMiniApp() && (
-            <Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
-              <div className="bg-primary/5 px-8 py-4 border-b border-border/50 flex items-center gap-2">
-                <Bell className="w-5 h-5 text-primary" />
-                <h2 className="text-xl font-bold font-display">Telegram Notifications</h2>
+            <Card className="rounded-2xl sm:rounded-3xl border-border/60 shadow-lg overflow-hidden">
+              <div className="bg-primary/5 px-5 py-3 sm:px-8 sm:py-4 border-b border-border/50 flex items-center gap-2">
+                <Bell className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
+                <h2 className="text-lg sm:text-xl font-bold font-display">Telegram Notifications</h2>
               </div>
-              <CardContent className="p-8">
+              <CardContent className="p-5 sm:p-8">
                 <TelegramConnect
                   connected={!!user.telegramId}
                   onUnlinked={() => queryClient.invalidateQueries({ queryKey: ["auth-user"] })}
@@ -629,17 +659,17 @@ export default function Profile() {
           )}
 
           {/* ── Languages ────────────────────────────────────────────────── */}
-          <Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
-            <div className="bg-primary/5 px-8 py-4 border-b border-border/50 flex items-center gap-2">
-              <Languages className="w-5 h-5 text-primary" />
+          <Card className="rounded-2xl sm:rounded-3xl border-border/60 shadow-lg overflow-hidden">
+            <div className="bg-primary/5 px-5 py-3 sm:px-8 sm:py-4 border-b border-border/50 flex items-center gap-2">
+              <Languages className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
               <div>
-                <h2 className="text-xl font-bold font-display">Languages</h2>
-                <p className="text-sm text-muted-foreground mt-0.5">
+                <h2 className="text-lg sm:text-xl font-bold font-display">Languages</h2>
+                <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
                   Used to match you with language exchange partners
                 </p>
               </div>
             </div>
-            <CardContent className="p-8 space-y-6">
+            <CardContent className="p-5 sm:p-8 space-y-5 sm:space-y-6">
 
               {/* Native language */}
               <div className="space-y-2">
@@ -650,10 +680,9 @@ export default function Profile() {
                     onChange={e => {
                       const val = e.target.value;
                       setNativeLanguage(val);
-                      // Remove from learning list if it was there
                       setLearningLanguages(prev => prev.filter(l => l.code !== val));
                     }}
-                    className="w-full h-10 rounded-xl border border-border bg-background px-3 pr-8 text-sm appearance-none focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    className="w-full h-9 sm:h-10 rounded-xl border border-border bg-background px-3 pr-8 text-sm appearance-none focus:outline-none focus:ring-2 focus:ring-primary/30"
                   >
                     <option value="">— Select your native language —</option>
                     {LANGUAGES.map(l => (
@@ -671,7 +700,6 @@ export default function Profile() {
                 )}
               </div>
 
-              {/* Divider */}
               <div className="border-t border-border/50" />
 
               {/* Languages to learn */}
@@ -710,7 +738,7 @@ export default function Profile() {
                         key={idx}
                         initial={{ opacity: 0, y: -6 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className="flex items-center gap-3 p-3 rounded-xl border border-border/60 bg-muted/30"
+                        className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-3 rounded-xl border border-border/60 bg-muted/30"
                       >
                         {/* Language selector */}
                         <div className="relative flex-1 min-w-0">
@@ -732,7 +760,7 @@ export default function Profile() {
                         </div>
 
                         {/* Proficiency selector */}
-                        <div className="relative w-44 shrink-0">
+                        <div className="relative w-full sm:w-44 shrink-0">
                           <select
                             value={entry.proficiency}
                             onChange={e => updateLearningLanguage(idx, "proficiency", e.target.value as ProficiencyLevel)}
@@ -771,21 +799,20 @@ export default function Profile() {
           </Card>
 
           {/* ── Location ─────────────────────────────────────────────────── */}
-          <Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
-            <div className="bg-primary/5 px-8 py-4 border-b border-border/50 flex items-center gap-2">
-              <MapPin className="w-5 h-5 text-primary" />
+          <Card className="rounded-2xl sm:rounded-3xl border-border/60 shadow-lg overflow-hidden">
+            <div className="bg-primary/5 px-5 py-3 sm:px-8 sm:py-4 border-b border-border/50 flex items-center gap-2">
+              <MapPin className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
               <div>
-                <h2 className="text-xl font-bold font-display">Your Location</h2>
-                <p className="text-sm text-muted-foreground mt-0.5">
-                  Used to suggest nearby meetup spots — only your metro line is shown to matches
+                <h2 className="text-lg sm:text-xl font-bold font-display">Your Location</h2>
+                <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
+                  Used to suggest nearby meetup spots
                 </p>
               </div>
             </div>
-            <CardContent className="p-8 space-y-4">
+            <CardContent className="p-5 sm:p-8 space-y-4">
               <div className="space-y-2">
                 <Label className="text-sm font-medium">Closest Moscow metro station</Label>
                 <div className="relative" ref={stationRef}>
-                  {/* Search / display input */}
                   <div className="relative">
                     <input
                       type="text"
@@ -793,7 +820,7 @@ export default function Profile() {
                       value={stationSearch || metroStation}
                       onFocus={() => { setStationSearch(""); setStationDropdownOpen(true); }}
                       onChange={e => { setStationSearch(e.target.value); setStationDropdownOpen(true); }}
-                      className="w-full h-10 rounded-xl border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      className="w-full h-9 sm:h-10 rounded-xl border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                     />
                     {metroStation && !stationDropdownOpen && (
                       <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
@@ -812,7 +839,6 @@ export default function Profile() {
                     )}
                   </div>
 
-                  {/* Dropdown */}
                   {stationDropdownOpen && (
                     <div className="absolute z-50 mt-1 w-full max-h-64 overflow-y-auto rounded-xl border border-border bg-background shadow-xl">
                       {stationSearch.trim().length > 0 ? (
@@ -880,7 +906,6 @@ export default function Profile() {
                   )}
                 </div>
 
-                {/* Selected station display */}
                 {metroStation && (
                   <div className="flex items-center gap-2 pt-1">
                     {(() => {
@@ -912,15 +937,15 @@ export default function Profile() {
           </Card>
 
           {/* ── Interests ────────────────────────────────────────────────── */}
-          <Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
-            <div className="bg-primary/5 px-8 py-4 border-b border-border/50">
-              <h2 className="text-xl font-bold font-display">Your Interests</h2>
-              <p className="text-sm text-muted-foreground mt-1">
-                Select the categories you want to receive notifications for
+          <Card className="rounded-2xl sm:rounded-3xl border-border/60 shadow-lg overflow-hidden">
+            <div className="bg-primary/5 px-5 py-3 sm:px-8 sm:py-4 border-b border-border/50">
+              <h2 className="text-lg sm:text-xl font-bold font-display">Your Interests</h2>
+              <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+                Select categories for notifications
               </p>
             </div>
-            <CardContent className="p-8">
-              <div className="flex flex-wrap gap-3">
+            <CardContent className="p-5 sm:p-8">
+              <div className="flex flex-wrap gap-2 sm:gap-3">
                 {EVENT_CATEGORIES.map(cat => {
                   const active = interests.includes(cat.value);
                   return (
@@ -928,35 +953,36 @@ export default function Profile() {
                       key={cat.value}
                       onClick={() => toggleInterest(cat.value)}
                       className={`
-                        flex items-center gap-2 px-4 py-2 rounded-full border text-sm font-medium transition-all
+                        flex items-center gap-1.5 sm:gap-2 px-3 py-1.5 sm:px-4 sm:py-2 rounded-full border text-xs sm:text-sm font-medium transition-all
                         ${active
                           ? "bg-primary text-primary-foreground border-primary shadow-sm"
                           : "border-border text-muted-foreground hover:border-primary/50 hover:text-primary"
                         }
                       `}
                     >
-                      <span style={{ fontSize: 16 }}>{CATEGORY_ICONS[cat.value]}</span>
-                      {cat.label}
+                      <span style={{ fontSize: 14 }}>{CATEGORY_ICONS[cat.value]}</span>
+                      <span className="hidden xs:inline">{cat.label}</span>
+                      <span className="xs:hidden">{cat.label.substring(0, 3)}</span>
                     </button>
                   );
                 })}
-                {/* 👇 Language Exchange interest - independent from the "language" category */}
                 <button
                   onClick={() => toggleInterest("language_exchange")}
                   className={`
-                    flex items-center gap-2 px-4 py-2 rounded-full border text-sm font-medium transition-all
+                    flex items-center gap-1.5 sm:gap-2 px-3 py-1.5 sm:px-4 sm:py-2 rounded-full border text-xs sm:text-sm font-medium transition-all
                     ${interests.includes("language_exchange")
                       ? "bg-primary text-primary-foreground border-primary shadow-sm"
                       : "border-border text-muted-foreground hover:border-primary/50 hover:text-primary"
                     }
                   `}
                 >
-                  <span style={{ fontSize: 16 }}>🗣️</span>
-                  Language Exchange
+                  <span style={{ fontSize: 14 }}>🗣️</span>
+                  <span className="hidden xs:inline">Language Exchange</span>
+                  <span className="xs:hidden">LangEx</span>
                 </button>
               </div>
               {interests.length === 0 && (
-                <p className="text-sm text-muted-foreground mt-4">
+                <p className="text-xs sm:text-sm text-muted-foreground mt-4">
                   Select at least one interest to receive targeted notifications.
                 </p>
               )}
@@ -964,17 +990,17 @@ export default function Profile() {
           </Card>
 
           {/* ── Availability grid ─────────────────────────────────────────── */}
-          <Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
-            <div className="bg-primary/5 px-8 py-4 border-b border-border/50 flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-primary" />
+          <Card className="rounded-2xl sm:rounded-3xl border-border/60 shadow-lg overflow-hidden">
+            <div className="bg-primary/5 px-5 py-3 sm:px-8 sm:py-4 border-b border-border/50 flex items-center gap-2">
+              <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
               <div>
-                <h2 className="text-xl font-bold font-display">Weekly Availability</h2>
-                <p className="text-sm text-muted-foreground">
-                  Click or drag to mark when you're free. Organisers use this to plan events.
+                <h2 className="text-lg sm:text-xl font-bold font-display">Weekly Availability</h2>
+                <p className="text-xs sm:text-sm text-muted-foreground">
+                  Click or drag to mark when you're free
                 </p>
               </div>
             </div>
-            <CardContent className="p-6 overflow-x-auto">
+            <CardContent className="p-5 sm:p-6 overflow-x-auto">
               <div className="min-w-[520px]">
                 <div className="grid grid-cols-8 gap-1 mb-1">
                   <div />
@@ -995,7 +1021,7 @@ export default function Profile() {
                           onMouseDown={() => handleSlotMouseDown(day, hour)}
                           onMouseEnter={() => handleSlotMouseEnter(day, hour)}
                           className={`
-                            h-7 rounded cursor-pointer select-none transition-colors
+                            h-6 sm:h-7 rounded cursor-pointer select-none transition-colors
                             ${active
                               ? "bg-primary/80 hover:bg-primary"
                               : "bg-muted hover:bg-primary/20 border border-border"
@@ -1017,7 +1043,7 @@ export default function Profile() {
           <Button
             onClick={saveAll}
             disabled={saving || uploadingAvatar}
-            className="w-full h-14 text-lg rounded-2xl shadow-xl shadow-primary/20 hover:shadow-primary/30 hover:-translate-y-0.5 transition-all"
+            className="w-full h-12 sm:h-14 text-base sm:text-lg rounded-xl sm:rounded-2xl shadow-xl shadow-primary/20 hover:shadow-primary/30 hover:-translate-y-0.5 transition-all"
           >
             {uploadingAvatar ? "Uploading photo…" : saving ? "Saving…" : saved ? "✓ Saved!" : "Save Profile"}
           </Button>
