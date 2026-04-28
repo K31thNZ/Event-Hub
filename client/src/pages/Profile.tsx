@@ -197,7 +197,7 @@ export const METRO_LINES: { line: string; color: string; stations: string[] }[] 
     stations: [
       "Zябликово", "Shipilovo", "Domodedovskaya (Lyublinsko)", "Krasnogvardeyskaya (Lyublinsko)",
       "Борисово", "Shcherbinka", "Pechatniki (Lyublinsko)", "Volzhskaya",
-      "Lyublino", "Bratislavskaya", "Maryino", "Zябlikово",
+      "Lyublino", "Bratislavskaya", "Maryino", "Zяblikово",
       "Dubrovskoye", "Krestyanskaya Zastava", "Proletarskaya (Lyublinsko)",
       "Rimskaya", "Крестьянская застава", "Trubная", "Sretensky Bulvar",
       "Chkalovskaya", "Kozhukhovo",
@@ -946,6 +946,21 @@ export default function Profile() {
                     </button>
                   );
                 })}
+
+                {/* 👇 NEW: Language Exchange interest */}
+                <button
+                  onClick={() => toggleInterest("language_exchange")}
+                  className={`
+                    flex items-center gap-2 px-4 py-2 rounded-full border text-sm font-medium transition-all
+                    ${interests.includes("language_exchange")
+                      ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                      : "border-border text-muted-foreground hover:border-primary/50 hover:text-primary"
+                    }
+                  `}
+                >
+                  <span style={{ fontSize: 16 }}>🗣️</span>
+                  Language Exchange
+                </button>
               </div>
               {interests.length === 0 && (
                 <p className="text-sm text-muted-foreground mt-4">
