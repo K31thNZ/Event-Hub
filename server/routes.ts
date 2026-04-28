@@ -31,6 +31,7 @@ export async function registerRoutes(
       accessKeyId: process.env.R2_ACCESS_KEY_ID!,
       secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
     },
+    forcePathStyle: true,   // ✅ required for Cloudflare R2 – uses path-style URLs
   });
 
   app.post("/api/r2-presigned-url", async (req, res) => {
