@@ -31,7 +31,7 @@ export async function registerRoutes(
       accessKeyId: process.env.R2_ACCESS_KEY_ID!,
       secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
     },
-    forcePathStyle: true,   // ✅ required for Cloudflare R2 – uses path-style URLs
+    forcePathStyle: true,
   });
 
   app.post("/api/r2-presigned-url", async (req, res) => {
@@ -41,7 +41,6 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Missing fileName or fileType" });
       }
 
-      // Sanitize filename
       const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
       const key = `avatars/${Date.now()}-${safeName}`;
 
@@ -51,7 +50,15 @@ export async function registerRoutes(
         ContentType: fileType,
       });
 
-      const uploadUrl = await getSignedUrl(r2Client, command, { expiresIn: 3600 }); // 1 hour
+      let uploadUrl = await getSignedUrl(r2Client, command, { expiresIn: 3600 });
+
+      // Remove checksum query parameters that Cloudflare R2 does not support
+      const url = new URL(uploadUrl);
+      const unwantedParams = ["x-amz-checksum-crc32", "x-amz-sdk-checksum-algorithm"];
+      for (const param of unwantedParams) {
+        url.searchParams.delete(param);
+      }
+      uploadUrl = url.toString();
 
       const publicUrl = `https://pub-bbcea9b00e1042e59b8ffab29ad09276.r2.dev/${key}`;
 
