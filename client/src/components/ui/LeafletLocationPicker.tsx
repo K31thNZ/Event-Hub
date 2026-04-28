@@ -20,7 +20,7 @@ async function reverseGeocode(lat: number, lng: number): Promise<{ address: stri
     const a = data.address ?? {};
     const road = a.road ?? a.pedestrian ?? a.footway ?? "";
     const houseNo = a.house_number ?? "";
-    // FIXED: added parentheses around the ?? chain after ||
+    // ✅ FIXED: parentheses around the entire right-hand side of `||`
     const address = [road, houseNo].filter(Boolean).join(", ") || ((data.display_name ?? "").split(",")[0] ?? "");
     const city = a.city ?? a.town ?? a.village ?? a.county ?? "";
     return { address, city };
