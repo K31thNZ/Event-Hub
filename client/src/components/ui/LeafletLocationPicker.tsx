@@ -20,8 +20,11 @@ async function reverseGeocode(lat: number, lng: number): Promise<{ address: stri
     const a = data.address ?? {};
     const road = a.road ?? a.pedestrian ?? a.footway ?? "";
     const houseNo = a.house_number ?? "";
-    // ✅ FIXED: removed the trailing `?? ""` and simplified
-    const address = [road, houseNo].filter(Boolean).join(", ") || (data.display_name ?? "").split(",")[0];
+    // ✅ FIXED: avoid mixing ?? and || – use a simple condition
+    let address = [road, houseNo].filter(Boolean).join(", ");
+    if (!address && data.display_name) {
+      address = data.display_name.split(",")[0];
+    }
     const city = a.city ?? a.town ?? a.village ?? a.county ?? "";
     return { address, city };
   } catch {
