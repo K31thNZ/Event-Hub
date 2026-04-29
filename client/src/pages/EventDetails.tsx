@@ -53,6 +53,10 @@ export default function EventDetails() {
   const [selectedTickets, setSelectedTickets] = useState<Record<number, number>>({});
   const [isTicketPanelOpen, setIsTicketPanelOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+
+  // ── Determine if event is already finished ─────────────────────────────
+  const isPast = event ? new Date(event.date) < new Date() : false;
+
   const countdown = useCountdown(event ? new Date(event.date) : new Date(0));
 
   const { register, handleSubmit, setValue, formState: { errors } } = useForm<CheckoutForm>({
@@ -194,68 +198,82 @@ export default function EventDetails() {
             </motion.div>
           </div>
 
-          {/* Sidebar */}
-          <div className="lg:w-[320px]">
-            <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.2 }}
-              className="sticky top-28 bg-card border border-border shadow-xl rounded-3xl p-6 space-y-5">
+          {/* Sidebar – hidden completely for past events */}
+          {!isPast ? (
+            <div className="lg:w-[320px]">
+              <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.2 }}
+                className="sticky top-28 bg-card border border-border shadow-xl rounded-3xl p-6 space-y-5">
 
-              <h3 className="text-lg font-display font-bold text-foreground">Event Details</h3>
+                <h3 className="text-lg font-display font-bold text-foreground">Event Details</h3>
 
-              <div className="space-y-4 text-sm text-muted-foreground">
-                <div className="flex items-start gap-3">
-                  <Calendar className="w-4 h-4 text-primary mt-0.5 shrink-0" />
-                  <div>
-                    <p className="font-semibold text-foreground">{format(new Date(event.date), "EEEE, MMMM d, yyyy")}</p>
-                    <p>{format(new Date(event.date), "h:mm a")}</p>
+                <div className="space-y-4 text-sm text-muted-foreground">
+                  <div className="flex items-start gap-3">
+                    <Calendar className="w-4 h-4 text-primary mt-0.5 shrink-0" />
+                    <div>
+                      <p className="font-semibold text-foreground">{format(new Date(event.date), "EEEE, MMMM d, yyyy")}</p>
+                      <p>{format(new Date(event.date), "h:mm a")}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <MapPin className="w-4 h-4 text-primary mt-0.5 shrink-0" />
+                    <div>
+                      <p className="font-semibold text-foreground">{event.venueAddress}</p>
+                      <p>{event.venueCity}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <Ticket className="w-4 h-4 text-primary mt-0.5 shrink-0" />
+                    <div>
+                      <p className="font-semibold text-foreground">
+                        {event.ticketTypes.length} ticket type{event.ticketTypes.length !== 1 ? "s" : ""}
+                      </p>
+                      <p>
+                        from {Math.min(...event.ticketTypes.map(t => t.price)) === 0
+                          ? "Free"
+                          : `${Math.min(...event.ticketTypes.map(t => t.price))} ₽`}
+                      </p>
+                    </div>
                   </div>
                 </div>
-                <div className="flex items-start gap-3">
-                  <MapPin className="w-4 h-4 text-primary mt-0.5 shrink-0" />
-                  <div>
-                    <p className="font-semibold text-foreground">{event.venueAddress}</p>
-                    <p>{event.venueCity}</p>
-                  </div>
+
+                {!isAuthenticated ? (
+                  <Button
+                    onClick={login}
+                    className="w-full rounded-xl shadow-lg shadow-primary/20"
+                  >
+                    Sign in to get tickets
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={() => setIsTicketPanelOpen(true)}
+                    className="w-full rounded-xl shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all hover:-translate-y-0.5 group"
+                  >
+                    <Ticket className="w-4 h-4 mr-2" />
+                    Get Tickets
+                    <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
+                  </Button>
+                )}
+              </motion.div>
+            </div>
+          ) : (
+            // Past event fallback card
+            <div className="lg:w-[320px]">
+              <div className="sticky top-28 bg-card border border-border shadow-xl rounded-3xl p-6 space-y-5 text-center">
+                <div className="w-16 h-16 mx-auto rounded-full bg-muted flex items-center justify-center">
+                  <Calendar className="w-8 h-8 text-muted-foreground" />
                 </div>
-                <div className="flex items-start gap-3">
-                  <Ticket className="w-4 h-4 text-primary mt-0.5 shrink-0" />
-                  <div>
-                    <p className="font-semibold text-foreground">
-                      {event.ticketTypes.length} ticket type{event.ticketTypes.length !== 1 ? "s" : ""}
-                    </p>
-                    <p>
-                      from {Math.min(...event.ticketTypes.map(t => t.price)) === 0
-                        ? "Free"
-                        : `${Math.min(...event.ticketTypes.map(t => t.price))} ₽`}
-                    </p>
-                  </div>
-                </div>
+                <h3 className="text-xl font-display font-bold">Event has ended</h3>
+                <p className="text-sm text-muted-foreground">
+                  This event took place on {format(new Date(event.date), "MMMM d, yyyy")}.
+                </p>
               </div>
-
-              {/* ── Sign in / Get Tickets button ───────────────────────── */}
-              {!isAuthenticated ? (
-                <Button
-                  onClick={login}
-                  className="w-full rounded-xl shadow-lg shadow-primary/20"
-                >
-                  Sign in to get tickets
-                </Button>
-              ) : (
-                <Button
-                  onClick={() => setIsTicketPanelOpen(true)}
-                  className="w-full rounded-xl shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all hover:-translate-y-0.5 group"
-                >
-                  <Ticket className="w-4 h-4 mr-2" />
-                  Get Tickets
-                  <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
-                </Button>
-              )}
-            </motion.div>
-          </div>
+            </div>
+          )}
 
         </div>
       </div>
 
-      {/* Ticket selector panel */}
+      {/* Ticket selector panel – only accessible when event is not past */}
       <Sheet open={isTicketPanelOpen} onOpenChange={setIsTicketPanelOpen}>
         <SheetContent className="w-full sm:max-w-md overflow-y-auto border-l-0 sm:rounded-l-3xl shadow-2xl">
           <SheetHeader className="mb-6">
@@ -381,7 +399,7 @@ export default function EventDetails() {
         </SheetContent>
       </Sheet>
 
-      {/* ── Legal disclaimer at the very bottom ───────────────────────────── */}
+      {/* ── Legal disclaimer ───────────────────────────────────────────── */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 mt-8 border-t border-border/50">
         <p className="text-center text-xs text-muted-foreground/70 leading-relaxed">
           ExpatEvents provides the infrastructure to organise activities. The voluntary organisers
