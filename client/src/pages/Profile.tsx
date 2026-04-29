@@ -15,16 +15,16 @@ import { isTelegramMiniApp } from "@/hooks/use-telegram-miniapp-auth";
 
 const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? "https://auth.expatevents.org";
 
-// ── NEW: Server‑mediated avatar upload (no CORS, no presigned URLs) ─────
+// ── Server‑mediated avatar upload  ─────
 async function uploadAvatar(file: File): Promise<string> {
   const formData = new FormData();
   formData.append("file", file);
 
-  const res = await fetch(`${AUTH_URL}/api/upload/avatar`, {
+  // Use relative path (same origin as the frontend) instead of AUTH_URL
+  const res = await fetch("/api/upload/avatar", {
     method: "POST",
     credentials: "include",
     body: formData,
-    // DO NOT set Content-Type header – browser sets it automatically with boundary
   });
 
   if (!res.ok) {
