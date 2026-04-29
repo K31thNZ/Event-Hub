@@ -8,6 +8,19 @@ import path from "path";
 
 const router = Router();
 
+// Validate required environment variables at runtime
+const requiredEnvVars = [
+  "CLOUDFLARE_ACCOUNT_ID",
+  "R2_ACCESS_KEY_ID",
+  "R2_SECRET_ACCESS_KEY",
+  "R2_BUCKET_NAME",
+];
+for (const envVar of requiredEnvVars) {
+  if (!process.env[envVar]) {
+    console.error(`❌ Missing required environment variable: ${envVar}`);
+  }
+}
+
 const r2 = new S3Client({
   region: "auto",
   endpoint: `https://${process.env.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com`,
@@ -39,6 +52,8 @@ router.post("/api/upload/avatar", requireAuth, upload.single("file"), async (req
     const ext = path.extname(req.file.originalname) || ".jpg";
     const key = `avatars/${Date.now()}-${randomBytes(8).toString("hex")}${ext}`;
 
+    console.log(`📤 Uploading to R2: ${key} (${req.file.size} bytes)`);
+
     await r2.send(new PutObjectCommand({
       Bucket: BUCKET,
       Key: key,
@@ -47,9 +62,21 @@ router.post("/api/upload/avatar", requireAuth, upload.single("file"), async (req
     }));
 
     const url = `${PUBLIC_URL}/${key}`;
+    console.log(`✅ Upload successful: ${url}`);
     res.json({ url });
   } catch (error) {
-    console.error("Upload error:", error);
+    // Log the full error details to Render console
+    console.error("❌ Upload error details:");
+    console.error(error);
+
+    // Also log the error name and message individually for clarity
+    if (error instanceof Error) {
+      console.error(`Error name: ${error.name}`);
+      console.error(`Error message: ${error.message}`);
+      console.error(`Stack trace: ${error.stack}`);
+    }
+
+    // Send a generic response to the client (don't expose internals)
     res.status(500).json({ error: "Upload failed" });
   }
 });
