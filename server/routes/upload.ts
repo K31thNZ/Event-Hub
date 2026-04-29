@@ -1,3 +1,4 @@
+// server/routes/upload.ts
 import { Router } from "express";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import multer from "multer";
@@ -18,7 +19,7 @@ const r2 = new S3Client({
 });
 
 const BUCKET = process.env.R2_BUCKET_NAME!; // "expetevents"
-const PUBLIC_URL = "https://pub-bbcea9b00e1042e59b8ffab29ad09276.r2.dev"; // your public URL
+const PUBLIC_URL = "https://pub-bbcea9b00e1042e59b8ffab29ad09276.r2.dev";
 
 const upload = multer({
   storage: multer.memoryStorage(),
