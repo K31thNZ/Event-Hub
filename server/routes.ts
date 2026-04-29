@@ -11,8 +11,9 @@ import { db } from "./db";
 import { users } from "@shared/models/auth";
 import { eq } from "drizzle-orm";
 import crypto from "crypto";
+import uploadRouter from "./routes/upload";
 
-// ── Cloudflare R2 SDK imports ───────────────────────────────────────────────
+// ── Cloudflare R2 SDK imports (still used for the old presigned endpoint; you may remove later) ──
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -23,7 +24,7 @@ export async function registerRoutes(
   registerPicksRoutes(app);
   registerGroupRoutes(app);
 
-  // ── Cloudflare R2: generate presigned upload URL ─────────────────────────
+  // ── Cloudflare R2: generate presigned upload URL (optional, keep for backward compatibility) ──
   const r2Client = new S3Client({
     region: "auto",
     endpoint: `https://${process.env.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com`,
@@ -52,12 +53,11 @@ export async function registerRoutes(
 
       let uploadUrl = await getSignedUrl(r2Client, command, { expiresIn: 3600 });
 
-      // Remove unsupported query parameters that Cloudflare R2 does not support
       const url = new URL(uploadUrl);
       const unwantedParams = [
         "x-amz-checksum-crc32",
         "x-amz-sdk-checksum-algorithm",
-        "x-id",           // 👈 added to remove the x-id parameter
+        "x-id",
       ];
       for (const param of unwantedParams) {
         url.searchParams.delete(param);
@@ -65,13 +65,15 @@ export async function registerRoutes(
       uploadUrl = url.toString();
 
       const publicUrl = `https://pub-bbcea9b00e1042e59b8ffab29ad09276.r2.dev/${key}`;
-
       res.json({ uploadUrl, publicUrl });
     } catch (error) {
       console.error("R2 presigned URL error:", error);
       res.status(500).json({ error: "Failed to generate upload URL" });
     }
   });
+
+  // ── NEW: Server‑mediated avatar upload (avoids CORS completely) ───
+  app.use(uploadRouter);
 
   // ── Geocoding endpoints (forward & reverse) – free OpenStreetMap Nominatim ──
   app.post("/api/forward-geocode", async (req, res) => {
@@ -276,7 +278,6 @@ export async function registerRoutes(
       const existing = await storage.getEvent(id);
       if (!existing)  return res.status(404).json({ message: "Event not found" });
 
-      // Only organizer or admin may update
       const localUser = await db.query.users.findFirst({
         where: eq(users.id, String(req.user.id)),
       });
@@ -345,7 +346,6 @@ export async function registerRoutes(
       const order = await storage.getOrder(id);
       if (!order)   return res.status(404).json({ message: "Order not found" });
 
-      // Only the attendee or an admin may view an order
       const localUser = await db.query.users.findFirst({
         where: eq(users.id, String(req.user.id)),
       });
