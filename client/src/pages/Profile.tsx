@@ -19,19 +19,15 @@ const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? "https://auth.expatevents.org"
 async function uploadAvatar(file: File): Promise<string> {
   const formData = new FormData();
   formData.append("file", file);
-
-  // Use relative path (same origin as the frontend) instead of AUTH_URL
   const res = await fetch("/api/upload/avatar", {
     method: "POST",
     credentials: "include",
     body: formData,
   });
-
   if (!res.ok) {
     const error = await res.json().catch(() => ({}));
     throw new Error(error.error || "Upload failed");
   }
-
   const data = await res.json();
   return data.url;
 }
@@ -61,7 +57,6 @@ export interface LanguageEntry {
   proficiency: ProficiencyLevel;
 }
 
-// Common languages expats encounter / speak
 const LANGUAGES = [
   { code: "en", label: "English", flag: "🇬🇧" },
   { code: "ru", label: "Russian", flag: "🇷🇺" },
@@ -244,7 +239,6 @@ const ALL_STATIONS = METRO_LINES.flatMap(l => l.stations.map(s => ({ station: s,
 // ── Availability grid constants ───────────────────────────────────────────────
 const DAYS  = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const HOURS = Array.from({ length: 16 }, (_, i) => i + 8);
-
 type Slot = { day: number; hour: number };
 
 // ── Main component ─────────────────────────────────────────────────────────────
@@ -282,7 +276,6 @@ export default function Profile() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const stationRef   = useRef<HTMLDivElement>(null);
 
-  // Close station dropdown on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (stationRef.current && !stationRef.current.contains(e.target as Node)) {
@@ -293,7 +286,6 @@ export default function Profile() {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  // Load user data
   useEffect(() => {
     if (!user) return;
     setInterests(user.interests ?? []);
@@ -301,13 +293,11 @@ export default function Profile() {
     setNameInput(user.displayName ?? user.username ?? "");
     setAvatarUrl(user.avatarUrl ?? "");
 
-    // Load availability
     fetch(`${AUTH_URL}/api/availability`, { credentials: "include" })
       .then(r => r.json())
       .then((data: Slot[]) => setSlots(data))
       .catch(() => {});
 
-    // Load language & location profile
     fetch(`${AUTH_URL}/api/user/match-profile`, { credentials: "include" })
       .then(r => r.json())
       .then((data: { nativeLanguage?: string; learningLanguages?: LanguageEntry[]; metroStation?: string }) => {
@@ -318,14 +308,12 @@ export default function Profile() {
       .catch(() => {});
   }, [user]);
 
-  // Interest helpers
   const toggleInterest = (value: string) => {
     setInterests(prev =>
       prev.includes(value) ? prev.filter(i => i !== value) : [...prev, value]
     );
   };
 
-  // Availability helpers
   const isSlotActive = (day: number, hour: number) =>
     slots.some(s => s.day === day && s.hour === hour);
 
@@ -350,7 +338,6 @@ export default function Profile() {
     });
   };
 
-  // Language helpers
   const addLearningLanguage = () => {
     if (learningLanguages.length >= 3) return;
     const used = new Set([nativeLanguage, ...learningLanguages.map(l => l.code)]);
@@ -371,11 +358,8 @@ export default function Profile() {
     );
   };
 
-  // Station search
   const filteredStations = stationSearch.trim().length > 0
-    ? ALL_STATIONS.filter(s =>
-        s.station.toLowerCase().includes(stationSearch.toLowerCase())
-      ).slice(0, 12)
+    ? ALL_STATIONS.filter(s => s.station.toLowerCase().includes(stationSearch.toLowerCase())).slice(0, 12)
     : [];
 
   const stationsByLine = METRO_LINES.map(line => ({
@@ -383,7 +367,6 @@ export default function Profile() {
     stations: line.stations,
   }));
 
-  // Avatar helpers
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -400,12 +383,10 @@ export default function Profile() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  // NEW: Save all using server‑mediated upload
   const saveAll = async () => {
     setSaving(true);
     try {
       let finalAvatarUrl = avatarUrl;
-
       if (avatarFile) {
         setUploadingAvatar(true);
         try {
@@ -424,21 +405,18 @@ export default function Profile() {
       }
 
       await Promise.all([
-        // Save interests
         fetch(`${AUTH_URL}/api/user/interests`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
           body: JSON.stringify({ interests }),
         }),
-        // Save availability
         fetch(`${AUTH_URL}/api/availability`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
           body: JSON.stringify({ slots }),
         }),
-        // Save profile (displayName + avatarUrl)
         fetch(`${AUTH_URL}/api/user/profile`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -448,7 +426,6 @@ export default function Profile() {
             avatarUrl: finalAvatarUrl || undefined,
           }),
         }),
-        // Save match profile (languages + location)
         fetch(`${AUTH_URL}/api/user/match-profile`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -471,7 +448,6 @@ export default function Profile() {
     }
   };
 
-  // Loading / unauthenticated states
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -491,9 +467,9 @@ export default function Profile() {
     );
   }
 
-  const initials     = (displayName || user.username || "U").substring(0, 2).toUpperCase();
+  const initials = (displayName || user.username || "U").substring(0, 2).toUpperCase();
   const currentAvatar = avatarPreview ?? avatarUrl;
-  const nativeLang   = LANGUAGES.find(l => l.code === nativeLanguage);
+  const nativeLang = LANGUAGES.find(l => l.code === nativeLanguage);
 
   return (
     <div
@@ -504,7 +480,7 @@ export default function Profile() {
       <div className="max-w-3xl mx-auto space-y-6 sm:space-y-8">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-6 sm:space-y-8">
 
-          {/* ── Identity ─────────────────────────────────────────────────── */}
+          {/* Identity Card */}
           <Card className="rounded-2xl sm:rounded-3xl border-border/60 shadow-lg overflow-hidden">
             <div className="bg-primary/5 px-5 py-3 sm:px-8 sm:py-4 border-b border-border/50 flex items-center gap-2">
               <User className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
@@ -512,7 +488,6 @@ export default function Profile() {
             </div>
             <CardContent className="p-5 sm:p-8">
               <div className="flex flex-col sm:flex-row items-start gap-5 sm:gap-6">
-                {/* Avatar with upload button */}
                 <div className="relative shrink-0">
                   <Avatar className="h-20 w-20 sm:h-24 sm:w-24 ring-2 ring-border">
                     <AvatarImage src={currentAvatar} />
@@ -534,7 +509,6 @@ export default function Profile() {
                     onChange={handleAvatarChange}
                   />
                 </div>
-
                 <div className="flex-1 min-w-0 space-y-2 sm:space-y-3">
                   {editingName ? (
                     <div className="flex items-center gap-2">
@@ -567,15 +541,12 @@ export default function Profile() {
                       </button>
                     </div>
                   )}
-
                   {user.email && <p className="text-muted-foreground text-xs sm:text-sm break-all">{user.email}</p>}
-
                   <div className="flex gap-2 flex-wrap">
                     {user.isExpatMember && <Badge variant="secondary">ExpatEvents</Badge>}
                     {user.isGamesMember && <Badge variant="secondary">Games in English</Badge>}
                     {user.role === "admin" && <Badge>Admin</Badge>}
                   </div>
-
                   {avatarPreview && (
                     <div className="flex items-center gap-3 pt-1">
                       <span className="text-xs sm:text-sm text-muted-foreground">New photo selected — save to apply</span>
@@ -588,7 +559,7 @@ export default function Profile() {
             </CardContent>
           </Card>
 
-          {/* ── Telegram ─────────────────────────────────────────────────── */}
+          {/* Telegram Card */}
           {!isTelegramMiniApp() && (
             <Card className="rounded-2xl sm:rounded-3xl border-border/60 shadow-lg overflow-hidden">
               <div className="bg-primary/5 px-5 py-3 sm:px-8 sm:py-4 border-b border-border/50 flex items-center gap-2">
@@ -604,7 +575,7 @@ export default function Profile() {
             </Card>
           )}
 
-          {/* ── Languages ────────────────────────────────────────────────── */}
+          {/* Languages Card */}
           <Card className="rounded-2xl sm:rounded-3xl border-border/60 shadow-lg overflow-hidden">
             <div className="bg-primary/5 px-5 py-3 sm:px-8 sm:py-4 border-b border-border/50 flex items-center gap-2">
               <Languages className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
@@ -616,7 +587,6 @@ export default function Profile() {
               </div>
             </div>
             <CardContent className="p-5 sm:p-8 space-y-5 sm:space-y-6">
-
               {/* Native language */}
               <div className="space-y-2">
                 <Label className="text-sm font-medium">Native language</Label>
@@ -645,9 +615,7 @@ export default function Profile() {
                   </p>
                 )}
               </div>
-
               <div className="border-t border-border/50" />
-
               {/* Languages to learn */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
@@ -664,75 +632,58 @@ export default function Profile() {
                     </button>
                   )}
                 </div>
-
-                {!nativeLanguage && (
-                  <p className="text-sm text-muted-foreground italic">
-                    Select your native language first
-                  </p>
-                )}
-
+                {!nativeLanguage && <p className="text-sm text-muted-foreground italic">Select your native language first</p>}
                 {learningLanguages.length === 0 && nativeLanguage && (
-                  <p className="text-sm text-muted-foreground italic">
-                    No languages added yet — click "Add language" above
-                  </p>
+                  <p className="text-sm text-muted-foreground italic">No languages added yet — click "Add language" above</p>
                 )}
-
                 <div className="space-y-3">
-                  {learningLanguages.map((entry, idx) => {
-                    return (
-                      <motion.div
-                        key={idx}
-                        initial={{ opacity: 0, y: -6 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-3 rounded-xl border border-border/60 bg-muted/30"
-                      >
-                        {/* Language selector */}
-                        <div className="relative flex-1 min-w-0">
-                          <select
-                            value={entry.code}
-                            onChange={e => updateLearningLanguage(idx, "code", e.target.value)}
-                            className="w-full h-9 rounded-lg border border-border bg-background px-3 pr-7 text-sm appearance-none focus:outline-none focus:ring-2 focus:ring-primary/30"
-                          >
-                            {LANGUAGES.filter(l =>
-                              l.code === entry.code ||
-                              (l.code !== nativeLanguage && !learningLanguages.some((e, i) => i !== idx && e.code === l.code))
-                            ).map(l => (
-                              <option key={l.code} value={l.code}>
-                                {l.flag} {l.label}
-                              </option>
-                            ))}
-                          </select>
-                          <div className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">▾</div>
-                        </div>
-
-                        {/* Proficiency selector */}
-                        <div className="relative w-full sm:w-44 shrink-0">
-                          <select
-                            value={entry.proficiency}
-                            onChange={e => updateLearningLanguage(idx, "proficiency", e.target.value as ProficiencyLevel)}
-                            className="w-full h-9 rounded-lg border border-border bg-background px-3 pr-7 text-sm appearance-none focus:outline-none focus:ring-2 focus:ring-primary/30"
-                          >
-                            {PROFICIENCY_LEVELS.map(p => (
-                              <option key={p.value} value={p.value}>{p.label}</option>
-                            ))}
-                          </select>
-                          <div className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">▾</div>
-                        </div>
-
-                        {/* Remove button */}
-                        <button
-                          type="button"
-                          onClick={() => removeLearningLanguage(idx)}
-                          className="shrink-0 text-muted-foreground hover:text-destructive transition-colors"
-                          title="Remove"
+                  {learningLanguages.map((entry, idx) => (
+                    <motion.div
+                      key={idx}
+                      initial={{ opacity: 0, y: -6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-3 rounded-xl border border-border/60 bg-muted/30"
+                    >
+                      <div className="relative flex-1 min-w-0">
+                        <select
+                          value={entry.code}
+                          onChange={e => updateLearningLanguage(idx, "code", e.target.value)}
+                          className="w-full h-9 rounded-lg border border-border bg-background px-3 pr-7 text-sm appearance-none focus:outline-none focus:ring-2 focus:ring-primary/30"
                         >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </motion.div>
-                    );
-                  })}
+                          {LANGUAGES.filter(l =>
+                            l.code === entry.code ||
+                            (l.code !== nativeLanguage && !learningLanguages.some((e, i) => i !== idx && e.code === l.code))
+                          ).map(l => (
+                            <option key={l.code} value={l.code}>
+                              {l.flag} {l.label}
+                            </option>
+                          ))}
+                        </select>
+                        <div className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">▾</div>
+                      </div>
+                      <div className="relative w-full sm:w-44 shrink-0">
+                        <select
+                          value={entry.proficiency}
+                          onChange={e => updateLearningLanguage(idx, "proficiency", e.target.value as ProficiencyLevel)}
+                          className="w-full h-9 rounded-lg border border-border bg-background px-3 pr-7 text-sm appearance-none focus:outline-none focus:ring-2 focus:ring-primary/30"
+                        >
+                          {PROFICIENCY_LEVELS.map(p => (
+                            <option key={p.value} value={p.value}>{p.label}</option>
+                          ))}
+                        </select>
+                        <div className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">▾</div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeLearningLanguage(idx)}
+                        className="shrink-0 text-muted-foreground hover:text-destructive transition-colors"
+                        title="Remove"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </motion.div>
+                  ))}
                 </div>
-
                 {learningLanguages.length > 0 && (
                   <p className="text-xs text-muted-foreground pl-1">
                     You'll be matched with native speakers of{" "}
@@ -744,7 +695,7 @@ export default function Profile() {
             </CardContent>
           </Card>
 
-          {/* ── Location ─────────────────────────────────────────────────── */}
+          {/* Location Card */}
           <Card className="rounded-2xl sm:rounded-3xl border-border/60 shadow-lg overflow-hidden">
             <div className="bg-primary/5 px-5 py-3 sm:px-8 sm:py-4 border-b border-border/50 flex items-center gap-2">
               <MapPin className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
@@ -784,7 +735,6 @@ export default function Profile() {
                       </div>
                     )}
                   </div>
-
                   {stationDropdownOpen && (
                     <div className="absolute z-50 mt-1 w-full max-h-64 overflow-y-auto rounded-xl border border-border bg-background shadow-xl">
                       {stationSearch.trim().length > 0 ? (
@@ -851,7 +801,6 @@ export default function Profile() {
                     </div>
                   )}
                 </div>
-
                 {metroStation && (
                   <div className="flex items-center gap-2 pt-1">
                     {(() => {
@@ -863,9 +812,7 @@ export default function Profile() {
                             style={{ background: s?.color ?? "#888" }}
                           />
                           <span className="text-sm font-medium">{metroStation}</span>
-                          {s && (
-                            <span className="text-xs text-muted-foreground">· {s.line}</span>
-                          )}
+                          {s && <span className="text-xs text-muted-foreground">· {s.line}</span>}
                           <button
                             type="button"
                             onClick={() => { setMetroStation(""); setStationSearch(""); }}
@@ -882,7 +829,7 @@ export default function Profile() {
             </CardContent>
           </Card>
 
-          {/* ── Interests ────────────────────────────────────────────────── */}
+          {/* Interests Card – FULL LABELS restored */}
           <Card className="rounded-2xl sm:rounded-3xl border-border/60 shadow-lg overflow-hidden">
             <div className="bg-primary/5 px-5 py-3 sm:px-8 sm:py-4 border-b border-border/50">
               <h2 className="text-lg sm:text-xl font-bold font-display">Your Interests</h2>
@@ -907,8 +854,8 @@ export default function Profile() {
                       `}
                     >
                       <span style={{ fontSize: 14 }}>{CATEGORY_ICONS[cat.value]}</span>
-                      <span className="hidden xs:inline">{cat.label}</span>
-                      <span className="xs:hidden">{cat.label.substring(0, 3)}</span>
+                      {/* FULL label – no truncation */}
+                      <span>{cat.label}</span>
                     </button>
                   );
                 })}
@@ -923,8 +870,7 @@ export default function Profile() {
                   `}
                 >
                   <span style={{ fontSize: 14 }}>🗣️</span>
-                  <span className="hidden xs:inline">Language Exchange</span>
-                  <span className="xs:hidden">LangEx</span>
+                  <span>Language Exchange</span>
                 </button>
               </div>
               {interests.length === 0 && (
@@ -935,7 +881,7 @@ export default function Profile() {
             </CardContent>
           </Card>
 
-          {/* ── Availability grid ─────────────────────────────────────────── */}
+          {/* Availability grid */}
           <Card className="rounded-2xl sm:rounded-3xl border-border/60 shadow-lg overflow-hidden">
             <div className="bg-primary/5 px-5 py-3 sm:px-8 sm:py-4 border-b border-border/50 flex items-center gap-2">
               <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
@@ -950,9 +896,7 @@ export default function Profile() {
               <div className="min-w-[520px]">
                 <div className="grid grid-cols-8 gap-1 mb-1">
                   <div />
-                  {DAYS.map(d => (
-                    <div key={d} className="text-xs font-medium text-center text-muted-foreground py-1">{d}</div>
-                  ))}
+                  {DAYS.map(d => <div key={d} className="text-xs font-medium text-center text-muted-foreground py-1">{d}</div>)}
                 </div>
                 {HOURS.map(hour => (
                   <div key={hour} className="grid grid-cols-8 gap-1 mb-1">
@@ -966,13 +910,7 @@ export default function Profile() {
                           key={day}
                           onMouseDown={() => handleSlotMouseDown(day, hour)}
                           onMouseEnter={() => handleSlotMouseEnter(day, hour)}
-                          className={`
-                            h-6 sm:h-7 rounded cursor-pointer select-none transition-colors
-                            ${active
-                              ? "bg-primary/80 hover:bg-primary"
-                              : "bg-muted hover:bg-primary/20 border border-border"
-                            }
-                          `}
+                          className={`h-6 sm:h-7 rounded cursor-pointer select-none transition-colors ${active ? "bg-primary/80 hover:bg-primary" : "bg-muted hover:bg-primary/20 border border-border"}`}
                         />
                       );
                     })}
@@ -985,7 +923,7 @@ export default function Profile() {
             </CardContent>
           </Card>
 
-          {/* ── Save button ───────────────────────────────────────────────── */}
+          {/* Save button */}
           <Button
             onClick={saveAll}
             disabled={saving || uploadingAvatar}
