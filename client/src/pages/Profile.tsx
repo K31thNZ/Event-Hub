@@ -1,4 +1,3 @@
-import SparkMD5 from 'spark-md5';
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useQueryClient } from "@tanstack/react-query";
@@ -16,78 +15,25 @@ import { isTelegramMiniApp } from "@/hooks/use-telegram-miniapp-auth";
 
 const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? "https://auth.expatevents.org";
 
-// ── Cloudflare R2 upload (replaces Cloudinary) ──────────────────────────────
-const R2_UPLOAD_ENDPOINT = "/api/r2-presigned-url";
+// ── NEW: Server‑mediated avatar upload (no CORS, no presigned URLs) ─────
+async function uploadAvatar(file: File): Promise<string> {
+  const formData = new FormData();
+  formData.append("file", file);
 
-async function uploadImageToR2(file: File): Promise<string> {
-  // Compute MD5 hash using SparkMD5 (works in all browsers, no HTTPS needed)
-  const md5Base64 = await new Promise<string>((resolve, reject) => {
-    const blobSlice = File.prototype.slice || File.prototype.mozSlice || File.prototype.webkitSlice;
-    const chunkSize = 2 * 1024 * 1024; // 2MB chunks
-    const chunks = Math.ceil(file.size / chunkSize);
-    let currentChunk = 0;
-    const spark = new SparkMD5.ArrayBuffer();
-    const fileReader = new FileReader();
-
-    function loadNext() {
-      const start = currentChunk * chunkSize;
-      const end = Math.min(start + chunkSize, file.size);
-      fileReader.readAsArrayBuffer(blobSlice.call(file, start, end));
-    }
-
-    fileReader.onload = (e) => {
-      spark.append(e.target?.result as ArrayBuffer);
-      currentChunk++;
-      if (currentChunk < chunks) {
-        loadNext();
-      } else {
-        const hexHash = spark.end();
-        // Convert hex to base64
-        const bytes = new Uint8Array(hexHash.length / 2);
-        for (let i = 0; i < hexHash.length; i += 2) {
-          bytes[i / 2] = parseInt(hexHash.substr(i, 2), 16);
-        }
-        const md5Base64 = btoa(String.fromCharCode(...bytes));
-        resolve(md5Base64);
-      }
-    };
-    fileReader.onerror = () => reject(new Error('Failed to read file for MD5'));
-    loadNext();
-  });
-
-  // 1. Request a presigned URL from your backend
-  const presignRes = await fetch(R2_UPLOAD_ENDPOINT, {
+  const res = await fetch(`${AUTH_URL}/api/upload/avatar`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     credentials: "include",
-    body: JSON.stringify({
-      fileName: file.name,
-      fileType: file.type,
-    }),
+    body: formData,
+    // DO NOT set Content-Type header – browser sets it automatically with boundary
   });
 
-  if (!presignRes.ok) {
-    const errorText = await presignRes.text();
-    throw new Error(`Failed to get presigned URL: ${presignRes.status} ${errorText}`);
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.error || "Upload failed");
   }
 
-  const { uploadUrl, publicUrl } = await presignRes.json();
-
-  // 2. Upload directly to R2 with the required Content-MD5 header
-  const uploadRes = await fetch(uploadUrl, {
-    method: "PUT",
-    body: file,
-    headers: {
-      "Content-Type": file.type,
-      "Content-MD5": md5Base64,
-    },
-  });
-
-  if (!uploadRes.ok) {
-    throw new Error(`Upload to R2 failed: ${uploadRes.status} ${uploadRes.statusText}`);
-  }
-
-  return publicUrl;
+  const data = await res.json();
+  return data.url;
 }
 
 // ── Helper: category icons ───────────────────────────────────────────────────
@@ -454,7 +400,7 @@ export default function Profile() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  // Save all (using R2)
+  // NEW: Save all using server‑mediated upload
   const saveAll = async () => {
     setSaving(true);
     try {
@@ -463,12 +409,12 @@ export default function Profile() {
       if (avatarFile) {
         setUploadingAvatar(true);
         try {
-          finalAvatarUrl = await uploadImageToR2(avatarFile);
+          finalAvatarUrl = await uploadAvatar(avatarFile);
           setAvatarUrl(finalAvatarUrl);
           setAvatarPreview(null);
           setAvatarFile(null);
         } catch (err: any) {
-          console.error("R2 upload error:", err);
+          console.error("Avatar upload error:", err);
           setAvatarError(err.message ?? "Upload failed");
           setSaving(false);
           setUploadingAvatar(false);
