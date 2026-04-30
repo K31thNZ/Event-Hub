@@ -1,3 +1,6 @@
+import { registerGroupRoutes } from "./group-routes";
+import { scheduleTicketReminders } from "./ticket-reminders";
+import { registerPicksRoutes } from "./picks-routes";
 import type { Express } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
@@ -9,7 +12,8 @@ import { users } from "@shared/models/auth";
 import { eq } from "drizzle-orm";
 import crypto from "crypto";
 import uploadRouter from "./routes/upload";
-
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 // ── Cloudflare R2 SDK imports (still used for the old presigned endpoint; you may remove later) ──
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
