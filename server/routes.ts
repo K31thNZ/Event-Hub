@@ -13,10 +13,6 @@ import { eq } from "drizzle-orm";
 import crypto from "crypto";
 import uploadRouter from "./routes/upload";
 
-// ── Cloudflare R2 SDK imports (still used for the old presigned endpoint; you may remove later) ──
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -24,55 +20,7 @@ export async function registerRoutes(
   registerPicksRoutes(app);
   registerGroupRoutes(app);
 
-  // ── Cloudflare R2: generate presigned upload URL (optional, keep for backward compatibility) ──
-  const r2Client = new S3Client({
-    region: "auto",
-    endpoint: `https://${process.env.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-    credentials: {
-      accessKeyId: process.env.R2_ACCESS_KEY_ID!,
-      secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
-    },
-    forcePathStyle: true,
-  });
-
-  app.post("/api/r2-presigned-url", async (req, res) => {
-    try {
-      const { fileName, fileType } = req.body;
-      if (!fileName || !fileType) {
-        return res.status(400).json({ error: "Missing fileName or fileType" });
-      }
-
-      const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const key = `avatars/${Date.now()}-${safeName}`;
-
-      const command = new PutObjectCommand({
-        Bucket: process.env.R2_BUCKET_NAME,
-        Key: key,
-        ContentType: fileType,
-      });
-
-      let uploadUrl = await getSignedUrl(r2Client, command, { expiresIn: 3600 });
-
-      const url = new URL(uploadUrl);
-      const unwantedParams = [
-        "x-amz-checksum-crc32",
-        "x-amz-sdk-checksum-algorithm",
-        "x-id",
-      ];
-      for (const param of unwantedParams) {
-        url.searchParams.delete(param);
-      }
-      uploadUrl = url.toString();
-
-      const publicUrl = `https://pub-bbcea9b00e1042e59b8ffab29ad09276.r2.dev/${key}`;
-      res.json({ uploadUrl, publicUrl });
-    } catch (error) {
-      console.error("R2 presigned URL error:", error);
-      res.status(500).json({ error: "Failed to generate upload URL" });
-    }
-  });
-
-  // ── NEW: Server‑mediated avatar upload (avoids CORS completely) ───
+  // ── Server‑mediated uploads (avatars + event images) ────────────────
   app.use(uploadRouter);
 
   // ── Geocoding endpoints (forward & reverse) – free OpenStreetMap Nominatim ──
