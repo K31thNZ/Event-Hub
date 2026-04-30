@@ -1,4 +1,3 @@
-import { scheduleTicketReminders } from "./ticket-reminders";
 import { registerPicksRoutes } from "./picks-routes";
 import type { Express } from "express";
 import type { Server } from "http";
