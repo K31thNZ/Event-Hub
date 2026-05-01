@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, serial, integer, boolean, timestamp, varchar } from "drizzle-orm/pg-core";
+import { jsonb, pgTable, text, serial, integer, boolean, timestamp, varchar } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -141,6 +141,74 @@ export const groupMembersRelations = relations(groupMembers, ({ one }) => ({
   user:  one(users,  { fields: [groupMembers.userId],  references: [users.id] }),
 }));
 
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { pgTable, serial, varchar, text, boolean, timestamp, integer, jsonb } from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
+import { users } from "./models/auth";
+
+// ── Spark status lifecycle ────────────────────────────────────────────────────
+// pending  → just sent, waiting for responses
+// active   → at least one person accepted (organiser can confirm)
+// expired  → TTL passed with no confirmation
+// cancelled → organiser cancelled
+// confirmed → organiser confirmed with specific respondents
+
+export const sparks = pgTable("sparks", {
+  id:           serial("id").primaryKey(),
+  senderId:     varchar("sender_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+
+  // What / where / when
+  title:        text("title").notNull(),                          // e.g. "Coffee in 30 min?"
+  description:  text("description").notNull().default(""),        // optional longer note
+  activity:     text("activity").notNull(),                       // category value e.g. "social"
+  location:     text("location").notNull(),                       // free-text venue or area
+  meetTime:     timestamp("meet_time", { withTimezone: true }).notNull(), // proposed time
+
+  // Audience filters (null = any)
+  filterInterests:   text("filter_interests").array(),            // e.g. ["social","food"]
+  filterLanguages:   text("filter_languages").array(),            // e.g. ["en","ru"]
+  filterMetroLine:   text("filter_metro_line"),                   // e.g. "1 — Sokolnicheskaya (Red)"
+  maxRespondents:    integer("max_respondents").notNull().default(5),
+
+  // State
+  status:       text("status").notNull().default("pending"),      // pending | active | expired | cancelled | confirmed
+  expiresAt:    timestamp("expires_at", { withTimezone: true }).notNull(), // auto-expire TTL
+  createdAt:    timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const sparkResponses = pgTable("spark_responses", {
+  id:          serial("id").primaryKey(),
+  sparkId:     integer("spark_id").notNull().references(() => sparks.id, { onDelete: "cascade" }),
+  responderId: varchar("responder_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  status:      text("status").notNull().default("pending"), // pending | accepted | declined | confirmed
+  message:     text("message"),                             // optional note from responder
+  createdAt:   timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ── Relations ─────────────────────────────────────────────────────────────────
+
+export const sparksRelations = relations(sparks, ({ one, many }) => ({
+  sender:    one(users,          { fields: [sparks.senderId],  references: [users.id] }),
+  responses: many(sparkResponses),
+}));
+
+export const sparkResponsesRelations = relations(sparkResponses, ({ one }) => ({
+  spark:     one(sparks, { fields: [sparkResponses.sparkId],     references: [sparks.id] }),
+  responder: one(users,  { fields: [sparkResponses.responderId], references: [users.id] }),
+}));
+
+// ── Inferred types ────────────────────────────────────────────────────────────
+
+export type Spark              = typeof sparks.$inferSelect;
+export type SparkResponse      = typeof sparkResponses.$inferSelect;
+
+export type SparkWithResponses = Spark & {
+  responses: (SparkResponse & { responder?: { id: string; displayName?: string | null; avatarUrl?: string | null } })[];
+  sender?:   { id: string; displayName?: string | null; avatarUrl?: string | null };
+  responseCount: number;
+  myResponse?: SparkResponse | null;
+};
 // ── Insert schemas ────────────────────────────────────────────────────────
 export const insertEventSchema = createInsertSchema(events, {
   organizerId: z.string(), // uuid string
