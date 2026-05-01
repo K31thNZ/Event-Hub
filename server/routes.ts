@@ -1,4 +1,5 @@
 import { registerGroupRoutes } from "./group-routes";
+import { registerSparkRoutes } from "./spark-routes";
 import { scheduleTicketReminders } from "./ticket-reminders";
 import { registerPicksRoutes } from "./picks-routes";
 import type { Express } from "express";
@@ -19,6 +20,7 @@ export async function registerRoutes(
 ): Promise<Server> {
   registerPicksRoutes(app);
   registerGroupRoutes(app);
+  registerSparkRoutes(app);
 
   // ── Server‑mediated uploads (avatars + event images) ────────────────
   app.use(uploadRouter);
