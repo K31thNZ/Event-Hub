@@ -121,14 +121,14 @@ function SparkCard({
       <div className="flex items-start justify-between gap-3 mb-3">
         <div className="flex items-center gap-3 min-w-0">
           <Avatar className="h-9 w-9 shrink-0">
-            <AvatarImage src={spark.sender?.avatarUrl ?? ""} />
+            <AvatarImage src={spark.senderAvatarUrl ?? ""} />
             <AvatarFallback className="bg-primary/10 text-primary text-sm">
-              {(spark.sender?.displayName ?? "?").substring(0, 2).toUpperCase()}
+              {(spark.senderDisplayName ?? "?").substring(0, 2).toUpperCase()}
             </AvatarFallback>
           </Avatar>
           <div className="min-w-0">
             <p className="font-semibold text-sm truncate">
-              {isMine ? "You" : spark.sender?.displayName ?? "Someone"}
+              {isMine ? "You" : spark.senderDisplayName ?? "Someone"}
             </p>
             <p className="text-xs text-muted-foreground">
               {format(new Date(spark.createdAt), "h:mm a")}
@@ -178,15 +178,15 @@ function SparkCard({
         </span>
       </div>
 
-      {/* Respondent avatars */}
+      {/* Respondent avatars (anonymous for now) */}
       {accepted.length > 0 && (
         <div className="flex items-center gap-1.5 mb-4">
           <div className="flex -space-x-2">
             {accepted.slice(0, 5).map(r => (
               <Avatar key={r.id} className="h-6 w-6 ring-2 ring-background">
-                <AvatarImage src={r.responder?.avatarUrl ?? ""} />
-                <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
-                  {(r.responder?.displayName ?? "?").substring(0, 1).toUpperCase()}
+                <AvatarImage src={""} />
+                <AvatarFallback className="text-[10px] bg-gray-300 text-gray-600">
+                  ?
                 </AvatarFallback>
               </Avatar>
             ))}
@@ -317,12 +317,12 @@ function ConfirmDialog({
               }`}
             >
               <Avatar className="h-8 w-8 shrink-0">
-                <AvatarImage src={r.responder?.avatarUrl ?? ""} />
-                <AvatarFallback className="text-xs bg-primary/10 text-primary">
-                  {(r.responder?.displayName ?? "?").substring(0, 2).toUpperCase()}
+                <AvatarImage src={""} />
+                <AvatarFallback className="text-xs bg-gray-300 text-gray-600">
+                  ?
                 </AvatarFallback>
               </Avatar>
-              <span className="flex-1 font-medium text-sm">{r.responder?.displayName ?? "Member"}</span>
+              <span className="flex-1 font-medium text-sm">Member</span>
               {r.message && <span className="text-xs text-muted-foreground italic truncate max-w-[100px]">"{r.message}"</span>}
               {selected.includes(r.responderId) && <Check className="w-4 h-4 text-primary shrink-0" />}
             </button>
