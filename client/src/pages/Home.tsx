@@ -140,7 +140,7 @@ export default function Home() {
 
         <div className="absolute inset-0 z-0">
           <img
-            src="https://images.unsplash.com/photo-1511795409834-ef04bbd61622?q=80&w=2069&auto=format&fit=crop"
+            src="https://pub-bbcea9b00e1042e59b8ffab29ad09276.r2.dev/hero.avif"
             alt="Hero Background"
             className="w-full h-full object-cover"
           />
