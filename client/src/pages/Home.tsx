@@ -166,7 +166,7 @@ export default function Home() {
               event
             </h1>
             <p className="text-lg md:text-xl text-muted-foreground mb-10 leading-relaxed max-w-xl">
-              The premier platform for expats in Russia to discover local gatherings, professional
+              The premier platform for expats to discover local gatherings, professional
               networking, and vibrant cultural experiences.
             </p>
 
