@@ -9,7 +9,7 @@ import { users } from "./models/auth";
 // ── Events ────────────────────────────────────────────────────────────────
 export const events = pgTable("events", {
   id:           serial("id").primaryKey(),
-  organizerId:  varchar("organizer_id").notNull().references(() => users.id, { onDelete: "cascade" }), // FK → users.id (varchar/uuid)
+  organizerId:  varchar("organizer_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   groupId:      integer("group_id").references(() => groups.id, { onDelete: "set null" }),
   title:        text("title").notNull(),
   description:  text("description").notNull(),
@@ -21,7 +21,6 @@ export const events = pgTable("events", {
   imageUrl:     text("image_url"),
   published:    boolean("published").default(true).notNull(),
   isPrivate:    boolean("is_private").default(false).notNull(),
-  // Recurring events
   recurrence:      text("recurrence"),
   recurrenceDay:   integer("recurrence_day"),
   recurrenceUntil: timestamp("recurrence_until", { withTimezone: true }),
@@ -42,7 +41,7 @@ export const ticketTypes = pgTable("ticket_types", {
 // ── Orders ────────────────────────────────────────────────────────────────
 export const orders = pgTable("orders", {
   id:            serial("id").primaryKey(),
-  attendeeId:    varchar("attendee_id").notNull().references(() => users.id, { onDelete: "cascade" }), // FK → users.id (varchar/uuid)
+  attendeeId:    varchar("attendee_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   eventId:       integer("event_id").references(() => events.id, { onDelete: "cascade" }).notNull(),
   status:        text("status").notNull(),
   totalAmount:   integer("total_amount").notNull(),
@@ -62,7 +61,7 @@ export const orderTickets = pgTable("order_tickets", {
 // ── Curator picks ─────────────────────────────────────────────────────────
 export const curatorPicks = pgTable("curator_picks", {
   id:               serial("id").primaryKey(),
-  curatorId:        varchar("curator_id").notNull().references(() => users.id, { onDelete: "cascade" }), // FK → users.id (varchar/uuid)
+  curatorId:        varchar("curator_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   curatorName:      text("curator_name").notNull(),
   curatorAvatarUrl: text("curator_avatar_url"),
   curatorSpecialty: text("curator_specialty").notNull().default("Events"),
@@ -80,7 +79,7 @@ export const groups = pgTable("groups", {
   slug:           text("slug").notNull().unique(),
   name:           text("name").notNull(),
   description:    text("description").notNull().default(""),
-  ownerUserId:    varchar("owner_user_id").notNull().references(() => users.id), // FK → users.id (varchar/uuid)
+  ownerUserId:    varchar("owner_user_id").notNull().references(() => users.id),
   category:       text("category").notNull().default("social"),
   imageUrl:       text("image_url"),
   bannerUrl:      text("banner_url"),
@@ -95,7 +94,7 @@ export const groups = pgTable("groups", {
 export const groupMembers = pgTable("group_members", {
   id:          serial("id").primaryKey(),
   groupId:     integer("group_id").notNull().references(() => groups.id, { onDelete: "cascade" }),
-  userId:      varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }), // FK → users.id (varchar/uuid)
+  userId:      varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   role:        text("role").notNull().default("member"),
   status:      text("status").notNull().default("active"),
   displayName: text("display_name"),
@@ -141,77 +140,70 @@ export const groupMembersRelations = relations(groupMembers, ({ one }) => ({
   user:  one(users,  { fields: [groupMembers.userId],  references: [users.id] }),
 }));
 
-// ─────────────────────────────────────────────────────────────────────────────
-
-import { pgTable, serial, varchar, text, boolean, timestamp, integer, jsonb } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
-import { users } from "./models/auth";
-
-// ── Spark status lifecycle ────────────────────────────────────────────────────
-// pending  → just sent, waiting for responses
-// active   → at least one person accepted (organiser can confirm)
-// expired  → TTL passed with no confirmation
-// cancelled → organiser cancelled
-// confirmed → organiser confirmed with specific respondents
+// ═══════════════════════════════════════════════════════════════════════════
+// SPARKS — No FK to users; stores sender info directly
+// ═══════════════════════════════════════════════════════════════════════════
 
 export const sparks = pgTable("sparks", {
   id:           serial("id").primaryKey(),
-  senderId:     varchar("sender_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  senderId:     varchar("sender_id").notNull(),              // removed references(users.id)
+
+  // Sender display info (set at creation from auth service)
+  senderDisplayName: text("sender_display_name"),
+  senderAvatarUrl:   text("sender_avatar_url"),
 
   // What / where / when
-  title:        text("title").notNull(),                          // e.g. "Coffee in 30 min?"
-  description:  text("description").notNull().default(""),        // optional longer note
-  activity:     text("activity").notNull(),                       // category value e.g. "social"
-  location:     text("location").notNull(),                       // free-text venue or area
-  meetTime:     timestamp("meet_time", { withTimezone: true }).notNull(), // proposed time
+  title:        text("title").notNull(),
+  description:  text("description").notNull().default(""),
+  activity:     text("activity").notNull(),
+  location:     text("location").notNull(),
+  meetTime:     timestamp("meet_time", { withTimezone: true }).notNull(),
 
-  // Audience filters (null = any)
-  filterInterests:   text("filter_interests").array(),            // e.g. ["social","food"]
-  filterLanguages:   text("filter_languages").array(),            // e.g. ["en","ru"]
-  filterMetroLine:   text("filter_metro_line"),                   // e.g. "1 — Sokolnicheskaya (Red)"
+  // Audience filters
+  filterInterests:   text("filter_interests").array(),
+  filterLanguages:   text("filter_languages").array(),
+  filterMetroLine:   text("filter_metro_line"),
   maxRespondents:    integer("max_respondents").notNull().default(5),
 
   // State
-  status:       text("status").notNull().default("pending"),      // pending | active | expired | cancelled | confirmed
-  expiresAt:    timestamp("expires_at", { withTimezone: true }).notNull(), // auto-expire TTL
+  status:       text("status").notNull().default("pending"),
+  expiresAt:    timestamp("expires_at", { withTimezone: true }).notNull(),
   createdAt:    timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const sparkResponses = pgTable("spark_responses", {
   id:          serial("id").primaryKey(),
   sparkId:     integer("spark_id").notNull().references(() => sparks.id, { onDelete: "cascade" }),
-  responderId: varchar("responder_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  status:      text("status").notNull().default("pending"), // pending | accepted | declined | confirmed
-  message:     text("message"),                             // optional note from responder
+  responderId: varchar("responder_id").notNull(),              // no FK to users (we don't sync users yet)
+  status:      text("status").notNull().default("pending"),
+  message:     text("message"),
   createdAt:   timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
-// ── Relations ─────────────────────────────────────────────────────────────────
-
-export const sparksRelations = relations(sparks, ({ one, many }) => ({
-  sender:    one(users,          { fields: [sparks.senderId],  references: [users.id] }),
+// ── Sparks relations ──────────────────────────────────────────────────────
+export const sparksRelations = relations(sparks, ({ many }) => ({
   responses: many(sparkResponses),
+  // no sender relation – sender info is stored flat
 }));
 
 export const sparkResponsesRelations = relations(sparkResponses, ({ one }) => ({
-  spark:     one(sparks, { fields: [sparkResponses.sparkId],     references: [sparks.id] }),
-  responder: one(users,  { fields: [sparkResponses.responderId], references: [users.id] }),
+  spark: one(sparks, { fields: [sparkResponses.sparkId], references: [sparks.id] }),
+  // responder relation removed to avoid FK constraint
 }));
 
-// ── Inferred types ────────────────────────────────────────────────────────────
-
+// ── Inferred types ─────────────────────────────────────────────────────────
 export type Spark              = typeof sparks.$inferSelect;
 export type SparkResponse      = typeof sparkResponses.$inferSelect;
 
 export type SparkWithResponses = Spark & {
   responses: (SparkResponse & { responder?: { id: string; displayName?: string | null; avatarUrl?: string | null } })[];
-  sender?:   { id: string; displayName?: string | null; avatarUrl?: string | null };
   responseCount: number;
   myResponse?: SparkResponse | null;
 };
-// ── Insert schemas ────────────────────────────────────────────────────────
+
+// ── Insert schemas (other tables unchanged) ─────────────────────────────────
 export const insertEventSchema = createInsertSchema(events, {
-  organizerId: z.string(), // uuid string
+  organizerId: z.string(),
   date: z.coerce.date(),
 }).omit({ id: true, createdAt: true });
 
@@ -220,7 +212,7 @@ export const insertTicketTypeSchema = createInsertSchema(ticketTypes, {
 }).omit({ id: true });
 
 export const insertOrderSchema = createInsertSchema(orders, {
-  attendeeId: z.string(), // uuid string
+  attendeeId: z.string(),
   eventId: z.number(),
   totalAmount: z.number(),
   status: z.string().default("pending"),
@@ -232,18 +224,18 @@ export const insertOrderTicketSchema = createInsertSchema(orderTickets, {
 }).omit({ id: true });
 
 export const insertCuratorPicksSchema = createInsertSchema(curatorPicks, {
-  curatorId: z.string(), // uuid string
+  curatorId: z.string(),
   weekOf: z.coerce.date(),
   eventIds: z.array(z.number()),
 }).omit({ id: true, createdAt: true, updatedAt: true });
 
 export const insertGroupSchema = createInsertSchema(groups, {
-  ownerUserId: z.string(), // uuid string
+  ownerUserId: z.string(),
 }).omit({ id: true, createdAt: true, updatedAt: true });
 
 export const insertGroupMemberSchema = createInsertSchema(groupMembers, {
   groupId: z.number(),
-  userId: z.string(), // uuid string
+  userId: z.string(),
 }).omit({ id: true, joinedAt: true });
 
 // ── Types ─────────────────────────────────────────────────────────────────
@@ -275,7 +267,7 @@ export type GroupWithDetails = Group & {
 
 // ── Request types ─────────────────────────────────────────────────────────
 export type CreateEventRequest = {
-  organizerId: string; // uuid string
+  organizerId: string;
   groupId?: number | null;
   title: string;
   description: string;
@@ -295,7 +287,7 @@ export type CreateEventRequest = {
 export type UpdateEventRequest = Partial<Omit<CreateEventRequest, "organizerId">>;
 
 export type CreateOrderRequest = {
-  attendeeId: string; // uuid string
+  attendeeId: string;
   eventId: number;
   attendeeName: string;
   attendeeEmail: string;
