@@ -1,5 +1,5 @@
 import { Link } from "wouter";
-import { Users } from "lucide-react";
+import { Users, Zap } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -8,7 +8,9 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Ticket, CalendarPlus, LogOut, User, Menu, Settings, Sparkles, ShieldCheck, Languages } from "lucide-react";
+import {
+  Ticket, CalendarPlus, LogOut, User, Menu, Settings, Sparkles, ShieldCheck, Languages,
+} from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useState } from "react";
 
@@ -56,6 +58,14 @@ export function Navbar() {
             <Users className="w-4 h-4" />
             Groups
           </Link>
+
+          {/* ⚡ Sparks – only for authenticated users */}
+          {isAuthenticated && (
+            <Link href="/sparks" className="flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors">
+              <Zap className="w-4 h-4" />
+              Sparks
+            </Link>
+          )}
 
           {/* Language Exchange – only shown if user has the interest */}
           {showLanguageExchange && (
@@ -165,6 +175,13 @@ export function Navbar() {
               <Link href="/groups" onClick={() => setMobileMenuOpen(false)} className="text-lg font-semibold flex items-center gap-2">
                 <Users className="w-5 h-5 text-primary" /> Groups
               </Link>
+
+              {/* ⚡ Mobile Sparks link */}
+              {isAuthenticated && (
+                <Link href="/sparks" onClick={() => setMobileMenuOpen(false)} className="text-lg font-semibold flex items-center gap-2">
+                  <Zap className="w-5 h-5 text-primary" /> Sparks
+                </Link>
+              )}
 
               {showLanguageExchange && (
                 <Link href="/language-exchange" onClick={() => setMobileMenuOpen(false)} className="text-lg font-semibold flex items-center gap-2">
