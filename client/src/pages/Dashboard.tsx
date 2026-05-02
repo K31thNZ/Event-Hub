@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+// client/src/pages/Dashboard.tsx
+import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useMyEvents, useUpdateEvent, useDeleteEvent, useEvents } from "@/hooks/use-events";
 import { MyGroupsTab } from "@/components/groups/MyGroupsTab";
 import { useMyOrders } from "@/hooks/use-orders";
@@ -29,22 +30,21 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient as qc } from "@/lib/queryClient";
 
-// ── Auth server URL (same pattern as Profile.tsx) ────────────────────────────
 const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? "https://auth.expatevents.org";
 
-// ── Role config ───────────────────────────────────────────────────────────────
 const ROLES = ["free", "premium", "host", "curator", "admin"] as const;
 type Role = typeof ROLES[number];
 
 const ROLE_BADGE: Record<Role, { label: string; className: string }> = {
-  free:     { label: "Free",    className: "bg-gray-100   text-gray-700   dark:bg-gray-800    dark:text-gray-300"    },
-  premium:  { label: "Premium", className: "bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-200" },
-  host:     { label: "Host",    className: "bg-teal-100   text-teal-800   dark:bg-teal-900/40  dark:text-teal-200"   },
-  curator:  { label: "Curator", className: "bg-amber-100  text-amber-800  dark:bg-amber-900/40 dark:text-amber-200"  },
-  admin:    { label: "Admin",   className: "bg-red-100    text-red-800    dark:bg-red-900/40   dark:text-red-200"    },
+  free:    { label: "Free",    className: "bg-gray-100   text-gray-700   dark:bg-gray-800    dark:text-gray-300" },
+  premium: { label: "Premium", className: "bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-200" },
+  host:    { label: "Host",    className: "bg-teal-100   text-teal-800   dark:bg-teal-900/40  dark:text-teal-200" },
+  curator: { label: "Curator", className: "bg-amber-100  text-amber-800  dark:bg-amber-900/40 dark:text-amber-200" },
+  admin:   { label: "Admin",   className: "bg-red-100    text-red-800    dark:bg-red-900/40   dark:text-red-200" },
 };
 
-// ── Edit event sheet (reused for both My Events and Admin Events) ─────────────
+// ── Edit event sheet ──────────────────────────────────────────────────────────
+
 const editEventSchema = z.object({
   title:        z.string().min(3),
   description:  z.string().min(10),
@@ -56,34 +56,26 @@ const editEventSchema = z.object({
   imageUrl:     z.string().url().optional().or(z.literal("")),
   published:    z.boolean(),
   ticketTypes:  z.array(z.object({
-    name:        z.string().min(1),
-    price:       z.coerce.number().min(0),
-    quantity:    z.coerce.number().min(1),
-    maxPerOrder: z.coerce.number().min(1),
+    name: z.string().min(1), price: z.coerce.number().min(0),
+    quantity: z.coerce.number().min(1), maxPerOrder: z.coerce.number().min(1),
   })).min(1),
 });
 type EditFormValues = z.infer<typeof editEventSchema>;
 
-function EditEventSheet({
-  event, open, onClose, adminMode = false,
-}: {
+function EditEventSheet({ event, open, onClose, adminMode = false }: {
   event: EventWithTickets | null; open: boolean; onClose: () => void; adminMode?: boolean;
 }) {
   const updateEvent = useUpdateEvent();
-  const { toast }   = useToast();
+  const { toast } = useToast();
   const form = useForm<EditFormValues>({
     resolver: zodResolver(editEventSchema),
     values: event ? {
-      title:        event.title,
-      description:  event.description,
-      category:     event.category,
-      category2:    event.category2 ?? null,
-      date:         format(new Date(event.date), "yyyy-MM-dd'T'HH:mm"),
-      venueAddress: event.venueAddress,
-      venueCity:    event.venueCity,
-      imageUrl:     event.imageUrl ?? "",
-      published:    event.published,
-      ticketTypes:  event.ticketTypes.map(t => ({
+      title: event.title, description: event.description, category: event.category,
+      category2: event.category2 ?? null,
+      date: format(new Date(event.date), "yyyy-MM-dd'T'HH:mm"),
+      venueAddress: event.venueAddress, venueCity: event.venueCity,
+      imageUrl: event.imageUrl ?? "", published: event.published,
+      ticketTypes: event.ticketTypes.map(t => ({
         name: t.name, price: t.price, quantity: t.quantity, maxPerOrder: t.maxPerOrder,
       })),
     } : undefined,
@@ -111,9 +103,7 @@ function EditEventSheet({
     <Sheet open={open} onOpenChange={v => { if (!v) onClose(); }}>
       <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto">
         <SheetHeader className="mb-6">
-          <SheetTitle className="text-2xl font-display">
-            {adminMode ? "Edit Event (Admin)" : "Edit Event"}
-          </SheetTitle>
+          <SheetTitle className="text-2xl font-display">{adminMode ? "Edit Event (Admin)" : "Edit Event"}</SheetTitle>
           <SheetDescription>Make changes and save to update the event.</SheetDescription>
         </SheetHeader>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
@@ -141,9 +131,7 @@ function EditEventSheet({
                   <SelectTrigger className="h-11 rounded-xl"><SelectValue placeholder="None" /></SelectTrigger>
                   <SelectContent className="bg-white dark:bg-zinc-900">
                     <SelectItem value="__none__">— None —</SelectItem>
-                    {EVENT_CATEGORIES.filter(cat => cat.value !== watchedCategory).map(cat =>
-                      <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>
-                    )}
+                    {EVENT_CATEGORIES.filter(c => c.value !== watchedCategory).map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
               )} />
@@ -170,17 +158,17 @@ function EditEventSheet({
                 <Plus className="w-3 h-3" /> Add
               </Button>
             </div>
-            {fields.map((field, index) => (
+            {fields.map((field, idx) => (
               <div key={field.id} className="bg-muted/40 rounded-xl p-4 grid grid-cols-4 gap-3 items-end relative">
                 {fields.length > 1 && (
-                  <button type="button" onClick={() => remove(index)} className="absolute top-2 right-2 text-muted-foreground hover:text-destructive transition-colors">
+                  <button type="button" onClick={() => remove(idx)} className="absolute top-2 right-2 text-muted-foreground hover:text-destructive transition-colors">
                     <Trash2 className="w-4 h-4" />
                   </button>
                 )}
-                <div className="col-span-4 space-y-1"><Label className="text-xs">Name</Label><Input {...form.register(`ticketTypes.${index}.name`)} className="h-9 rounded-lg" /></div>
-                <div className="space-y-1"><Label className="text-xs">Price (₽)</Label><Input type="number" {...form.register(`ticketTypes.${index}.price`)} className="h-9 rounded-lg" /></div>
-                <div className="space-y-1"><Label className="text-xs">Quantity</Label><Input type="number" {...form.register(`ticketTypes.${index}.quantity`)} className="h-9 rounded-lg" /></div>
-                <div className="col-span-2 space-y-1"><Label className="text-xs">Max per order</Label><Input type="number" {...form.register(`ticketTypes.${index}.maxPerOrder`)} className="h-9 rounded-lg" /></div>
+                <div className="col-span-4 space-y-1"><Label className="text-xs">Name</Label><Input {...form.register(`ticketTypes.${idx}.name`)} className="h-9 rounded-lg" /></div>
+                <div className="space-y-1"><Label className="text-xs">Price (₽)</Label><Input type="number" {...form.register(`ticketTypes.${idx}.price`)} className="h-9 rounded-lg" /></div>
+                <div className="space-y-1"><Label className="text-xs">Quantity</Label><Input type="number" {...form.register(`ticketTypes.${idx}.quantity`)} className="h-9 rounded-lg" /></div>
+                <div className="col-span-2 space-y-1"><Label className="text-xs">Max per order</Label><Input type="number" {...form.register(`ticketTypes.${idx}.maxPerOrder`)} className="h-9 rounded-lg" /></div>
               </div>
             ))}
           </div>
@@ -196,7 +184,8 @@ function EditEventSheet({
   );
 }
 
-// ── Reusable event row ────────────────────────────────────────────────────────
+// ── Event row ─────────────────────────────────────────────────────────────────
+
 function EventRow({ event, onEdit, onDelete }: { event: EventWithTickets; onEdit: (e: EventWithTickets) => void; onDelete: (e: EventWithTickets) => void }) {
   return (
     <div className="flex items-center gap-4 bg-card border border-border rounded-2xl px-5 py-4 hover:shadow-md transition-shadow">
@@ -217,25 +206,34 @@ function EventRow({ event, onEdit, onDelete }: { event: EventWithTickets; onEdit
 }
 
 // ── Curator tab ───────────────────────────────────────────────────────────────
+// FIX: useEffect now syncs form state when editingPick changes.
+
 function CuratorTab() {
-  const { toast }   = useToast();
+  const { toast } = useToast();
   const { data: events } = useEvents();
   const { data: myPicks, refetch } = useQuery({
     queryKey: ["/api/curator/picks"],
-    queryFn: async () => {
-      const res = await apiRequest("GET", "/api/curator/picks");
-      return res.json();
-    },
+    queryFn: async () => { const res = await apiRequest("GET", "/api/curator/picks"); return res.json(); },
   });
 
   const [editingPick, setEditingPick] = useState<any | null>(null);
   const [intro, setIntro]             = useState("");
   const [specialty, setSpecialty]     = useState("");
   const [selectedEventIds, setSelectedEventIds] = useState<number[]>([]);
-  const [weekOf, setWeekOf]           = useState(() => format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd"));
+  const [weekOf, setWeekOf] = useState(() => format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd"));
   const [eventSearch, setEventSearch] = useState("");
 
   const isEditing = !!editingPick;
+
+  // FIX: pre-populate form when editing a pick
+  useEffect(() => {
+    if (editingPick) {
+      setIntro(editingPick.intro ?? "");
+      setSpecialty(editingPick.curatorSpecialty ?? "");
+      setSelectedEventIds(editingPick.eventIds ?? []);
+      setWeekOf(format(new Date(editingPick.weekOf), "yyyy-MM-dd"));
+    }
+  }, [editingPick]);
 
   const resetForm = () => {
     setEditingPick(null); setIntro(""); setSpecialty(""); setSelectedEventIds([]);
@@ -265,11 +263,8 @@ function CuratorTab() {
     refetch();
   };
 
-  const toggleEvent = (id: number) => {
-    setSelectedEventIds(prev =>
-      prev.includes(id) ? prev.filter(x => x !== id) : prev.length < 6 ? [...prev, id] : prev
-    );
-  };
+  const toggleEvent = (id: number) =>
+    setSelectedEventIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : prev.length < 6 ? [...prev, id] : prev);
 
   const filteredEvents = events?.filter(e =>
     e.title.toLowerCase().includes(eventSearch.toLowerCase()) ||
@@ -352,33 +347,27 @@ function CuratorTab() {
   );
 }
 
-// ── Change Password tab (unchanged) ───────────────────────────────────────
-function ChangePasswordTab() {
-  const { user }  = useAuth();
-  const { toast } = useToast();
+// ── Change Password tab ───────────────────────────────────────────────────────
 
-  const isOAuthOnly    = (user?.googleId || user?.yandexId) && !user?.email;
-  const hasNoPassword  = !user?.hasPassword;
+function ChangePasswordTab() {
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const isOAuthOnly   = (user?.googleId || user?.yandexId) && !user?.email;
+  const hasNoPassword = !user?.hasPassword;
 
   const changeSchema = z.object({
     currentPassword: z.string().min(1, "Current password required"),
     newPassword:     z.string().min(8, "At least 8 characters"),
     confirmPassword: z.string(),
-  }).refine(d => d.newPassword === d.confirmPassword, {
-    message: "Passwords don't match", path: ["confirmPassword"],
-  });
+  }).refine(d => d.newPassword === d.confirmPassword, { message: "Passwords don't match", path: ["confirmPassword"] });
 
   const setSchema = z.object({
     newPassword:     z.string().min(8, "At least 8 characters"),
     confirmPassword: z.string(),
-  }).refine(d => d.newPassword === d.confirmPassword, {
-    message: "Passwords don't match", path: ["confirmPassword"],
-  });
-
-  const schema = hasNoPassword ? setSchema : changeSchema;
+  }).refine(d => d.newPassword === d.confirmPassword, { message: "Passwords don't match", path: ["confirmPassword"] });
 
   const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(hasNoPassword ? setSchema : changeSchema),
   });
 
   const onSubmit = async (data: any) => {
@@ -387,17 +376,11 @@ function ChangePasswordTab() {
       const body = hasNoPassword
         ? { newPassword: data.newPassword }
         : { currentPassword: data.currentPassword, newPassword: data.newPassword };
-
       const res = await fetch(`${AUTH_URL}${endpoint}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(body),
+        method: "POST", headers: { "Content-Type": "application/json" },
+        credentials: "include", body: JSON.stringify(body),
       });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error ?? "Failed");
-      }
+      if (!res.ok) { const err = await res.json(); throw new Error(err.error ?? "Failed"); }
       toast({ title: hasNoPassword ? "Password set successfully!" : "Password updated successfully" });
       reset();
     } catch (err: any) {
@@ -412,7 +395,6 @@ function ChangePasswordTab() {
         <p className="font-medium">Password not available</p>
         <p className="text-sm text-muted-foreground max-w-sm mx-auto">
           Your account uses Google or Yandex sign-in without an email address.
-          Password sign-in is not available for this account type.
         </p>
       </div>
     );
@@ -423,8 +405,7 @@ function ChangePasswordTab() {
       {hasNoPassword && (
         <div className="p-4 rounded-xl bg-primary/5 border border-primary/20 text-sm text-muted-foreground">
           <p className="font-medium text-foreground mb-1">Set a password</p>
-          You signed in with a magic code or social login. You can optionally add a password
-          to also be able to sign in with your username and password.
+          You signed in with a magic code or social login. You can optionally add a password.
         </div>
       )}
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
@@ -447,28 +428,24 @@ function ChangePasswordTab() {
         </div>
         <Button type="submit" disabled={isSubmitting} className="w-full rounded-xl">
           <KeyRound className="w-4 h-4 mr-2" />
-          {isSubmitting
-            ? (hasNoPassword ? "Setting…" : "Updating…")
-            : (hasNoPassword ? "Set password" : "Update password")}
+          {isSubmitting ? (hasNoPassword ? "Setting…" : "Updating…") : (hasNoPassword ? "Set password" : "Update password")}
         </Button>
       </form>
     </div>
   );
 }
 
-// ── Admin panel (only uses existing client endpoints) ─────────────────────────
+// ── Admin panel ───────────────────────────────────────────────────────────────
+// FIX: groups section now uses imageUrl instead of logoUrl (matches schema)
+
 function AdminPanel() {
   const { toast } = useToast();
   const [activeSection, setActiveSection] = useState<"users" | "events" | "groups">("users");
   const [search, setSearch] = useState("");
 
-  // ── Users (from auth server) ──────────────────────────────────────────────
   const { data: usersData, refetch: refetchUsers } = useQuery({
     queryKey: ["/api/admin/users"],
-    queryFn: async () => {
-      const res = await apiRequest("GET", "/api/admin/users");
-      return res.json();
-    },
+    queryFn: async () => { const res = await apiRequest("GET", "/api/admin/users"); return res.json(); },
     enabled: activeSection === "users",
   });
 
@@ -482,16 +459,11 @@ function AdminPanel() {
     }
   };
 
-  // ── Events from public endpoint ──────────────────────────────────────────
   const { data: allEvents, refetch: refetchEvents } = useQuery({
     queryKey: ["/api/events"],
-    queryFn: async () => {
-      const res = await apiRequest("GET", "/api/events");
-      return res.json();
-    },
+    queryFn: async () => { const res = await apiRequest("GET", "/api/events"); return res.json(); },
     enabled: activeSection === "events",
   });
-
   const [editingEvent,  setEditingEvent]  = useState<EventWithTickets | null>(null);
   const [deletingEvent, setDeletingEvent] = useState<EventWithTickets | null>(null);
 
@@ -503,21 +475,14 @@ function AdminPanel() {
       refetchEvents();
     } catch (err: any) {
       toast({ title: "Delete failed", description: err.message, variant: "destructive" });
-    } finally {
-      setDeletingEvent(null);
-    }
+    } finally { setDeletingEvent(null); }
   };
 
-  // ── Groups from public endpoint (all groups the user is member of) ────────
   const { data: allGroups, refetch: refetchGroups } = useQuery({
     queryKey: ["/api/groups"],
-    queryFn: async () => {
-      const res = await apiRequest("GET", "/api/groups");
-      return res.json();
-    },
+    queryFn: async () => { const res = await apiRequest("GET", "/api/groups"); return res.json(); },
     enabled: activeSection === "groups",
   });
-
   const [editingGroup,  setEditingGroup]  = useState<any | null>(null);
   const [deletingGroup, setDeletingGroup] = useState<any | null>(null);
   const [groupEditName, setGroupEditName] = useState("");
@@ -526,10 +491,7 @@ function AdminPanel() {
   const handleSaveGroup = async () => {
     if (!editingGroup) return;
     try {
-      await apiRequest("PATCH", `/api/admin/groups/${editingGroup.id}`, {
-        name:        groupEditName,
-        description: groupEditDesc,
-      });
+      await apiRequest("PATCH", `/api/admin/groups/${editingGroup.id}`, { name: groupEditName, description: groupEditDesc });
       toast({ title: "Group updated" });
       setEditingGroup(null);
       refetchGroups();
@@ -546,69 +508,31 @@ function AdminPanel() {
       refetchGroups();
     } catch (err: any) {
       toast({ title: "Delete failed", description: err.message, variant: "destructive" });
-    } finally {
-      setDeletingGroup(null);
-    }
+    } finally { setDeletingGroup(null); }
   };
 
   const q = search.toLowerCase();
-
-  const filteredUsers = (usersData ?? []).filter((u: any) =>
-    u.username?.toLowerCase().includes(q) ||
-    u.email?.toLowerCase().includes(q) ||
-    u.displayName?.toLowerCase().includes(q)
-  );
-
-  const filteredEvents = (allEvents ?? []).filter((e: any) =>
-    e.title?.toLowerCase().includes(q) ||
-    e.venueCity?.toLowerCase().includes(q)
-  );
-
-  const filteredGroups = (allGroups ?? []).filter((g: any) =>
-    g.name?.toLowerCase().includes(q) ||
-    g.description?.toLowerCase().includes(q)
-  );
-
-  const sectionCounts = {
-    users:  usersData?.length  ?? "—",
-    events: allEvents?.length  ?? "—",
-    groups: allGroups?.length  ?? "—",
-  };
+  const filteredUsers  = (usersData  ?? []).filter((u: any) => u.username?.toLowerCase().includes(q) || u.email?.toLowerCase().includes(q) || u.displayName?.toLowerCase().includes(q));
+  const filteredEvents = (allEvents  ?? []).filter((e: any) => e.title?.toLowerCase().includes(q) || e.venueCity?.toLowerCase().includes(q));
+  const filteredGroups = (allGroups  ?? []).filter((g: any) => g.name?.toLowerCase().includes(q) || g.description?.toLowerCase().includes(q));
+  const sectionCounts  = { users: usersData?.length ?? "—", events: allEvents?.length ?? "—", groups: allGroups?.length ?? "—" };
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap gap-3">
         {(["users", "events", "groups"] as const).map(section => {
-          const icons = { users: Users, events: CalendarCheck, groups: LayoutGrid };
-          const Icon  = icons[section];
+          const Icon = { users: Users, events: CalendarCheck, groups: LayoutGrid }[section];
           return (
-            <button
-              key={section}
-              onClick={() => { setActiveSection(section); setSearch(""); }}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-medium transition-all ${
-                activeSection === section
-                  ? "bg-primary text-primary-foreground border-primary shadow-sm"
-                  : "border-border text-muted-foreground hover:border-primary/40 hover:text-primary"
-              }`}
-            >
+            <button key={section} onClick={() => { setActiveSection(section); setSearch(""); }}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-medium transition-all ${activeSection === section ? "bg-primary text-primary-foreground border-primary shadow-sm" : "border-border text-muted-foreground hover:border-primary/40 hover:text-primary"}`}>
               <Icon className="w-4 h-4" />
               <span className="capitalize">{section}</span>
-              <span className={`text-xs px-1.5 py-0.5 rounded-full ${
-                activeSection === section ? "bg-white/20" : "bg-muted"
-              }`}>
-                {sectionCounts[section]}
-              </span>
+              <span className={`text-xs px-1.5 py-0.5 rounded-full ${activeSection === section ? "bg-white/20" : "bg-muted"}`}>{sectionCounts[section]}</span>
             </button>
           );
         })}
-        <button
-          onClick={() => {
-            if (activeSection === "users")  refetchUsers();
-            if (activeSection === "events") refetchEvents();
-            if (activeSection === "groups") refetchGroups();
-          }}
-          className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-3"
-        >
+        <button onClick={() => { if (activeSection === "users") refetchUsers(); if (activeSection === "events") refetchEvents(); if (activeSection === "groups") refetchGroups(); }}
+          className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-3">
           <RefreshCw className="w-3.5 h-3.5" /> Refresh
         </button>
       </div>
@@ -627,24 +551,18 @@ function AdminPanel() {
               <div key={u.id} className="flex items-center gap-4 bg-card border border-border rounded-2xl px-5 py-3">
                 <Avatar className="h-10 w-10 shrink-0">
                   <AvatarImage src={u.avatarUrl ?? ""} />
-                  <AvatarFallback className="bg-primary/10 text-primary text-sm">
-                    {(u.displayName ?? u.username ?? "U").substring(0, 2).toUpperCase()}
-                  </AvatarFallback>
+                  <AvatarFallback className="bg-primary/10 text-primary text-sm">{(u.displayName ?? u.username ?? "U").substring(0, 2).toUpperCase()}</AvatarFallback>
                 </Avatar>
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-sm truncate">{u.displayName ?? u.username}</p>
                   <p className="text-xs text-muted-foreground truncate">{u.email} · ID {u.id}</p>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <Select value={u.role ?? "free"} onValueChange={(v) => updateRole(u.id, v as Role)}>
-                    <SelectTrigger className={`w-32 h-8 rounded-full text-xs font-semibold border-0 ${badge.className}`}>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-white dark:bg-zinc-900">
-                      {ROLES.map(r => <SelectItem key={r} value={r} className="text-sm capitalize">{ROLE_BADGE[r].label}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
+                <Select value={u.role ?? "free"} onValueChange={v => updateRole(u.id, v as Role)}>
+                  <SelectTrigger className={`w-32 h-8 rounded-full text-xs font-semibold border-0 ${badge.className}`}><SelectValue /></SelectTrigger>
+                  <SelectContent className="bg-white dark:bg-zinc-900">
+                    {ROLES.map(r => <SelectItem key={r} value={r} className="text-sm capitalize">{ROLE_BADGE[r].label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </div>
             );
           })}
@@ -655,9 +573,7 @@ function AdminPanel() {
         <>
           <div className="space-y-2">
             {filteredEvents.length === 0 && <div className="text-center py-16 text-muted-foreground">No events found</div>}
-            {filteredEvents.map((event: any) => (
-              <EventRow key={event.id} event={event} onEdit={setEditingEvent} onDelete={setDeletingEvent} />
-            ))}
+            {filteredEvents.map((event: any) => <EventRow key={event.id} event={event} onEdit={setEditingEvent} onDelete={setDeletingEvent} />)}
           </div>
           <EditEventSheet event={editingEvent} open={!!editingEvent} onClose={() => setEditingEvent(null)} adminMode />
           <AlertDialog open={!!deletingEvent} onOpenChange={v => { if (!v) setDeletingEvent(null); }}>
@@ -681,7 +597,8 @@ function AdminPanel() {
             {filteredGroups.length === 0 && <div className="text-center py-16 text-muted-foreground">No groups found</div>}
             {filteredGroups.map((group: any) => (
               <div key={group.id} className="flex items-center gap-4 bg-card border border-border rounded-2xl px-5 py-4 hover:shadow-md transition-shadow">
-                {group.logoUrl && <img src={group.logoUrl} alt={group.name} className="w-12 h-12 rounded-xl object-cover shrink-0" />}
+                {/* FIX: use imageUrl (schema field), not logoUrl */}
+                {group.imageUrl && <img src={group.imageUrl} alt={group.name} className="w-12 h-12 rounded-xl object-cover shrink-0" />}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <h3 className="font-semibold truncate">{group.name}</h3>
@@ -720,7 +637,7 @@ function AdminPanel() {
             <AlertDialogContent>
               <AlertDialogHeader>
                 <AlertDialogTitle>Delete "{deletingGroup?.name}"?</AlertDialogTitle>
-                <AlertDialogDescription>This will permanently remove the group and all its memberships. Events linked to this group will remain but lose their group association.</AlertDialogDescription>
+                <AlertDialogDescription>This will permanently remove the group and all its memberships.</AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -735,22 +652,23 @@ function AdminPanel() {
 }
 
 // ── Main Dashboard ────────────────────────────────────────────────────────────
+
 export default function Dashboard() {
-  const { user }                               = useAuth();
-  const { data: myEvents,  isLoading: loadingEvents  } = useMyEvents();
-  const { data: myOrders,  isLoading: loadingOrders  } = useMyOrders();
-  const deleteEvent                            = useDeleteEvent();
-  const { toast }                              = useToast();
-  const searchStr                              = useSearch();
-  const params                                 = new URLSearchParams(searchStr);
-  const defaultTab                             = params.get("tab") ?? "tickets";
+  const { user }                             = useAuth();
+  const { data: myEvents, isLoading: loadingEvents } = useMyEvents();
+  const { data: myOrders, isLoading: loadingOrders } = useMyOrders();
+  const deleteEvent                          = useDeleteEvent();
+  const { toast }                            = useToast();
+  const searchStr                            = useSearch();
+  const params                               = new URLSearchParams(searchStr);
+  const defaultTab                           = params.get("tab") ?? "tickets";
 
   const isAdmin   = user?.role === "admin";
   const isCurator = user?.role === "curator" || isAdmin;
 
-  const [editingEvent,     setEditingEvent]     = useState<EventWithTickets | null>(null);
-  const [deletingEvent,    setDeletingEvent]    = useState<EventWithTickets | null>(null);
-  const [showPastTickets,  setShowPastTickets]  = useState(false);
+  const [editingEvent,    setEditingEvent]    = useState<EventWithTickets | null>(null);
+  const [deletingEvent,   setDeletingEvent]   = useState<EventWithTickets | null>(null);
+  const [showPastTickets, setShowPastTickets] = useState(false);
 
   const handleDelete = async () => {
     if (!deletingEvent) return;
@@ -759,9 +677,7 @@ export default function Dashboard() {
       toast({ title: "Event deleted", description: `"${deletingEvent.title}" has been removed.` });
     } catch (err: any) {
       toast({ title: "Delete failed", description: err.message, variant: "destructive" });
-    } finally {
-      setDeletingEvent(null);
-    }
+    } finally { setDeletingEvent(null); }
   };
 
   const now            = new Date();
@@ -781,12 +697,12 @@ export default function Dashboard() {
 
         <Tabs defaultValue={defaultTab} className="w-full">
           <TabsList className="mb-8 p-1 bg-muted/50 rounded-xl flex flex-wrap gap-1 h-auto">
-            <TabsTrigger value="tickets" className="rounded-lg px-4 py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-sm"><Ticket className="w-4 h-4 mr-2" /> My Tickets</TabsTrigger>
-            <TabsTrigger value="events" className="rounded-lg px-4 py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-sm"><CalendarDays className="w-4 h-4 mr-2" /> My Events</TabsTrigger>
-            <TabsTrigger value="groups" className="rounded-lg px-4 py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-sm"><UsersRound className="w-4 h-4 mr-2" /> My Groups</TabsTrigger>
-            {isCurator && <TabsTrigger value="curator" className="rounded-lg px-4 py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-sm"><Sparkles className="w-4 h-4 mr-2" /> Curator</TabsTrigger>}
-            {isAdmin && <TabsTrigger value="admin" className="rounded-lg px-4 py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-sm"><ShieldCheck className="w-4 h-4 mr-2" /> Admin</TabsTrigger>}
-            <TabsTrigger value="password" className="rounded-lg px-4 py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-sm"><KeyRound className="w-4 h-4 mr-2" /> Password</TabsTrigger>
+            <TabsTrigger value="tickets"  className="rounded-lg px-4 py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-sm"><Ticket       className="w-4 h-4 mr-2" /> My Tickets</TabsTrigger>
+            <TabsTrigger value="events"   className="rounded-lg px-4 py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-sm"><CalendarDays  className="w-4 h-4 mr-2" /> My Events</TabsTrigger>
+            <TabsTrigger value="groups"   className="rounded-lg px-4 py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-sm"><UsersRound    className="w-4 h-4 mr-2" /> My Groups</TabsTrigger>
+            {isCurator && <TabsTrigger value="curator"  className="rounded-lg px-4 py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-sm"><Sparkles     className="w-4 h-4 mr-2" /> Curator</TabsTrigger>}
+            {isAdmin   && <TabsTrigger value="admin"    className="rounded-lg px-4 py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-sm"><ShieldCheck  className="w-4 h-4 mr-2" /> Admin</TabsTrigger>}
+            <TabsTrigger value="password" className="rounded-lg px-4 py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-sm"><KeyRound      className="w-4 h-4 mr-2" /> Password</TabsTrigger>
           </TabsList>
 
           <TabsContent value="tickets">
@@ -820,7 +736,8 @@ export default function Dashboard() {
                 {pastOrders.length > 0 && (
                   <div className="pt-4 border-t border-border">
                     <button onClick={() => setShowPastTickets(v => !v)} className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors select-none">
-                      <Archive className="w-4 h-4" /> Past tickets ({pastOrders.length}) <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${showPastTickets ? "rotate-180" : ""}`} />
+                      <Archive className="w-4 h-4" /> Past tickets ({pastOrders.length})
+                      <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${showPastTickets ? "rotate-180" : ""}`} />
                     </button>
                     {showPastTickets && (
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-5 opacity-70">
@@ -860,13 +777,13 @@ export default function Dashboard() {
                 <Button asChild className="rounded-full"><Link href="/create-event">Create Event</Link></Button>
               </div>
             ) : (
-              <div className="space-y-3">{myEvents?.map(event => <EventRow key={event.id} event={event} onEdit={setEditingEvent} onDelete={setDeletingEvent} />)}</div>
+              <div className="space-y-3">{myEvents?.map(e => <EventRow key={e.id} event={e} onEdit={setEditingEvent} onDelete={setDeletingEvent} />)}</div>
             )}
           </TabsContent>
 
           <TabsContent value="groups"><MyGroupsTab /></TabsContent>
           {isCurator && <TabsContent value="curator"><CuratorTab /></TabsContent>}
-          {isAdmin && <TabsContent value="admin"><AdminPanel /></TabsContent>}
+          {isAdmin   && <TabsContent value="admin"><AdminPanel /></TabsContent>}
           <TabsContent value="password"><ChangePasswordTab /></TabsContent>
         </Tabs>
       </div>
