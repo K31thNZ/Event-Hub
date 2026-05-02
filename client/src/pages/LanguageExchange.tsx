@@ -1,81 +1,49 @@
-// LanguageExchange.tsx
+// client/src/pages/LanguageExchange.tsx
 import React, { useState, useMemo } from "react";
-import { useAuth } from "@/hooks/use-auth";          
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Languages,
-  Users,
-  User,
-  CalendarDays,
-  MapPin,
-  Filter,
-  X,
-} from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Languages, Users, User, CalendarDays, MapPin, Filter, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { LANGUAGES, PROFICIENCY_LEVELS, CITIES, EVENT_CATEGORIES } from "@/lib/constants";
+import { LANGUAGES, CITIES, EVENT_CATEGORIES } from "@/lib/constants";
 import LanguageUserCard from "@/components/language/LanguageUserCard";
 
-// =================== Type Definitions ===================
+// ── Types ────────────────────────────────────────────────────────────────────
 
 type AgeGroup = "18-25" | "26-35" | "36-45" | "46+";
 type MeetingType = "1on1" | "small_group" | "social";
-type InterestCategory = Exclude<(typeof EVENT_CATEGORIES)[number]["value"], "language">;
 type ProficiencyLevel = "A1" | "A2" | "B1" | "B2" | "C1" | "C2";
 
-interface LearningLanguage {
-  code: string;
-  proficiency: ProficiencyLevel;
-}
-
+interface LearningLanguage { code: string; proficiency: ProficiencyLevel; }
 interface LanguageUser {
-  id: string;
-  full_name: string;
-  avatar_url: string;
-  city: string;
-  age_group: AgeGroup;
-  native: string[];
-  learning: LearningLanguage[];
-  interests: InterestCategory[];
-  meeting_types: MeetingType[];
-  bio: string;
+  id: string; full_name: string; avatar_url: string; city: string;
+  age_group: AgeGroup; native: string[]; learning: LearningLanguage[];
+  interests: string[]; meeting_types: MeetingType[]; bio: string;
 }
-
 interface Filters {
-  language: string;
-  city: string;
-  age_group: AgeGroup | "all";
-  interest: InterestCategory | "all";
-  meeting_type: MeetingType | "all";
+  language: string; city: string;
+  age_group: AgeGroup | "all"; interest: string; meeting_type: MeetingType | "all";
 }
 
-// =================== Constants ===================
+// ── Constants ────────────────────────────────────────────────────────────────
 
 const AGE_GROUPS: { value: AgeGroup; label: string }[] = [
   { value: "18-25", label: "18 – 25" },
   { value: "26-35", label: "26 – 35" },
   { value: "36-45", label: "36 – 45" },
-  { value: "46+", label: "46 +" },
+  { value: "46+",   label: "46 +" },
 ];
 
 const MEETING_TYPES: { value: MeetingType; label: string; icon: React.ElementType }[] = [
-  { value: "1on1", label: "1 on 1", icon: User },
-  { value: "small_group", label: "Small Group", icon: Users },
-  { value: "social", label: "Social Event", icon: CalendarDays },
+  { value: "1on1",        label: "1 on 1",      icon: User },
+  { value: "small_group", label: "Small Group",  icon: Users },
+  { value: "social",      label: "Social Event", icon: CalendarDays },
 ];
 
-const INTEREST_CATEGORIES = EVENT_CATEGORIES.filter(
-  (c) => c.value !== "language"
-) as { value: InterestCategory; label: string; icon: string }[];
+const INTEREST_CATEGORIES = EVENT_CATEGORIES.filter(c => c.value !== "language");
 
-// Mock users – in a real app these would come from an API
+// ── Mock data ────────────────────────────────────────────────────────────────
+
 const MOCK_USERS: LanguageUser[] = [
   { id: "1", full_name: "Anna K.", avatar_url: "https://i.pravatar.cc/150?img=47", city: "Moscow", age_group: "26-35", native: ["ru"], learning: [{ code: "en", proficiency: "B2" }, { code: "de", proficiency: "A2" }], interests: ["culture", "music", "wellness"], meeting_types: ["1on1", "small_group"], bio: "Love discussing books, films and culture." },
   { id: "2", full_name: "James T.", avatar_url: "https://i.pravatar.cc/150?img=11", city: "London", age_group: "26-35", native: ["en"], learning: [{ code: "ru", proficiency: "B1" }, { code: "es", proficiency: "A1" }], interests: ["tech", "outdoor", "games"], meeting_types: ["1on1", "social"], bio: "Software dev learning Russian for travel." },
@@ -88,50 +56,33 @@ const MOCK_USERS: LanguageUser[] = [
   { id: "9", full_name: "Priya N.", avatar_url: "https://i.pravatar.cc/150?img=40", city: "Singapore", age_group: "26-35", native: ["hi", "en"], learning: [{ code: "ja", proficiency: "B1" }, { code: "de", proficiency: "A1" }], interests: ["tech", "business", "music"], meeting_types: ["1on1", "social"], bio: "Product manager by day, language learner by night." },
 ];
 
-// =================== Component ===================
+// ── Component ────────────────────────────────────────────────────────────────
 
 export default function LanguageExchange() {
-  const { user } = useAuth(); // kept for potential future use, even if not used now
-
   const [filters, setFilters] = useState<Filters>({
-    language: "all",
-    city: "all",
-    age_group: "all",
-    interest: "all",
-    meeting_type: "all",
+    language: "all", city: "all", age_group: "all", interest: "all", meeting_type: "all",
   });
-  const [filtersOpen, setFiltersOpen] = useState<boolean>(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
-  const setFilter = <K extends keyof Filters>(key: K, val: Filters[K]) => {
-    setFilters((f) => ({ ...f, [key]: val }));
-  };
+  const setFilter = <K extends keyof Filters>(key: K, val: Filters[K]) =>
+    setFilters(f => ({ ...f, [key]: val }));
 
-  const clearFilters = () => {
-    setFilters({
-      language: "all",
-      city: "all",
-      age_group: "all",
-      interest: "all",
-      meeting_type: "all",
-    });
-  };
+  const clearFilters = () =>
+    setFilters({ language: "all", city: "all", age_group: "all", interest: "all", meeting_type: "all" });
 
-  const activeCount = Object.values(filters).filter((v) => v !== "all").length;
+  const activeCount = Object.values(filters).filter(v => v !== "all").length;
 
-  const filtered = useMemo<LanguageUser[]>(() => {
-    return MOCK_USERS.filter((u) => {
-      if (filters.language !== "all") {
-        const allLangs = [...u.native, ...u.learning.map((l) => l.code)];
-        if (!allLangs.includes(filters.language)) return false;
-      }
-      if (filters.city !== "all" && u.city !== filters.city) return false;
-      if (filters.age_group !== "all" && u.age_group !== filters.age_group) return false;
-      if (filters.interest !== "all" && !u.interests.includes(filters.interest)) return false;
-      if (filters.meeting_type !== "all" && !u.meeting_types.includes(filters.meeting_type))
-        return false;
-      return true;
-    });
-  }, [filters]);
+  const filtered = useMemo<LanguageUser[]>(() => MOCK_USERS.filter(u => {
+    if (filters.language !== "all") {
+      const all = [...u.native, ...u.learning.map(l => l.code)];
+      if (!all.includes(filters.language)) return false;
+    }
+    if (filters.city !== "all" && u.city !== filters.city) return false;
+    if (filters.age_group !== "all" && u.age_group !== filters.age_group) return false;
+    if (filters.interest !== "all" && !u.interests.includes(filters.interest)) return false;
+    if (filters.meeting_type !== "all" && !u.meeting_types.includes(filters.meeting_type)) return false;
+    return true;
+  }), [filters]);
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
@@ -144,14 +95,13 @@ export default function LanguageExchange() {
           <h1 className="font-display text-2xl sm:text-3xl font-bold">Language Exchange</h1>
         </div>
         <p className="text-muted-foreground">
-          Find your perfect language partner — filter by language, city, age group, interests
-          and meeting style.
+          Find your perfect language partner — filter by language, city, age group, interests and meeting style.
         </p>
       </div>
 
-      {/* Meeting type quick filter */}
+      {/* Meeting-type quick filters */}
       <div className="flex flex-wrap gap-2 mb-6">
-        {MEETING_TYPES.map((mt) => {
+        {MEETING_TYPES.map(mt => {
           const Icon = mt.icon;
           const active = filters.meeting_type === mt.value;
           return (
@@ -169,9 +119,8 @@ export default function LanguageExchange() {
             </button>
           );
         })}
-
         <button
-          onClick={() => setFiltersOpen((o) => !o)}
+          onClick={() => setFiltersOpen(o => !o)}
           className={`ml-auto inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium border transition-all ${
             filtersOpen || activeCount > 0
               ? "bg-primary/10 border-primary text-primary"
@@ -188,7 +137,7 @@ export default function LanguageExchange() {
         </button>
       </div>
 
-      {/* Expanded filters panel */}
+      {/* Expanded filters */}
       <AnimatePresence>
         {filtersOpen && (
           <motion.div
@@ -200,79 +149,42 @@ export default function LanguageExchange() {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6 p-4 bg-muted/40 rounded-2xl border border-border">
               <div>
                 <p className="text-xs font-medium text-muted-foreground mb-1.5">Language</p>
-                <Select
-                  value={filters.language}
-                  onValueChange={(v) => setFilter("language", v)}
-                >
-                  <SelectTrigger className="h-9 bg-background text-sm">
-                    <SelectValue placeholder="Any" />
-                  </SelectTrigger>
+                <Select value={filters.language} onValueChange={v => setFilter("language", v)}>
+                  <SelectTrigger className="h-9 bg-background text-sm"><SelectValue placeholder="Any" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Any language</SelectItem>
-                    {LANGUAGES.map((l) => (
-                      <SelectItem key={l.code} value={l.code}>
-                        {l.flag} {l.label}
-                      </SelectItem>
-                    ))}
+                    {LANGUAGES.map(l => <SelectItem key={l.code} value={l.code}>{l.flag} {l.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
-
               <div>
                 <p className="text-xs font-medium text-muted-foreground mb-1.5">City</p>
-                <Select
-                  value={filters.city}
-                  onValueChange={(v) => setFilter("city", v)}
-                >
-                  <SelectTrigger className="h-9 bg-background text-sm">
-                    <SelectValue placeholder="Any" />
-                  </SelectTrigger>
+                <Select value={filters.city} onValueChange={v => setFilter("city", v)}>
+                  <SelectTrigger className="h-9 bg-background text-sm"><SelectValue placeholder="Any" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Any city</SelectItem>
-                    {CITIES.map((c) => (
-                      <SelectItem key={c} value={c}>
-                        {c}
-                      </SelectItem>
-                    ))}
+                    {CITIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
-
               <div>
                 <p className="text-xs font-medium text-muted-foreground mb-1.5">Age Group</p>
-                <Select
-                  value={filters.age_group}
-                  onValueChange={(v) => setFilter("age_group", v as AgeGroup | "all")}
-                >
-                  <SelectTrigger className="h-9 bg-background text-sm">
-                    <SelectValue placeholder="Any" />
-                  </SelectTrigger>
+                <Select value={filters.age_group} onValueChange={v => setFilter("age_group", v as AgeGroup | "all")}>
+                  <SelectTrigger className="h-9 bg-background text-sm"><SelectValue placeholder="Any" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Any age</SelectItem>
-                    {AGE_GROUPS.map((a) => (
-                      <SelectItem key={a.value} value={a.value}>
-                        {a.label}
-                      </SelectItem>
-                    ))}
+                    {AGE_GROUPS.map(a => <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
-
               <div>
                 <p className="text-xs font-medium text-muted-foreground mb-1.5">Interest</p>
-                <Select
-                  value={filters.interest}
-                  onValueChange={(v) => setFilter("interest", v as InterestCategory | "all")}
-                >
-                  <SelectTrigger className="h-9 bg-background text-sm">
-                    <SelectValue placeholder="Any" />
-                  </SelectTrigger>
+                <Select value={filters.interest} onValueChange={v => setFilter("interest", v)}>
+                  <SelectTrigger className="h-9 bg-background text-sm"><SelectValue placeholder="Any" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Any interest</SelectItem>
-                    {INTEREST_CATEGORIES.map((c) => (
-                      <SelectItem key={c.value} value={c.value}>
-                        {c.icon} {c.label}
-                      </SelectItem>
+                    {INTEREST_CATEGORIES.map(c => (
+                      <SelectItem key={c.value} value={c.value}>{c.icon} {c.label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -288,70 +200,51 @@ export default function LanguageExchange() {
           <span className="text-xs text-muted-foreground">Active filters:</span>
           {filters.language !== "all" && (
             <Badge variant="secondary" className="gap-1 pr-1">
-              {LANGUAGES.find((l) => l.code === filters.language)?.flag}{" "}
-              {LANGUAGES.find((l) => l.code === filters.language)?.label}
-              <button onClick={() => setFilter("language", "all")}>
-                <X className="w-3 h-3" />
-              </button>
+              {LANGUAGES.find(l => l.code === filters.language)?.flag}{" "}
+              {LANGUAGES.find(l => l.code === filters.language)?.label}
+              <button onClick={() => setFilter("language", "all")}><X className="w-3 h-3" /></button>
             </Badge>
           )}
           {filters.city !== "all" && (
             <Badge variant="secondary" className="gap-1 pr-1">
-              <MapPin className="w-3 h-3" />
-              {filters.city}
-              <button onClick={() => setFilter("city", "all")}>
-                <X className="w-3 h-3" />
-              </button>
+              <MapPin className="w-3 h-3" />{filters.city}
+              <button onClick={() => setFilter("city", "all")}><X className="w-3 h-3" /></button>
             </Badge>
           )}
           {filters.age_group !== "all" && (
             <Badge variant="secondary" className="gap-1 pr-1">
               {filters.age_group}
-              <button onClick={() => setFilter("age_group", "all")}>
-                <X className="w-3 h-3" />
-              </button>
+              <button onClick={() => setFilter("age_group", "all")}><X className="w-3 h-3" /></button>
             </Badge>
           )}
           {filters.interest !== "all" && (
             <Badge variant="secondary" className="gap-1 pr-1">
-              {EVENT_CATEGORIES.find((c) => c.value === filters.interest)?.icon}{" "}
-              {EVENT_CATEGORIES.find((c) => c.value === filters.interest)?.label}
-              <button onClick={() => setFilter("interest", "all")}>
-                <X className="w-3 h-3" />
-              </button>
+              {EVENT_CATEGORIES.find(c => c.value === filters.interest)?.icon}{" "}
+              {EVENT_CATEGORIES.find(c => c.value === filters.interest)?.label}
+              <button onClick={() => setFilter("interest", "all")}><X className="w-3 h-3" /></button>
             </Badge>
           )}
           {filters.meeting_type !== "all" && (
             <Badge variant="secondary" className="gap-1 pr-1">
-              {MEETING_TYPES.find((m) => m.value === filters.meeting_type)?.label}
-              <button onClick={() => setFilter("meeting_type", "all")}>
-                <X className="w-3 h-3" />
-              </button>
+              {MEETING_TYPES.find(m => m.value === filters.meeting_type)?.label}
+              <button onClick={() => setFilter("meeting_type", "all")}><X className="w-3 h-3" /></button>
             </Badge>
           )}
-          <button
-            onClick={clearFilters}
-            className="text-xs text-destructive hover:underline ml-1"
-          >
-            Clear all
-          </button>
+          <button onClick={clearFilters} className="text-xs text-destructive hover:underline ml-1">Clear all</button>
         </div>
       )}
 
-      {/* Results */}
+      {/* Results count */}
       <p className="text-sm text-muted-foreground mb-4">
         {filtered.length} partner{filtered.length !== 1 ? "s" : ""} found
       </p>
 
+      {/* Grid */}
       {filtered.length === 0 ? (
         <div className="text-center py-16">
           <Languages className="w-14 h-14 text-muted-foreground/20 mx-auto mb-4" />
-          <p className="text-muted-foreground">
-            No partners match your filters. Try adjusting them.
-          </p>
-          <Button variant="outline" className="mt-4 rounded-full" onClick={clearFilters}>
-            Clear Filters
-          </Button>
+          <p className="text-muted-foreground">No partners match your filters. Try adjusting them.</p>
+          <Button variant="outline" className="mt-4 rounded-full" onClick={clearFilters}>Clear Filters</Button>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
