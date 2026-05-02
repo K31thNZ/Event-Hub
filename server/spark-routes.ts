@@ -43,12 +43,13 @@ const confirmSchema = z.object({
   responderIds: z.array(z.string()).min(1).max(20),
 });
 
-// ── Helper: enrich spark rows with response data ──────────────────────────────
-
+// ── Helper: enrich spark rows with response data (without user relations) ─────
+// Because spark tables no longer reference the users table, we do not join
+// sender or responder details. Sender info is already inside the spark row.
 async function enrichSpark(spark: typeof sparks.$inferSelect, viewerUserId?: string) {
+  // Fetch responses – no relation join, so no "responder" field
   const responses = await db.query.sparkResponses.findMany({
     where: eq(sparkResponses.sparkId, spark.id),
-    with:  { responder: { columns: { id: true, displayName: true, avatarUrl: true } } },
   });
 
   // Auto-expire: mark as expired if TTL passed and still pending
@@ -62,8 +63,8 @@ async function enrichSpark(spark: typeof sparks.$inferSelect, viewerUserId?: str
     : null;
 
   return {
-    ...spark,
-    responses,
+    ...spark,                                   // includes senderDisplayName, senderAvatarUrl
+    responses,                                  // no nested responder object
     responseCount: responses.filter(r => r.status === "accepted").length,
     myResponse,
   };
@@ -74,10 +75,6 @@ async function enrichSpark(spark: typeof sparks.$inferSelect, viewerUserId?: str
 export function registerSparkRoutes(app: Express) {
 
   // ── GET /api/sparks — feed of non-expired sparks for this user ──────────────
-  // Returns sparks that haven't expired, ordered by meet_time ASC.
-  // Does NOT filter by audience criteria server-side (the frontend does soft
-  // highlighting for matches); hard filtering would hide sparks from non-matching
-  // users who might still want to see what's happening.
   app.get("/api/sparks", requireAuth, async (req: any, res) => {
     try {
       const viewerId = String(req.user.id);
@@ -88,9 +85,7 @@ export function registerSparkRoutes(app: Express) {
           inArray(sparks.status, ["pending", "active"]),
           gte(sparks.expiresAt, now),
         ),
-        with: {
-          sender: { columns: { id: true, displayName: true, avatarUrl: true } },
-        },
+        // NO with: { sender: ... } – sender info is flat on spark
         orderBy: [sparks.meetTime],
       });
 
@@ -109,7 +104,7 @@ export function registerSparkRoutes(app: Express) {
 
       const rows = await db.query.sparks.findMany({
         where:   eq(sparks.senderId, senderId),
-        with:    { sender: { columns: { id: true, displayName: true, avatarUrl: true } } },
+        // NO with: { sender: ... }
         orderBy: [desc(sparks.createdAt)],
       });
 
@@ -141,8 +136,14 @@ export function registerSparkRoutes(app: Express) {
         return res.status(400).json({ message: "Meet time must be in the future" });
       }
 
+      // Include sender display info from auth service
+      const senderDisplayName = req.user.displayName ?? req.user.username ?? "Someone";
+      const senderAvatarUrl   = req.user.avatarUrl ?? null;
+
       const [newSpark] = await db.insert(sparks).values({
         senderId,
+        senderDisplayName,
+        senderAvatarUrl,
         title:           d.title,
         description:     d.description,
         activity:        d.activity,
@@ -150,9 +151,9 @@ export function registerSparkRoutes(app: Express) {
         meetTime,
         expiresAt,
         maxRespondents:  d.maxRespondents,
-filterInterests: d.filterInterests ?? [],
-filterLanguages: d.filterLanguages ?? [],
-filterMetroLine: d.filterMetroLine ?? null,
+        filterInterests: d.filterInterests ?? [],
+        filterLanguages: d.filterLanguages ?? [],
+        filterMetroLine: d.filterMetroLine ?? null,
         status:          "pending",
       }).returning();
 
