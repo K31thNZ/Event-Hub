@@ -150,9 +150,9 @@ export function registerSparkRoutes(app: Express) {
         meetTime,
         expiresAt,
         maxRespondents:  d.maxRespondents,
-        filterInterests: d.filterInterests ?? null,
-        filterLanguages: d.filterLanguages ?? null,
-        filterMetroLine: d.filterMetroLine ?? null,
+filterInterests: d.filterInterests ?? [],
+filterLanguages: d.filterLanguages ?? [],
+filterMetroLine: d.filterMetroLine ?? null,
         status:          "pending",
       }).returning();
 
