@@ -128,12 +128,12 @@ export default function LiveMap() {
   const [filter, setFilter] = useState("all");
   const [showOnline, setShowOnline] = useState(false);
 
-  // Fetch events
+  // Fetch events from local backend
   useEffect(() => {
     async function fetchEvents() {
       try {
         setLoading(true);
-        const res = await fetch("https://69f4fe58ad12390c7548539b.functions.base44.com/getLiveMapEvents");
+        const res = await fetch("/api/live-map-events");
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         setEvents(data.events || []);
