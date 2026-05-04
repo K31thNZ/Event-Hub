@@ -10,7 +10,7 @@ import { requireAuth, getUser } from "./auth-client";
 import { z } from "zod";
 import { db } from "./db";
 import { users } from "@shared/models/auth";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import crypto from "crypto";
 import uploadRouter from "./routes/upload";
 
@@ -24,6 +24,70 @@ export async function registerRoutes(
 
   // ── Server‑mediated uploads (avatars + event images) ────────────────
   app.use(uploadRouter);
+
+  // ── Live Map: get today's events in Moscow timezone ────────────────────
+  app.get("/api/live-map-events", async (req, res) => {
+    try {
+      // Use raw SQL with timezone conversion (PostgreSQL)
+      const todayEvents = await db.execute(sql`
+        SELECT 
+          id,
+          title,
+          description,
+          category,
+          date AT TIME ZONE 'Europe/Moscow' AS local_time,
+          venue_address,
+          venue_city,
+          lat,
+          lng,
+          image_url,
+          published,
+          source_url
+        FROM events
+        WHERE 
+          (date AT TIME ZONE 'Europe/Moscow')::date = (NOW() AT TIME ZONE 'Europe/Moscow')::date
+          AND lat IS NOT NULL
+          AND venue_address != 'Online'
+        ORDER BY date ASC
+      `);
+
+      const onlineEvents = await db.execute(sql`
+        SELECT 
+          id,
+          title,
+          description,
+          category,
+          date AT TIME ZONE 'Europe/Moscow' AS local_time,
+          venue_address,
+          image_url,
+          published,
+          source_url
+        FROM events
+        WHERE 
+          (date AT TIME ZONE 'Europe/Moscow')::date = (NOW() AT TIME ZONE 'Europe/Moscow')::date
+          AND venue_address = 'Online'
+        ORDER BY date ASC
+      `);
+
+      const formattedDate = new Date().toLocaleDateString("en-GB", {
+        timeZone: "Europe/Moscow",
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      });
+
+      res.json({
+        events: todayEvents.rows,
+        online_events: onlineEvents.rows,
+        total: todayEvents.rows.length + onlineEvents.rows.length,
+        date: formattedDate,
+      });
+    } catch (err) {
+      console.error("Live map error:", err);
+      res.status(500).json({ error: "Failed to fetch events" });
+    }
+  });
 
   // ── Geocoding endpoints (forward & reverse) – free OpenStreetMap Nominatim ──
   app.post("/api/forward-geocode", async (req, res) => {
