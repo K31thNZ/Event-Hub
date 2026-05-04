@@ -93,7 +93,7 @@ function Router() {
           <Route path="/groups/:slug" component={GroupProfile} />
 
          {/* Spark */}
-          <Route path="/spark">
+          <Route path="/sparks">
           <ProtectedRoute component={Spark} />
           </Route>
           
