@@ -1,5 +1,6 @@
 // client/src/App.tsx
 import Spark from "@/pages/Spark";
+import LiveMap from "@/pages/LiveMap"; // 👈 added import
 import { Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -57,6 +58,7 @@ function Router() {
           <Route path="/" component={Home} />
           <Route path="/picks" component={Picks} />
           <Route path="/language-exchange" component={LanguageExchange} />
+          <Route path="/live-map" component={LiveMap} /> {/* 👈 new live map route */}
           <Route path="/profile">
             <ProtectedRoute component={Profile} />
           </Route>
@@ -92,9 +94,9 @@ function Router() {
           </Route>
           <Route path="/groups/:slug" component={GroupProfile} />
 
-         {/* Spark */}
+          {/* Spark */}
           <Route path="/sparks">
-          <ProtectedRoute component={Spark} />
+            <ProtectedRoute component={Spark} />
           </Route>
           
           {/* Fallback */}
