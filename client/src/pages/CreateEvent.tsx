@@ -23,13 +23,21 @@ import {
 import { Switch } from "@/components/ui/switch";
 import {
   Trash2, Plus, CalendarPlus, AlertCircle,
-  ArrowLeft, ArrowRight, Check, UsersRound, Upload, X,
+  ArrowLeft, ArrowRight, Check, UsersRound, Upload, X, MapPin
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { EVENT_CATEGORIES, EVENT_CATEGORY_VALUES } from "@shared/categories";
 import { zonedTimeToUtc } from "date-fns-tz";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import Map, { Marker, NavigationControl } from "react-map-gl/maplibre";
+import "maplibre-gl/dist/maplibre-gl.css";
 
-// Category default images (Unsplash fallbacks – will be replaced by user uploads)
+// ── Default images (unchanged) ───────────────────────────────────────────
 const CATEGORY_DEFAULT_IMAGES: Record<string, string> = {
   networking:   "https://images.expatevents.org/defaults/category-networking.jpg",
   tech:         "https://images.expatevents.org/defaults/category-tech.jpg",
@@ -50,7 +58,7 @@ const CATEGORY_DEFAULT_IMAGES: Record<string, string> = {
 
 const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? "https://auth.expatevents.org";
 
-// Schema with recurrence
+// Schema with recurrence and location coordinates
 const createEventSchema = z.object({
   title:       z.string().min(3, "Title must be at least 3 characters"),
   description: z.string().min(10, "Description must be at least 10 characters"),
@@ -65,6 +73,8 @@ const createEventSchema = z.object({
   imageUrl:     z.string().optional().nullable(),
   recurrence:   z.enum(["none", "daily", "weekly", "monthly"]).default("none"),
   recurrenceUntil: z.string().nullable().optional(),
+  lat:          z.number().optional().nullable(),
+  lng:          z.number().optional().nullable(),
   ticketTypes:  z.array(z.object({
     name:        z.string().min(1, "Name required"),
     price:       z.coerce.number().min(0, "Price must be 0 or more"),
@@ -99,7 +109,7 @@ const TIME_SLOTS = Array.from({ length: 96 }, (_, i) => {
   return `${h}:${m}`;
 });
 
-// Helper: upload event image to R2
+// Helper: upload image to R2
 async function uploadEventImage(file: File): Promise<string> {
   const formData = new FormData();
   formData.append("file", file);
@@ -117,6 +127,9 @@ async function uploadEventImage(file: File): Promise<string> {
   return data.url;
 }
 
+// Map style (same as LiveMap)
+const MAP_STYLE = "https://tiles.stadiamaps.com/styles/alidade_smooth_dark.json";
+
 export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) {
   const [, setLocation] = useLocation();
   const params = useParams<{ groupId?: string }>();
@@ -129,6 +142,9 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
   const [publishSuccess, setPublishSuccess] = useState<{ id: number; title: string } | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [mapModalOpen, setMapModalOpen] = useState(false);
+  const [tempMarkerCoords, setTempMarkerCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [geocoding, setGeocoding] = useState(false);
 
   const { data: myGroups } = useQuery<any[]>({
     queryKey: ["/api/groups/my"],
@@ -150,19 +166,23 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
       time: "18:00",
       recurrence: "none",
       recurrenceUntil: null,
+      lat: null,
+      lng: null,
     },
     mode: "onTouched",
   });
 
   const watchedCategory = watch("category");
   const watchedImageUrl = watch("imageUrl");
-  const watchedGroupId  = watch("groupId");
+  const watchedGroupId = watch("groupId");
   const watchedRecurrence = watch("recurrence");
   const watchedDateStr = watch("dateStr");
-  const watchedTime    = watch("time");
+  const watchedTime = watch("time");
+  const watchedLat = watch("lat");
+  const watchedLng = watch("lng");
   const allValues = watch();
 
-  // Auto-fill cover image when category is chosen (if not already set)
+  // Auto-fill cover image when category is chosen
   useEffect(() => {
     if (watchedCategory && !watchedImageUrl) {
       const def = CATEGORY_DEFAULT_IMAGES[watchedCategory];
@@ -183,6 +203,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
 
   const { fields, append, remove } = useFieldArray({ control, name: "ticketTypes" });
 
+  // Image upload handlers
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -201,9 +222,44 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
       setUploading(false);
     }
   };
-
   const removeImage = () => setValue("imageUrl", null);
 
+  // ── Map modal helpers ─────────────────────────────────────────────────
+  const handleMapClick = async (event: any) => {
+    const { lng, lat } = event.lngLat;
+    setTempMarkerCoords({ lat, lng });
+    setGeocoding(true);
+    try {
+      const res = await fetch("/api/reverse-geocode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lat, lng }),
+      });
+      if (res.ok) {
+        const { address, city } = await res.json();
+        setValue("venueAddress", address);
+        setValue("venueCity", city);
+        setValue("lat", lat);
+        setValue("lng", lng);
+      } else {
+        console.error("Reverse geocode failed");
+        // Still set coordinates even if address not found
+        setValue("lat", lat);
+        setValue("lng", lng);
+      }
+    } catch (err) {
+      console.error("Reverse geocode error:", err);
+    } finally {
+      setGeocoding(false);
+    }
+  };
+
+  const handleConfirmLocation = () => {
+    setMapModalOpen(false);
+    // Coordinates already set inside handleMapClick
+  };
+
+  // Navigation
   const navigate = async (target: number) => {
     if (target > step) {
       const valid = await trigger(STEP_FIELDS[step] as any);
@@ -213,18 +269,16 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
     setDirection(target > step ? 1 : -1);
     setStep(target);
   };
-
   const nextStep = () => navigate(step + 1);
   const prevStep = () => navigate(step - 1);
 
+  // Submit
   const onSubmit = async (data: FormValues) => {
     if (!user) return;
     setSubmitError(null);
     try {
-      // Convert the chosen Moscow date+time to UTC using date-fns-tz
       const moscowDateTime = `${data.dateStr} ${data.time}`;
       const utcDate = zonedTimeToUtc(moscowDateTime, "Europe/Moscow");
-
       const result = await createEvent.mutateAsync({
         ...data,
         date: utcDate,
@@ -247,7 +301,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
     }
   };
 
-  // Loading / auth / success screens
+  // Loading / auth / success screens (unchanged)
   if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -263,9 +317,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
         </div>
         <h1 className="text-3xl font-bold">Host an Event</h1>
         <p className="text-muted-foreground">You need to be signed in.</p>
-        <Button onClick={() =>
-          (window.location.href = `${AUTH_URL}/login?returnTo=${encodeURIComponent(window.location.href)}`)
-        }>
+        <Button onClick={() => window.location.href = `${AUTH_URL}/login?returnTo=${encodeURIComponent(window.location.href)}`}>
           Sign In
         </Button>
       </div>
@@ -309,6 +361,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
           <p className="text-muted-foreground">Fill in the details to publish your event to the community.</p>
         </div>
 
+        {/* Stepper (unchanged) */}
         <div className="mb-10 px-2">
           <div className="relative mb-2">
             <div className="absolute top-[18px] left-0 right-0 h-0.5 bg-border" />
@@ -327,27 +380,12 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                     type="button"
                     onClick={() => { if (done) navigate(i); }}
                     disabled={!done && !current}
-                    className={`
-                      flex flex-col items-center gap-1.5
-                      ${done ? "cursor-pointer" : ""}
-                      ${current ? "cursor-default" : ""}
-                      ${!done && !current ? "cursor-not-allowed opacity-50" : ""}
-                    `}
+                    className={`flex flex-col items-center gap-1.5 ${done ? "cursor-pointer" : ""} ${current ? "cursor-default" : ""} ${!done && !current ? "cursor-not-allowed opacity-50" : ""}`}
                   >
-                    <div className={`
-                      w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold border-2 transition-all duration-300 bg-background
-                      ${done ? "bg-primary border-primary text-white hover:bg-primary/90" : ""}
-                      ${current ? "border-primary text-primary shadow-md shadow-primary/20 scale-110" : ""}
-                      ${!done && !current ? "border-border text-muted-foreground" : ""}
-                    `}>
+                    <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold border-2 transition-all duration-300 bg-background ${done ? "bg-primary border-primary text-white hover:bg-primary/90" : ""} ${current ? "border-primary text-primary shadow-md shadow-primary/20 scale-110" : ""} ${!done && !current ? "border-border text-muted-foreground" : ""}`}>
                       {done ? <Check className="w-4 h-4" /> : i + 1}
                     </div>
-                    <span className={`
-                      text-xs font-medium hidden sm:block
-                      ${current ? "text-primary" : ""}
-                      ${done ? "text-foreground" : ""}
-                      ${!done && !current ? "text-muted-foreground" : ""}
-                    `}>
+                    <span className={`text-xs font-medium hidden sm:block ${current ? "text-primary" : ""} ${done ? "text-foreground" : ""} ${!done && !current ? "text-muted-foreground" : ""}`}>
                       {s.label}
                     </span>
                   </button>
@@ -363,16 +401,8 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
         <form onSubmit={handleSubmit(onSubmit)}>
           <div className="overflow-hidden">
             <AnimatePresence mode="wait" custom={direction}>
-              <motion.div
-                key={step}
-                custom={direction}
-                variants={slideVariants}
-                initial="enter"
-                animate="center"
-                exit="exit"
-                transition={{ duration: 0.22, ease: "easeInOut" }}
-              >
-                {/* Step 0: Details */}
+              <motion.div key={step} custom={direction} variants={slideVariants} initial="enter" animate="center" exit="exit" transition={{ duration: 0.22, ease: "easeInOut" }}>
+                {/* Step 0: Details (unchanged) */}
                 {step === 0 && (
                   <Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
                     <div className="bg-primary/5 px-8 py-4 border-b border-border/50">
@@ -442,7 +472,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                   </Card>
                 )}
 
-                {/* Step 1: Date & Time with recurrence */}
+                {/* Step 1: Date & Time (unchanged) */}
                 {step === 1 && (
                   <Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
                     <div className="bg-primary/5 px-8 py-4 border-b border-border/50">
@@ -469,7 +499,6 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                           {errors.time && <p className="text-destructive text-sm">{errors.time.message}</p>}
                         </div>
                       </div>
-                      {/* Recurrence section */}
                       <div className="border-t border-border/50 pt-4 mt-2">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                           <div className="space-y-2">
@@ -495,7 +524,6 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                           )}
                         </div>
                       </div>
-                      {/* Preview pill – uses watchedDateStr and watchedTime now defined */}
                       {watchedDateStr && watchedTime && (
                         <motion.div
                           initial={{ opacity: 0, y: 8 }}
@@ -519,7 +547,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                   </Card>
                 )}
 
-                {/* Step 2: Location & Media (R2 upload) */}
+                {/* Step 2: Location & Media (with map picker) */}
                 {step === 2 && (
                   <Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
                     <div className="bg-primary/5 px-8 py-4 border-b border-border/50">
@@ -528,9 +556,29 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                     </div>
                     <CardContent className="p-8 space-y-6">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="space-y-2"><Label>Venue Address</Label><Input {...register("venueAddress")} className="h-12 rounded-xl" placeholder="Vabaduse väljak 1" />{errors.venueAddress && <p className="text-destructive text-sm">{errors.venueAddress.message}</p>}</div>
-                        <div className="space-y-2"><Label>City</Label><Input {...register("venueCity")} className="h-12 rounded-xl" placeholder="Tallinn" />{errors.venueCity && <p className="text-destructive text-sm">{errors.venueCity.message}</p>}</div>
+                        <div className="space-y-2">
+                          <Label>Venue Address</Label>
+                          <Input {...register("venueAddress")} className="h-12 rounded-xl" placeholder="Vabaduse väljak 1" />
+                          {errors.venueAddress && <p className="text-destructive text-sm">{errors.venueAddress.message}</p>}
+                        </div>
+                        <div className="space-y-2">
+                          <Label>City</Label>
+                          <Input {...register("venueCity")} className="h-12 rounded-xl" placeholder="Tallinn" />
+                          {errors.venueCity && <p className="text-destructive text-sm">{errors.venueCity.message}</p>}
+                        </div>
                       </div>
+                      {/* Map picker button */}
+                      <div className="flex justify-end">
+                        <Button type="button" variant="outline" onClick={() => setMapModalOpen(true)} className="gap-2">
+                          <MapPin className="w-4 h-4" /> Select on Map
+                        </Button>
+                      </div>
+                      {watchedLat && watchedLng && (
+                        <div className="text-xs text-muted-foreground bg-muted/30 rounded-xl p-2">
+                          📍 Coordinates: {watchedLat.toFixed(6)}, {watchedLng.toFixed(6)}
+                        </div>
+                      )}
+                      {/* Cover image upload (unchanged) */}
                       <div className="space-y-3">
                         <Label>Cover Image</Label>
                         {watchedImageUrl ? (
@@ -561,7 +609,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                   </Card>
                 )}
 
-                {/* Step 3: Tickets */}
+                {/* Step 3: Tickets (unchanged) */}
                 {step === 3 && (
                   <Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
                     <div className="bg-primary/5 px-8 py-4 border-b border-border/50 flex justify-between items-center">
@@ -583,7 +631,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                   </Card>
                 )}
 
-                {/* Step 4: Preview */}
+                {/* Step 4: Preview (unchanged) */}
                 {step === 4 && (
                   <Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
                     <div className="bg-primary/5 px-8 py-4 border-b border-border/50">
@@ -647,6 +695,40 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
           <p className="text-center text-xs text-muted-foreground mt-4">Step {step + 1} of {STEPS.length}</p>
         </form>
       </div>
+
+      {/* ── Map Modal ─────────────────────────────────────────────────── */}
+      <Dialog open={mapModalOpen} onOpenChange={setMapModalOpen}>
+        <DialogContent className="max-w-3xl h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Select Event Location</DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 relative min-h-[300px] rounded-lg overflow-hidden">
+            <Map
+              initialViewState={{
+                longitude: watchedLng ?? 37.6173,
+                latitude: watchedLat ?? 55.7558,
+                zoom: 12,
+              }}
+              mapStyle={MAP_STYLE}
+              onClick={handleMapClick}
+              style={{ width: "100%", height: "100%" }}
+            >
+              <NavigationControl position="top-right" />
+              {tempMarkerCoords && (
+                <Marker longitude={tempMarkerCoords.lng} latitude={tempMarkerCoords.lat}>
+                  <div className="w-6 h-6 bg-red-500 rounded-full border-2 border-white shadow-lg" />
+                </Marker>
+              )}
+            </Map>
+          </div>
+          <div className="flex justify-end gap-3 mt-4">
+            <Button variant="outline" onClick={() => setMapModalOpen(false)}>Cancel</Button>
+            <Button onClick={handleConfirmLocation} disabled={!tempMarkerCoords || geocoding}>
+              {geocoding ? "Loading address…" : "Use this location"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
