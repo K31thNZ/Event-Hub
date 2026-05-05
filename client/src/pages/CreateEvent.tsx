@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { EVENT_CATEGORIES, EVENT_CATEGORY_VALUES } from "@shared/categories";
-import { fromZonedTime } from "@date-fns/tz";
+import { fromZonedTime } from "date-fns/tz";
 import {
   Dialog,
   DialogContent,
