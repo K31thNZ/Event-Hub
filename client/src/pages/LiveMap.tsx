@@ -73,6 +73,10 @@ function dotColor(category?: string | null): string {
   return CATEGORY_DOT[category ?? "other"] ?? CATEGORY_DOT.other;
 }
 
+// Tiny transparent GIF as placeholder image – required by Yandex for custom HTML markers
+const TRANSPARENT_GIF =
+  "data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==";
+
 export default function LiveMap() {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
@@ -136,8 +140,8 @@ export default function LiveMap() {
   useEffect(() => {
     if (!mapLoaded || !mapRef.current) return;
 
-    // Clear existing placemarks (keep controls)
     const map = mapRef.current;
+    // Remove existing markers (keep controls)
     map.geoObjects.each((obj: any) => {
       if (obj.properties?.get("isEventMarker")) {
         map.geoObjects.remove(obj);
@@ -155,7 +159,7 @@ export default function LiveMap() {
       const icon = EVENT_CATEGORIES.find(c => c.value === event.category)?.icon ?? '✨';
 
       const markerHtml = `
-        <div style="position: relative;">
+        <div style="position: relative; width: 40px; height: 40px;">
           ${now ? `<div style="position: absolute; top: -6px; left: -6px; right: -6px; bottom: -6px; border-radius: 50%; background: ${color}35; animation: ymap-pulse 1.8s infinite;"></div>` : ''}
           <div style="
             width: 36px; height: 36px;
@@ -167,6 +171,7 @@ export default function LiveMap() {
             display: flex;
             align-items: center;
             justify-content: center;
+            cursor: pointer;
           ">
             <span style="transform: rotate(45deg); font-size: 15px;">${icon}</span>
           </div>
@@ -180,6 +185,7 @@ export default function LiveMap() {
               border-radius: 20px;
               white-space: nowrap;
               box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+              pointer-events: none;
             ">
               ${now ? 'LIVE' : 'SOON'}
             </div>
@@ -193,15 +199,16 @@ export default function LiveMap() {
         iconContent: markerHtml,
       }, {
         iconLayout: 'default#imageWithContent',
-        iconImageSize: [36, 36],
-        iconImageOffset: [-18, -18],
-        iconContentOffset: [-18, -18],
+        iconImageHref: TRANSPARENT_GIF,      // required to make the container visible
+        iconImageSize: [40, 40],
+        iconImageOffset: [-20, -20],
+        iconContentOffset: [-20, -20],
         hideIconOnBalloonOpen: false,
       });
 
       placemark.events.add('click', () => {
         setSelected(event);
-        mapRef.current.setCenter([lat, lng], 15, { duration: 300 });
+        map.setCenter([lat, lng], 15, { duration: 300 });
       });
 
       map.geoObjects.add(placemark);
@@ -212,7 +219,7 @@ export default function LiveMap() {
 
   return (
     <div className="h-[calc(100vh-4rem)] w-full flex flex-col overflow-hidden relative bg-background">
-      {/* Global style for pulse animation */}
+      {/* Global style for pulse */}
       <style>{`
         @keyframes ymap-pulse {
           0% { transform: scale(1); opacity: 0.4; }
@@ -220,7 +227,7 @@ export default function LiveMap() {
         }
       `}</style>
 
-      {/* Top bar (unchanged) */}
+      {/* Top bar */}
       <div className="absolute top-0 left-0 right-0 z-20 flex items-center gap-3 px-4 py-3 glass border-b border-border/60">
         <Button asChild variant="ghost" size="icon" className="rounded-full shrink-0 -ml-1">
           <Link href="/"><ArrowLeft className="w-5 h-5" /></Link>
@@ -257,7 +264,7 @@ export default function LiveMap() {
         </Button>
       </div>
 
-      {/* Filter dropdown (unchanged) */}
+      {/* Filter dropdown */}
       <AnimatePresence>
         {showFilter && (
           <motion.div
