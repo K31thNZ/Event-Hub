@@ -26,7 +26,6 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { EVENT_CATEGORIES, EVENT_CATEGORY_VALUES } from "@shared/categories";
-import { zonedTimeToUtc } from "date-fns-tz";
 import {
   Dialog,
   DialogContent,
@@ -56,6 +55,18 @@ const CATEGORY_DEFAULT_IMAGES: Record<string, string> = {
 };
 
 const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? "https://auth.expatevents.org";
+
+// ── Custom timezone conversion (Moscow → UTC) ───────────────────────────
+// Moscow is UTC+3 (no DST)
+function moscowToUtc(dateStr: string, timeStr: string): Date {
+  const [year, month, day] = dateStr.split("-").map(Number);
+  const [hours, minutes] = timeStr.split(":").map(Number);
+  // Create a date in UTC but with the local Moscow wall‑clock values
+  const localDate = new Date(Date.UTC(year, month - 1, day, hours, minutes, 0));
+  // Moscow is UTC+3 → subtract 3 hours to get UTC
+  const utcDate = new Date(localDate.getTime() - 3 * 60 * 60 * 1000);
+  return utcDate;
+}
 
 // Schema with recurrence and location coordinates
 const createEventSchema = z.object({
@@ -276,8 +287,8 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
     if (!user) return;
     setSubmitError(null);
     try {
-      const moscowDateTime = `${data.dateStr} ${data.time}`;
-      const utcDate = zonedTimeToUtc(moscowDateTime, "Europe/Moscow");
+      // Convert Moscow wall time to UTC using our custom function
+      const utcDate = moscowToUtc(data.dateStr, data.time);
       const result = await createEvent.mutateAsync({
         ...data,
         date: utcDate,
@@ -695,7 +706,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
         </form>
       </div>
 
-      {/* ── Map Modal ─────────────────────────────────────────────────── */}
+      {/* Map Modal */}
       <Dialog open={mapModalOpen} onOpenChange={setMapModalOpen}>
         <DialogContent className="max-w-3xl h-[80vh] flex flex-col">
           <DialogHeader>
