@@ -15,7 +15,20 @@ import { EVENT_CATEGORIES } from "@shared/categories";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-const MAP_STYLE = "https://tiles.stadiamaps.com/styles/alidade_smooth_dark.json";
+// Free raster tiles — no API key required
+const MAP_STYLE = {
+  version: 8 as const,
+  sources: {
+    osm: {
+      type: "raster" as const,
+      tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+      tileSize: 256,
+      attribution: "© OpenStreetMap contributors",
+      maxzoom: 19,
+    },
+  },
+  layers: [{ id: "osm", type: "raster" as const, source: "osm" }],
+};
 const DEFAULT_CENTER = { longitude: 37.6173, latitude: 55.7558, zoom: 11 };
 
 function isHappeningNow(date: string | Date): boolean {
