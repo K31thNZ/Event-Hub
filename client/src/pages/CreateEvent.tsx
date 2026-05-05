@@ -1,4 +1,3 @@
-// client/src/pages/CreateEvent.tsx
 import { useState, useEffect } from "react";
 import { useForm, useFieldArray, Controller, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -27,7 +26,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { EVENT_CATEGORIES, EVENT_CATEGORY_VALUES } from "@shared/categories";
-import { zonedTimeToUtc } from "date-fns-tz";
+import zonedTimeToUtc from "date-fns-tz/zonedTimeToUtc";   // ✅ fixed import
 import {
   Dialog,
   DialogContent,
@@ -109,7 +108,7 @@ const TIME_SLOTS = Array.from({ length: 96 }, (_, i) => {
   return `${h}:${m}`;
 });
 
-// Helper: upload image to R2
+// Helper: upload event image to R2
 async function uploadEventImage(file: File): Promise<string> {
   const formData = new FormData();
   formData.append("file", file);
