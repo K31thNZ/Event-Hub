@@ -1,4 +1,4 @@
-// Home.tsx
+// client/src/pages/Home.tsx
 import { useEvents } from "@/hooks/use-events";
 import { useAuth } from "@/hooks/use-auth";
 import { EventCard } from "@/components/events/EventCard";
@@ -62,10 +62,11 @@ export default function Home() {
     category: category !== "all" ? category : undefined,
   });
 
-  // Filter events into upcoming and past
+  // Filter events: only published, then split into upcoming and past
   const now = new Date();
-  const upcomingEvents = (events || []).filter(event => new Date(event.date) >= now);
-  const pastEvents = (events || []).filter(event => new Date(event.date) < now);
+  const publishedEvents = (events || []).filter(event => event.published);
+  const upcomingEvents = publishedEvents.filter(event => new Date(event.date) >= now);
+  const pastEvents = publishedEvents.filter(event => new Date(event.date) < now);
 
   // Sort upcoming by date ascending, past by date descending (most recent first)
   upcomingEvents.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -119,7 +120,7 @@ export default function Home() {
         )}
       </AnimatePresence>
 
-      {/* Hero section (unchanged) */}
+      {/* Hero section */}
       <section className="relative pt-32 pb-20 md:pt-48 md:pb-32 overflow-hidden">
         <AnimatePresence>
           {showWelcomeOverlay && (
@@ -218,7 +219,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── Events listing with upcoming and past sections ── */}
+      {/* Events listing with upcoming and past sections */}
       <section
         id="upcoming-events"
         ref={upcomingRef}
