@@ -24,6 +24,9 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
-    include: ['lucide-react']   // Add this to force pre-bundling
-  }
+    include: [
+      'lucide-react',
+      'date-fns-tz',        // Added to fix resolution error
+    ],
+  },
 });
