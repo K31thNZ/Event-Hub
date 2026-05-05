@@ -28,7 +28,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { EVENT_CATEGORIES, EVENT_CATEGORY_VALUES } from "@shared/categories";
 
-// ── Category default images (still used as fallback, but images will be uploaded to R2)
+// Category default images (Unsplash fallbacks – will be replaced by user uploads)
 const CATEGORY_DEFAULT_IMAGES: Record<string, string> = {
   networking:   "https://images.expatevents.org/defaults/category-networking.jpg",
   tech:         "https://images.expatevents.org/defaults/category-tech.jpg",
@@ -49,7 +49,7 @@ const CATEGORY_DEFAULT_IMAGES: Record<string, string> = {
 
 const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? "https://auth.expatevents.org";
 
-// ── Schema with recurrence
+// Schema with recurrence
 const createEventSchema = z.object({
   title:       z.string().min(3, "Title must be at least 3 characters"),
   description: z.string().min(10, "Description must be at least 10 characters"),
@@ -62,10 +62,8 @@ const createEventSchema = z.object({
   venueAddress: z.string().min(3, "Address is required"),
   venueCity:    z.string().min(2, "City is required"),
   imageUrl:     z.string().optional().nullable(),
-  // Recurrence fields
   recurrence:   z.enum(["none", "daily", "weekly", "monthly"]).default("none"),
   recurrenceUntil: z.string().nullable().optional(),
-  // Ticket types
   ticketTypes:  z.array(z.object({
     name:        z.string().min(1, "Name required"),
     price:       z.coerce.number().min(0, "Price must be 0 or more"),
@@ -78,7 +76,6 @@ const createEventSchema = z.object({
 
 type FormValues = z.infer<typeof createEventSchema>;
 
-// Step fields (date & time already there, add recurrence)
 const STEP_FIELDS: Record<number, (keyof FormValues)[]> = {
   0: ["title", "description", "category"],
   1: ["dateStr", "time", "recurrence", "recurrenceUntil"],
@@ -101,46 +98,42 @@ const TIME_SLOTS = Array.from({ length: 96 }, (_, i) => {
   return `${h}:${m}`;
 });
 
-// ── Helper: upload event image to R2
+// Helper: upload event image to R2
 async function uploadEventImage(file: File): Promise<string> {
   const formData = new FormData();
   formData.append("file", file);
   formData.append("folder", "events");
-
   const res = await fetch("/api/upload/event-image", {
     method: "POST",
     credentials: "include",
     body: formData,
   });
-
   if (!res.ok) {
     const error = await res.json().catch(() => ({}));
     throw new Error(error.error || "Upload failed");
   }
-
   const data = await res.json();
   return data.url;
 }
 
 export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) {
-  const [, setLocation]      = useLocation();
-  const params               = useParams<{ groupId?: string }>();
-  const createEvent          = useCreateEvent();
+  const [, setLocation] = useLocation();
+  const params = useParams<{ groupId?: string }>();
+  const createEvent = useCreateEvent();
   const { user, isLoading: authLoading } = useAuth();
 
-  const [step,           setStep]          = useState(0);
-  const [direction,      setDirection]     = useState(1);
-  const [submitError,    setSubmitError]   = useState<string | null>(null);
+  const [step, setStep] = useState(0);
+  const [direction, setDirection] = useState(1);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [publishSuccess, setPublishSuccess] = useState<{ id: number; title: string } | null>(null);
-  const [uploading,      setUploading]     = useState(false);
-  const [uploadError,    setUploadError]   = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   const { data: myGroups } = useQuery<any[]>({
     queryKey: ["/api/groups/my"],
-    queryFn:  getQueryFn({ on401: "returnNull" }),
-    enabled:  !!user,
+    queryFn: getQueryFn({ on401: "returnNull" }),
+    enabled: !!user,
   });
-
   const eligibleGroups = (myGroups ?? []).filter(
     g => g.currentUserRole === "owner" || g.currentUserRole === "moderator"
   );
@@ -149,12 +142,12 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
     register, control, handleSubmit, setValue, watch, trigger,
     formState: { errors },
   } = useForm<FormValues>({
-    resolver:      zodResolver(createEventSchema),
+    resolver: zodResolver(createEventSchema),
     defaultValues: {
       ticketTypes: [{ name: "General Admission", price: 0, quantity: 100, maxPerOrder: 5 }],
-      isPrivate:   false,
-      time:        "18:00",
-      recurrence:  "none",
+      isPrivate: false,
+      time: "18:00",
+      recurrence: "none",
       recurrenceUntil: null,
     },
     mode: "onTouched",
@@ -164,9 +157,11 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
   const watchedImageUrl = watch("imageUrl");
   const watchedGroupId  = watch("groupId");
   const watchedRecurrence = watch("recurrence");
-  const allValues       = watch();
+  const watchedDateStr = watch("dateStr");
+  const watchedTime    = watch("time");
+  const allValues = watch();
 
-  // Auto-fill cover image when category is chosen (only if not already set)
+  // Auto-fill cover image when category is chosen (if not already set)
   useEffect(() => {
     if (watchedCategory && !watchedImageUrl) {
       const def = CATEGORY_DEFAULT_IMAGES[watchedCategory];
@@ -174,7 +169,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
     }
   }, [watchedCategory]);
 
-  // Pre-select group from URL param or slug prop
+  // Pre-select group from URL or slug
   useEffect(() => {
     if (groupSlug && myGroups) {
       const g = myGroups.find((g: any) => g.slug === groupSlug);
@@ -187,7 +182,6 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
 
   const { fields, append, remove } = useFieldArray({ control, name: "ticketTypes" });
 
-  // ── Image upload handler (R2)
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -209,7 +203,6 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
 
   const removeImage = () => setValue("imageUrl", null);
 
-  // Navigation
   const navigate = async (target: number) => {
     if (target > step) {
       const valid = await trigger(STEP_FIELDS[step] as any);
@@ -223,7 +216,6 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
   const nextStep = () => navigate(step + 1);
   const prevStep = () => navigate(step - 1);
 
-  // Submit
   const onSubmit = async (data: FormValues) => {
     if (!user) return;
     setSubmitError(null);
@@ -231,16 +223,14 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
       const [hours, minutes] = data.time.split(":").map(Number);
       const eventDate = new Date(data.dateStr);
       eventDate.setHours(hours, minutes, 0, 0);
-
       const result = await createEvent.mutateAsync({
         ...data,
-        date:      eventDate,
+        date: eventDate,
         published: true,
-        groupId:   data.groupId ?? null,
+        groupId: data.groupId ?? null,
         recurrence: data.recurrence !== "none" ? data.recurrence : null,
         recurrenceUntil: data.recurrenceUntil ? new Date(data.recurrenceUntil) : null,
       } as any);
-
       setPublishSuccess({ id: result.id, title: result.title });
       setTimeout(() => setLocation(`/events/${result.id}`), 2000);
     } catch (e: any) {
@@ -263,7 +253,6 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
       </div>
     );
   }
-
   if (!user) {
     return (
       <div className="min-h-screen bg-muted/20 flex flex-col items-center justify-center gap-6 px-4">
@@ -280,7 +269,6 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
       </div>
     );
   }
-
   if (publishSuccess) {
     return (
       <div className="min-h-screen bg-muted/20 flex flex-col items-center justify-center gap-6 px-4">
@@ -302,7 +290,6 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
   }
 
   const progressPct = (step / (STEPS.length - 1)) * 100;
-
   const slideVariants = {
     enter:  (d: number) => ({ x: d > 0 ? 48 : -48, opacity: 0 }),
     center: { x: 0, opacity: 1 },
@@ -330,7 +317,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
             />
             <div className="relative flex justify-between">
               {STEPS.map((s, i) => {
-                const done    = i < step;
+                const done = i < step;
                 const current = i === step;
                 return (
                   <button
@@ -338,28 +325,27 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                     type="button"
                     onClick={() => { if (done) navigate(i); }}
                     disabled={!done && !current}
-                    className={[
-                      "flex flex-col items-center gap-1.5",
-                      done    ? "cursor-pointer"     : "",
-                      current ? "cursor-default"     : "",
-                      !done && !current ? "cursor-not-allowed opacity-50" : "",
-                    ].join(" ")}
+                    className={`
+                      flex flex-col items-center gap-1.5
+                      ${done ? "cursor-pointer" : ""}
+                      ${current ? "cursor-default" : ""}
+                      ${!done && !current ? "cursor-not-allowed opacity-50" : ""}
+                    `}
                   >
-                    <div className={[
-                      "w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold",
-                      "border-2 transition-all duration-300 bg-background",
-                      done    ? "bg-primary border-primary text-white hover:bg-primary/90" : "",
-                      current ? "border-primary text-primary shadow-md shadow-primary/20 scale-110" : "",
-                      !done && !current ? "border-border text-muted-foreground" : "",
-                    ].join(" ")}>
+                    <div className={`
+                      w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold border-2 transition-all duration-300 bg-background
+                      ${done ? "bg-primary border-primary text-white hover:bg-primary/90" : ""}
+                      ${current ? "border-primary text-primary shadow-md shadow-primary/20 scale-110" : ""}
+                      ${!done && !current ? "border-border text-muted-foreground" : ""}
+                    `}>
                       {done ? <Check className="w-4 h-4" /> : i + 1}
                     </div>
-                    <span className={[
-                      "text-xs font-medium hidden sm:block",
-                      current ? "text-primary"          : "",
-                      done    ? "text-foreground"        : "",
-                      !done && !current ? "text-muted-foreground" : "",
-                    ].join(" ")}>
+                    <span className={`
+                      text-xs font-medium hidden sm:block
+                      ${current ? "text-primary" : ""}
+                      ${done ? "text-foreground" : ""}
+                      ${!done && !current ? "text-muted-foreground" : ""}
+                    `}>
                       {s.label}
                     </span>
                   </button>
@@ -384,7 +370,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                 exit="exit"
                 transition={{ duration: 0.22, ease: "easeInOut" }}
               >
-                {/* Step 0: Event Details (unchanged) */}
+                {/* Step 0: Details */}
                 {step === 0 && (
                   <Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
                     <div className="bg-primary/5 px-8 py-4 border-b border-border/50">
@@ -392,19 +378,69 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                       <p className="text-sm text-muted-foreground mt-0.5">Give your event a name, category and description</p>
                     </div>
                     <CardContent className="p-8 space-y-6">
-                      <div className="space-y-2"><Label>Event Title</Label><Input {...register("title")} className="h-12 rounded-xl text-lg" placeholder="Moscow Summer Tech Mixer" />{errors.title && <p className="text-destructive text-sm">{errors.title.message}</p>}</div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="space-y-2"><Label>Category</Label><Controller control={control} name="category" render={({ field }) => (<Select onValueChange={field.onChange} value={field.value}><SelectTrigger className="h-12 rounded-xl"><SelectValue placeholder="Select a category…" /></SelectTrigger><SelectContent>{EVENT_CATEGORIES.map(cat => <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>)}</SelectContent></Select>)} />{errors.category && <p className="text-destructive text-sm">{errors.category.message}</p>}</div>
-                        {watchedCategory && (<div className="space-y-2"><Label>Second Category <span className="font-normal text-muted-foreground">(optional)</span></Label><Controller control={control} name="category2" render={({ field }) => (<Select onValueChange={v => field.onChange(v === "__none__" ? null : v)} value={field.value ?? "__none__"}><SelectTrigger className="h-12 rounded-xl"><SelectValue placeholder="None" /></SelectTrigger><SelectContent><SelectItem value="__none__">— None —</SelectItem>{EVENT_CATEGORIES.filter(c => c.value !== watchedCategory).map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}</SelectContent></Select>)} /></div>)}
+                      <div className="space-y-2">
+                        <Label>Event Title</Label>
+                        <Input {...register("title")} className="h-12 rounded-xl text-lg" placeholder="Moscow Summer Tech Mixer" />
+                        {errors.title && <p className="text-destructive text-sm">{errors.title.message}</p>}
                       </div>
-                      <div className="space-y-2"><Label>Description</Label><Textarea {...register("description")} className="rounded-xl min-h-[130px]" placeholder="Tell people what to expect — format, agenda, vibe, what to bring…" />{errors.description && <p className="text-destructive text-sm">{errors.description.message}</p>}</div>
-                      {eligibleGroups.length > 0 && (<div className="pt-4 border-t space-y-2"><Label className="flex items-center gap-2"><UsersRound className="w-4 h-4 text-primary" /> Link to a Group <span className="font-normal text-muted-foreground">(optional)</span></Label><Controller control={control} name="groupId" render={({ field }) => (<Select onValueChange={v => field.onChange(v === "__none__" ? null : parseInt(v))} value={field.value != null ? String(field.value) : "__none__"}><SelectTrigger className="h-12 rounded-xl"><SelectValue placeholder="No group (public event)" /></SelectTrigger><SelectContent><SelectItem value="__none__">— No group (public event) —</SelectItem>{eligibleGroups.map(g => <SelectItem key={g.id} value={String(g.id)}>{g.name} {g.currentUserRole === "owner" ? "(owner)" : "(moderator)"}</SelectItem>)}</SelectContent></Select>)} /></div>)}
-                      {watchedGroupId && (<div className="flex justify-between items-center pt-4 border-t"><div><p className="font-medium text-sm">Private event</p><p className="text-xs text-muted-foreground">Only group members can see this event</p></div><Controller control={control} name="isPrivate" render={({ field }) => (<Switch checked={!!field.value} onCheckedChange={field.onChange} />)} /></div>)}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-2">
+                          <Label>Category</Label>
+                          <Controller control={control} name="category" render={({ field }) => (
+                            <Select onValueChange={field.onChange} value={field.value}>
+                              <SelectTrigger className="h-12 rounded-xl"><SelectValue placeholder="Select a category…" /></SelectTrigger>
+                              <SelectContent>
+                                {EVENT_CATEGORIES.map(cat => <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          )} />
+                          {errors.category && <p className="text-destructive text-sm">{errors.category.message}</p>}
+                        </div>
+                        {watchedCategory && (
+                          <div className="space-y-2">
+                            <Label>Second Category <span className="font-normal text-muted-foreground">(optional)</span></Label>
+                            <Controller control={control} name="category2" render={({ field }) => (
+                              <Select onValueChange={v => field.onChange(v === "__none__" ? null : v)} value={field.value ?? "__none__"}>
+                                <SelectTrigger className="h-12 rounded-xl"><SelectValue placeholder="None" /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="__none__">— None —</SelectItem>
+                                  {EVENT_CATEGORIES.filter(c => c.value !== watchedCategory).map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
+                                </SelectContent>
+                              </Select>
+                            )} />
+                          </div>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Description</Label>
+                        <Textarea {...register("description")} className="rounded-xl min-h-[130px]" placeholder="Tell people what to expect — format, agenda, vibe, what to bring…" />
+                        {errors.description && <p className="text-destructive text-sm">{errors.description.message}</p>}
+                      </div>
+                      {eligibleGroups.length > 0 && (
+                        <div className="pt-4 border-t space-y-2">
+                          <Label className="flex items-center gap-2"><UsersRound className="w-4 h-4 text-primary" /> Link to a Group <span className="font-normal text-muted-foreground">(optional)</span></Label>
+                          <Controller control={control} name="groupId" render={({ field }) => (
+                            <Select onValueChange={v => field.onChange(v === "__none__" ? null : parseInt(v))} value={field.value != null ? String(field.value) : "__none__"}>
+                              <SelectTrigger className="h-12 rounded-xl"><SelectValue placeholder="No group (public event)" /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__none__">— No group (public event) —</SelectItem>
+                                {eligibleGroups.map(g => <SelectItem key={g.id} value={String(g.id)}>{g.name} {g.currentUserRole === "owner" ? "(owner)" : "(moderator)"}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          )} />
+                        </div>
+                      )}
+                      {watchedGroupId && (
+                        <div className="flex justify-between items-center pt-4 border-t">
+                          <div><p className="font-medium text-sm">Private event</p><p className="text-xs text-muted-foreground">Only group members can see this event</p></div>
+                          <Controller control={control} name="isPrivate" render={({ field }) => <Switch checked={!!field.value} onCheckedChange={field.onChange} />} />
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
                 )}
 
-                {/* Step 1: Date & Time (with recurrence) */}
+                {/* Step 1: Date & Time with recurrence */}
                 {step === 1 && (
                   <Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
                     <div className="bg-primary/5 px-8 py-4 border-b border-border/50">
@@ -413,8 +449,23 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                     </div>
                     <CardContent className="p-8 space-y-6">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="space-y-2"><Label>Date</Label><Input type="date" {...register("dateStr")} className="h-12 rounded-xl" />{errors.dateStr && <p className="text-destructive text-sm">{errors.dateStr.message}</p>}</div>
-                        <div className="space-y-2"><Label>Time</Label><Controller control={control} name="time" render={({ field }) => (<Select onValueChange={field.onChange} value={field.value}><SelectTrigger className="h-12 rounded-xl"><SelectValue /></SelectTrigger><SelectContent className="max-h-64">{TIME_SLOTS.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent></Select>)} />{errors.time && <p className="text-destructive text-sm">{errors.time.message}</p>}</div>
+                        <div className="space-y-2">
+                          <Label>Date</Label>
+                          <Input type="date" {...register("dateStr")} className="h-12 rounded-xl" />
+                          {errors.dateStr && <p className="text-destructive text-sm">{errors.dateStr.message}</p>}
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Time</Label>
+                          <Controller control={control} name="time" render={({ field }) => (
+                            <Select onValueChange={field.onChange} value={field.value}>
+                              <SelectTrigger className="h-12 rounded-xl"><SelectValue /></SelectTrigger>
+                              <SelectContent className="max-h-64">
+                                {TIME_SLOTS.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          )} />
+                          {errors.time && <p className="text-destructive text-sm">{errors.time.message}</p>}
+                        </div>
                       </div>
                       {/* Recurrence section */}
                       <div className="border-t border-border/50 pt-4 mt-2">
@@ -442,18 +493,31 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                           )}
                         </div>
                       </div>
-                      {/* Preview pill */}
+                      {/* Preview pill – uses watchedDateStr and watchedTime now defined */}
                       {watchedDateStr && watchedTime && (
-                        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="flex items-center gap-3 bg-primary/5 border border-primary/20 rounded-2xl px-5 py-4">
+                        <motion.div
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="flex items-center gap-3 bg-primary/5 border border-primary/20 rounded-2xl px-5 py-4"
+                        >
                           <span className="text-2xl">📅</span>
-                          <div><p className="font-semibold text-sm">{new Date(watchedDateStr).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</p><p className="text-sm text-muted-foreground">Starts at {watchedTime}{watchedRecurrence !== "none" && ` · repeats ${watchedRecurrence}`}</p></div>
+                          <div>
+                            <p className="font-semibold text-sm">
+                              {new Date(watchedDateStr).toLocaleDateString("en-GB", {
+                                weekday: "long", day: "numeric", month: "long", year: "numeric",
+                              })}
+                            </p>
+                            <p className="text-sm text-muted-foreground">
+                              Starts at {watchedTime}{watchedRecurrence !== "none" && ` · repeats ${watchedRecurrence}`}
+                            </p>
+                          </div>
                         </motion.div>
                       )}
                     </CardContent>
                   </Card>
                 )}
 
-                {/* Step 2: Location & Media (with R2 upload) */}
+                {/* Step 2: Location & Media (R2 upload) */}
                 {step === 2 && (
                   <Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
                     <div className="bg-primary/5 px-8 py-4 border-b border-border/50">
@@ -465,7 +529,6 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                         <div className="space-y-2"><Label>Venue Address</Label><Input {...register("venueAddress")} className="h-12 rounded-xl" placeholder="Vabaduse väljak 1" />{errors.venueAddress && <p className="text-destructive text-sm">{errors.venueAddress.message}</p>}</div>
                         <div className="space-y-2"><Label>City</Label><Input {...register("venueCity")} className="h-12 rounded-xl" placeholder="Tallinn" />{errors.venueCity && <p className="text-destructive text-sm">{errors.venueCity.message}</p>}</div>
                       </div>
-                      {/* Custom R2 image upload */}
                       <div className="space-y-3">
                         <Label>Cover Image</Label>
                         {watchedImageUrl ? (
@@ -476,7 +539,15 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                         ) : (
                           <label className="flex flex-col items-center justify-center w-full h-48 rounded-xl border-2 border-dashed border-border bg-muted/40 cursor-pointer hover:bg-muted/60 transition-colors group">
                             <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                              {uploading ? (<div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full mb-3" />) : (<><Upload className="w-10 h-10 text-muted-foreground mb-3 group-hover:text-primary transition-colors" /><p className="text-sm text-muted-foreground"><span className="font-semibold">Click to upload</span> or drag and drop</p><p className="text-xs text-muted-foreground mt-1">PNG, JPG, WEBP, GIF up to 5MB</p></>)}
+                              {uploading ? (
+                                <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full mb-3" />
+                              ) : (
+                                <>
+                                  <Upload className="w-10 h-10 text-muted-foreground mb-3 group-hover:text-primary transition-colors" />
+                                  <p className="text-sm text-muted-foreground"><span className="font-semibold">Click to upload</span> or drag and drop</p>
+                                  <p className="text-xs text-muted-foreground mt-1">PNG, JPG, WEBP, GIF up to 5MB</p>
+                                </>
+                              )}
                             </div>
                             <input type="file" className="hidden" accept="image/jpeg,image/png,image/webp,image/gif" onChange={handleImageUpload} disabled={uploading} />
                           </label>
@@ -488,7 +559,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                   </Card>
                 )}
 
-                {/* Step 3: Tickets (unchanged) */}
+                {/* Step 3: Tickets */}
                 {step === 3 && (
                   <Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
                     <div className="bg-primary/5 px-8 py-4 border-b border-border/50 flex justify-between items-center">
@@ -496,13 +567,13 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                       <Button type="button" variant="outline" size="sm" onClick={() => append({ name: "", price: 0, quantity: 50, maxPerOrder: 4 })}><Plus className="w-4 h-4 mr-1" /> Add Ticket</Button>
                     </div>
                     <CardContent className="p-8 space-y-4 bg-muted/10">
-                      {fields.map((field, index) => (
+                      {fields.map((field, idx) => (
                         <div key={field.id} className="relative bg-card p-6 rounded-2xl border border-border shadow-sm flex flex-col md:flex-row gap-4 items-start md:items-end">
-                          {fields.length > 1 && (<button type="button" onClick={() => remove(index)} className="absolute top-4 right-4 text-muted-foreground hover:text-destructive"><Trash2 className="w-5 h-5" /></button>)}
-                          <div className="flex-1 w-full space-y-2"><Label>Ticket Name</Label><Input {...register(`ticketTypes.${index}.name`)} placeholder="General Admission" className="h-11 rounded-xl" />{errors.ticketTypes?.[index]?.name && <p className="text-destructive text-xs">{errors.ticketTypes[index].name?.message}</p>}</div>
-                          <div className="w-full md:w-28 space-y-2"><Label>Price (€)</Label><Input type="number" {...register(`ticketTypes.${index}.price`)} className="h-11 rounded-xl" /></div>
-                          <div className="w-full md:w-28 space-y-2"><Label>Total Qty</Label><Input type="number" {...register(`ticketTypes.${index}.quantity`)} className="h-11 rounded-xl" /></div>
-                          <div className="w-full md:w-28 space-y-2"><Label>Max / Order</Label><Input type="number" {...register(`ticketTypes.${index}.maxPerOrder`)} className="h-11 rounded-xl" /></div>
+                          {fields.length > 1 && (<button type="button" onClick={() => remove(idx)} className="absolute top-4 right-4 text-muted-foreground hover:text-destructive"><Trash2 className="w-5 h-5" /></button>)}
+                          <div className="flex-1 w-full space-y-2"><Label>Ticket Name</Label><Input {...register(`ticketTypes.${idx}.name`)} placeholder="General Admission" className="h-11 rounded-xl" />{errors.ticketTypes?.[idx]?.name && <p className="text-destructive text-xs">{errors.ticketTypes[idx].name?.message}</p>}</div>
+                          <div className="w-full md:w-28 space-y-2"><Label>Price (€)</Label><Input type="number" {...register(`ticketTypes.${idx}.price`)} className="h-11 rounded-xl" /></div>
+                          <div className="w-full md:w-28 space-y-2"><Label>Total Qty</Label><Input type="number" {...register(`ticketTypes.${idx}.quantity`)} className="h-11 rounded-xl" /></div>
+                          <div className="w-full md:w-28 space-y-2"><Label>Max / Order</Label><Input type="number" {...register(`ticketTypes.${idx}.maxPerOrder`)} className="h-11 rounded-xl" /></div>
                         </div>
                       ))}
                       {errors.ticketTypes?.message && <p className="text-destructive text-sm">{errors.ticketTypes.message}</p>}
@@ -510,7 +581,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                   </Card>
                 )}
 
-                {/* Step 4: Preview (simplified, same as before) */}
+                {/* Step 4: Preview */}
                 {step === 4 && (
                   <Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
                     <div className="bg-primary/5 px-8 py-4 border-b border-border/50">
@@ -518,19 +589,42 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                       <p className="text-sm text-muted-foreground mt-0.5">Check everything looks right before going live</p>
                     </div>
                     <CardContent className="p-8 space-y-6">
-                      {allValues.imageUrl && (<div className="rounded-2xl overflow-hidden aspect-video w-full"><img src={allValues.imageUrl} alt="Cover" className="w-full h-full object-cover" /></div>)}
+                      {allValues.imageUrl && <div className="rounded-2xl overflow-hidden aspect-video w-full"><img src={allValues.imageUrl} alt="Cover" className="w-full h-full object-cover" /></div>}
                       <div className="divide-y divide-border rounded-2xl border border-border overflow-hidden">
                         {[
                           { icon: "📌", label: "Title", value: allValues.title },
-                          { icon: "🏷",  label: "Category", value: EVENT_CATEGORIES.find(c => c.value === allValues.category)?.label },
+                          { icon: "🏷", label: "Category", value: EVENT_CATEGORIES.find(c => c.value === allValues.category)?.label },
                           { icon: "📅", label: "Date & Time", value: allValues.dateStr && allValues.time ? `${new Date(allValues.dateStr).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })} at ${allValues.time}${allValues.recurrence !== "none" ? ` · repeats ${allValues.recurrence}` : ""}` : null },
                           { icon: "📍", label: "Location", value: allValues.venueAddress && allValues.venueCity ? `${allValues.venueAddress}, ${allValues.venueCity}` : null },
-                        ].filter(r => r.value).map(row => (<div key={row.label} className="flex items-start gap-3 px-5 py-3.5 bg-card"><span className="text-base mt-0.5">{row.icon}</span><span className="text-xs text-muted-foreground w-20 shrink-0 pt-0.5">{row.label}</span><span className="text-sm font-medium">{row.value}</span></div>))}
+                        ].filter(r => r.value).map(row => (
+                          <div key={row.label} className="flex items-start gap-3 px-5 py-3.5 bg-card">
+                            <span className="text-base mt-0.5">{row.icon}</span>
+                            <span className="text-xs text-muted-foreground w-20 shrink-0 pt-0.5">{row.label}</span>
+                            <span className="text-sm font-medium">{row.value}</span>
+                          </div>
+                        ))}
                       </div>
-                      {allValues.description && (<div className="rounded-2xl bg-muted/40 p-5"><p className="text-xs uppercase tracking-wide text-muted-foreground font-medium mb-2">Description</p><p className="text-sm leading-relaxed line-clamp-5">{allValues.description}</p></div>)}
-                      {(allValues.ticketTypes?.length ?? 0) > 0 && (<div><p className="text-xs uppercase tracking-wide text-muted-foreground font-medium mb-2">Tickets</p><div className="space-y-2">{allValues.ticketTypes.map((t, i) => (<div key={i} className="flex justify-between items-center bg-muted/30 rounded-xl px-4 py-3 text-sm"><span className="font-medium">{t.name || "Unnamed"}</span><span className="text-muted-foreground">{t.price === 0 ? "Free" : `€${t.price}`} · {t.quantity} available</span></div>))}</div></div>)}
-                      <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-2xl p-5 text-xs text-amber-900 dark:text-amber-200 leading-relaxed">ExpatEvents provides the infrastructure to organise activities. The voluntary organisers do not represent ExpatEvents as vicarious agents. In the case of gross negligence by the organisers, ExpatEvents therefore does not accept any legal responsibility for resulting damages. Neither ExpatEvents nor the event organisers assume liability for any loss of or damage to personal property, nor shall they be held responsible in the event of financial, physical, or emotional damage.</div>
-                      {submitError && (<div className="flex items-start gap-3 p-4 rounded-2xl bg-destructive/10 border border-destructive/20"><AlertCircle className="w-5 h-5 text-destructive shrink-0 mt-0.5" /><p className="text-destructive text-sm">{submitError}</p></div>)}
+                      {allValues.description && (
+                        <div className="rounded-2xl bg-muted/40 p-5">
+                          <p className="text-xs uppercase tracking-wide text-muted-foreground font-medium mb-2">Description</p>
+                          <p className="text-sm leading-relaxed line-clamp-5">{allValues.description}</p>
+                        </div>
+                      )}
+                      {(allValues.ticketTypes?.length ?? 0) > 0 && (
+                        <div>
+                          <p className="text-xs uppercase tracking-wide text-muted-foreground font-medium mb-2">Tickets</p>
+                          <div className="space-y-2">{allValues.ticketTypes.map((t, i) => (<div key={i} className="flex justify-between items-center bg-muted/30 rounded-xl px-4 py-3 text-sm"><span className="font-medium">{t.name || "Unnamed"}</span><span className="text-muted-foreground">{t.price === 0 ? "Free" : `€${t.price}`} · {t.quantity} available</span></div>))}</div>
+                        </div>
+                      )}
+                      <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-2xl p-5 text-xs text-amber-900 dark:text-amber-200 leading-relaxed">
+                        ExpatEvents provides the infrastructure to organise activities. The voluntary organisers do not represent ExpatEvents as vicarious agents. In the case of gross negligence by the organisers, ExpatEvents therefore does not accept any legal responsibility for resulting damages. Neither ExpatEvents nor the event organisers assume liability for any loss of or damage to personal property, nor shall they be held responsible in the event of financial, physical, or emotional damage.
+                      </div>
+                      {submitError && (
+                        <div className="flex items-start gap-3 p-4 rounded-2xl bg-destructive/10 border border-destructive/20">
+                          <AlertCircle className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
+                          <p className="text-destructive text-sm">{submitError}</p>
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
                 )}
@@ -539,8 +633,14 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
           </div>
 
           <div className="flex gap-3 mt-8">
-            {step > 0 && (<Button type="button" variant="outline" onClick={prevStep} className="flex-1 h-12 rounded-2xl"><ArrowLeft className="w-4 h-4 mr-2" /> Back</Button>)}
-            {step < STEPS.length - 1 ? (<Button type="button" onClick={nextStep} className="flex-1 h-12 rounded-2xl shadow-lg shadow-primary/20">Next <ArrowRight className="w-4 h-4 ml-2" /></Button>) : (<Button type="submit" disabled={createEvent.isPending} className="flex-1 h-12 text-base rounded-2xl shadow-xl shadow-primary/20">{createEvent.isPending ? "Publishing…" : "Publish Event"}</Button>)}
+            {step > 0 && <Button type="button" variant="outline" onClick={prevStep} className="flex-1 h-12 rounded-2xl"><ArrowLeft className="w-4 h-4 mr-2" /> Back</Button>}
+            {step < STEPS.length - 1 ? (
+              <Button type="button" onClick={nextStep} className="flex-1 h-12 rounded-2xl shadow-lg shadow-primary/20">Next <ArrowRight className="w-4 h-4 ml-2" /></Button>
+            ) : (
+              <Button type="submit" disabled={createEvent.isPending} className="flex-1 h-12 text-base rounded-2xl shadow-xl shadow-primary/20">
+                {createEvent.isPending ? "Publishing…" : "Publish Event"}
+              </Button>
+            )}
           </div>
           <p className="text-center text-xs text-muted-foreground mt-4">Step {step + 1} of {STEPS.length}</p>
         </form>
