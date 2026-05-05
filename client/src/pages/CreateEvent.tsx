@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { EVENT_CATEGORIES, EVENT_CATEGORY_VALUES } from "@shared/categories";
-import fromZonedTime from "date-fns-tz/fromZonedTime";
+import { zonedTimeToUtc } from "date-fns-tz";
 import {
   Dialog,
   DialogContent,
@@ -277,7 +277,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
     setSubmitError(null);
     try {
       const moscowDateTime = `${data.dateStr} ${data.time}`;
-      const utcDate = fromZonedTime(moscowDateTime, "Europe/Moscow");
+      const utcDate = zonedTimeToUtc(moscowDateTime, "Europe/Moscow");
       const result = await createEvent.mutateAsync({
         ...data,
         date: utcDate,
