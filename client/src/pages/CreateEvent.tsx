@@ -30,21 +30,21 @@ import { EVENT_CATEGORIES, EVENT_CATEGORY_VALUES } from "@shared/categories";
 
 // ── Category default images (still used as fallback, but images will be uploaded to R2)
 const CATEGORY_DEFAULT_IMAGES: Record<string, string> = {
-  networking:   "https://images.unsplash.com/photo-1511795409834-ef04bbd61622?w=1200&auto=format&fit=crop",
-  tech:         "https://images.unsplash.com/photo-1504384308090-c894fdcc538d?w=1200&auto=format&fit=crop",
-  culture:      "https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=1200&auto=format&fit=crop",
-  food:         "https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=1200&auto=format&fit=crop",
-  sports:       "https://images.unsplash.com/photo-1461896836934-ffe607ba8211?w=1200&auto=format&fit=crop",
-  music:        "https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?w=1200&auto=format&fit=crop",
-  language:     "https://images.unsplash.com/photo-1546410531-bb4caa6b424d?w=1200&auto=format&fit=crop",
-  outdoor:      "https://images.unsplash.com/photo-1533692328991-08159ff19fca?w=1200&auto=format&fit=crop",
-  games:        "https://images.unsplash.com/photo-1493711662062-fa541adb3fc8?w=1200&auto=format&fit=crop",
-  business:     "https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=1200&auto=format&fit=crop",
-  wellness:     "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=1200&auto=format&fit=crop",
-  family:       "https://images.unsplash.com/photo-1478131143081-80f7f84ca84d?w=1200&auto=format&fit=crop",
-  social:       "https://images.unsplash.com/photo-1529543544282-ea669407fca3?w=1200&auto=format&fit=crop",
-  volunteering: "https://images.unsplash.com/photo-1593113598332-cd288d649433?w=1200&auto=format&fit=crop",
-  other:        "https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=1200&auto=format&fit=crop",
+  networking:   "https://images.expatevents.org/defaults/category-networking.jpg",
+  tech:         "https://images.expatevents.org/defaults/category-tech.jpg",
+  culture:      "https://images.expatevents.org/defaults/category-culture.jpg",
+  food:         "https://images.expatevents.org/defaults/category-food.jpg",
+  sports:       "https://images.expatevents.org/defaults/category-sports.jpg",
+  music:        "https://images.expatevents.org/defaults/category-music.jpg",
+  language:     "https://images.expatevents.org/defaults/category-language.jpg",
+  outdoor:      "https://images.expatevents.org/defaults/category-outdoor.jpg",
+  games:        "https://images.expatevents.org/defaults/category-games.jpg",
+  business:     "https://images.expatevents.org/defaults/category-business.jpg",
+  wellness:     "https://images.expatevents.org/defaults/category-wellness.jpg",
+  family:       "https://images.expatevents.org/defaults/category-family.jpg",
+  social:       "https://images.expatevents.org/defaults/category-social.jpg",
+  volunteering: "https://images.expatevents.org/defaults/category-volunteering.jpg",
+  other:        "https://images.expatevents.org/defaults/category-other.jpg",
 };
 
 const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? "https://auth.expatevents.org";
