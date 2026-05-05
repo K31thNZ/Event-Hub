@@ -6,6 +6,35 @@ import { z } from "zod";
 export * from "./models/auth";
 import { users } from "./models/auth";
 
+// ── Groups (must be defined before events) ────────────────────────────────
+export const groups = pgTable("groups", {
+  id:             serial("id").primaryKey(),
+  slug:           text("slug").notNull().unique(),
+  name:           text("name").notNull(),
+  description:    text("description").notNull().default(""),
+  ownerUserId:    varchar("owner_user_id").notNull().references(() => users.id),
+  category:       text("category").notNull().default("social"),
+  imageUrl:       text("image_url"),
+  bannerUrl:      text("banner_url"),
+  visibility:     text("visibility").notNull().default("public"),
+  membershipType: text("membership_type").notNull().default("open"),
+  status:         text("status").notNull().default("active"),
+  createdAt:      timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt:      timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ── Group members ─────────────────────────────────────────────────────────
+export const groupMembers = pgTable("group_members", {
+  id:          serial("id").primaryKey(),
+  groupId:     integer("group_id").notNull().references(() => groups.id, { onDelete: "cascade" }),
+  userId:      varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  role:        text("role").notNull().default("member"),
+  status:      text("status").notNull().default("active"),
+  displayName: text("display_name"),
+  avatarUrl:   text("avatar_url"),
+  joinedAt:    timestamp("joined_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 // ── Events ────────────────────────────────────────────────────────────────
 export const events = pgTable("events", {
   id:           serial("id").primaryKey(),
@@ -73,33 +102,33 @@ export const curatorPicks = pgTable("curator_picks", {
   updatedAt:        timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
-// ── Groups ────────────────────────────────────────────────────────────────
-export const groups = pgTable("groups", {
-  id:             serial("id").primaryKey(),
-  slug:           text("slug").notNull().unique(),
-  name:           text("name").notNull(),
-  description:    text("description").notNull().default(""),
-  ownerUserId:    varchar("owner_user_id").notNull().references(() => users.id),
-  category:       text("category").notNull().default("social"),
-  imageUrl:       text("image_url"),
-  bannerUrl:      text("banner_url"),
-  visibility:     text("visibility").notNull().default("public"),
-  membershipType: text("membership_type").notNull().default("open"),
-  status:         text("status").notNull().default("active"),
-  createdAt:      timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  updatedAt:      timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+// ── Sparks ────────────────────────────────────────────────────────────────
+export const sparks = pgTable("sparks", {
+  id:           serial("id").primaryKey(),
+  senderId:     varchar("sender_id").notNull(),
+  senderDisplayName: text("sender_display_name"),
+  senderAvatarUrl:   text("sender_avatar_url"),
+  title:        text("title").notNull(),
+  description:  text("description").notNull().default(""),
+  activity:     text("activity").notNull(),
+  location:     text("location").notNull(),
+  meetTime:     timestamp("meet_time", { withTimezone: true }).notNull(),
+  filterInterests:   text("filter_interests").array(),
+  filterLanguages:   text("filter_languages").array(),
+  filterMetroLine:   text("filter_metro_line"),
+  maxRespondents:    integer("max_respondents").notNull().default(5),
+  status:       text("status").notNull().default("pending"),
+  expiresAt:    timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt:    timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
-// ── Group members ─────────────────────────────────────────────────────────
-export const groupMembers = pgTable("group_members", {
+export const sparkResponses = pgTable("spark_responses", {
   id:          serial("id").primaryKey(),
-  groupId:     integer("group_id").notNull().references(() => groups.id, { onDelete: "cascade" }),
-  userId:      varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  role:        text("role").notNull().default("member"),
-  status:      text("status").notNull().default("active"),
-  displayName: text("display_name"),
-  avatarUrl:   text("avatar_url"),
-  joinedAt:    timestamp("joined_at", { withTimezone: true }).defaultNow().notNull(),
+  sparkId:     integer("spark_id").notNull().references(() => sparks.id, { onDelete: "cascade" }),
+  responderId: varchar("responder_id").notNull(),
+  status:      text("status").notNull().default("pending"),
+  message:     text("message"),
+  createdAt:   timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 // ── Relations ─────────────────────────────────────────────────────────────
@@ -140,66 +169,13 @@ export const groupMembersRelations = relations(groupMembers, ({ one }) => ({
   user:  one(users,  { fields: [groupMembers.userId],  references: [users.id] }),
 }));
 
-// ═══════════════════════════════════════════════════════════════════════════
-// SPARKS — No FK to users; stores sender info directly
-// ═══════════════════════════════════════════════════════════════════════════
-
-export const sparks = pgTable("sparks", {
-  id:           serial("id").primaryKey(),
-  senderId:     varchar("sender_id").notNull(),              // removed references(users.id)
-
-  // Sender display info (set at creation from auth service)
-  senderDisplayName: text("sender_display_name"),
-  senderAvatarUrl:   text("sender_avatar_url"),
-
-  // What / where / when
-  title:        text("title").notNull(),
-  description:  text("description").notNull().default(""),
-  activity:     text("activity").notNull(),
-  location:     text("location").notNull(),
-  meetTime:     timestamp("meet_time", { withTimezone: true }).notNull(),
-
-  // Audience filters
-  filterInterests:   text("filter_interests").array(),
-  filterLanguages:   text("filter_languages").array(),
-  filterMetroLine:   text("filter_metro_line"),
-  maxRespondents:    integer("max_respondents").notNull().default(5),
-
-  // State
-  status:       text("status").notNull().default("pending"),
-  expiresAt:    timestamp("expires_at", { withTimezone: true }).notNull(),
-  createdAt:    timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
-
-export const sparkResponses = pgTable("spark_responses", {
-  id:          serial("id").primaryKey(),
-  sparkId:     integer("spark_id").notNull().references(() => sparks.id, { onDelete: "cascade" }),
-  responderId: varchar("responder_id").notNull(),              // no FK to users (we don't sync users yet)
-  status:      text("status").notNull().default("pending"),
-  message:     text("message"),
-  createdAt:   timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
-
-// ── Sparks relations ──────────────────────────────────────────────────────
 export const sparksRelations = relations(sparks, ({ many }) => ({
   responses: many(sparkResponses),
-  // no sender relation – sender info is stored flat
 }));
 
 export const sparkResponsesRelations = relations(sparkResponses, ({ one }) => ({
   spark: one(sparks, { fields: [sparkResponses.sparkId], references: [sparks.id] }),
-  // responder relation removed to avoid FK constraint
 }));
-
-// ── Inferred types ─────────────────────────────────────────────────────────
-export type Spark              = typeof sparks.$inferSelect;
-export type SparkResponse      = typeof sparkResponses.$inferSelect;
-
-export type SparkWithResponses = Spark & {
-  responses: (SparkResponse & { responder?: { id: string; displayName?: string | null; avatarUrl?: string | null } })[];
-  responseCount: number;
-  myResponse?: SparkResponse | null;
-};
 
 // ── Insert schemas (other tables unchanged) ─────────────────────────────────
 export const insertEventSchema = createInsertSchema(events, {
@@ -263,6 +239,15 @@ export type GroupWithDetails = Group & {
   events: EventWithTickets[];
   memberCount: number;
   currentUserRole: "owner" | "moderator" | "member" | null;
+};
+
+export type Spark              = typeof sparks.$inferSelect;
+export type SparkResponse      = typeof sparkResponses.$inferSelect;
+
+export type SparkWithResponses = Spark & {
+  responses: (SparkResponse & { responder?: { id: string; displayName?: string | null; avatarUrl?: string | null } })[];
+  responseCount: number;
+  myResponse?: SparkResponse | null;
 };
 
 // ── Request types ─────────────────────────────────────────────────────────
