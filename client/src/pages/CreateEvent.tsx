@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { EVENT_CATEGORIES, EVENT_CATEGORY_VALUES } from "@shared/categories";
+import { zonedTimeToUtc } from "date-fns-tz";
 
 // Category default images (Unsplash fallbacks – will be replaced by user uploads)
 const CATEGORY_DEFAULT_IMAGES: Record<string, string> = {
@@ -220,12 +221,13 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
     if (!user) return;
     setSubmitError(null);
     try {
-      const [hours, minutes] = data.time.split(":").map(Number);
-      const eventDate = new Date(data.dateStr);
-      eventDate.setHours(hours, minutes, 0, 0);
+      // Convert the chosen Moscow date+time to UTC using date-fns-tz
+      const moscowDateTime = `${data.dateStr} ${data.time}`;
+      const utcDate = zonedTimeToUtc(moscowDateTime, "Europe/Moscow");
+
       const result = await createEvent.mutateAsync({
         ...data,
-        date: eventDate,
+        date: utcDate,
         published: true,
         groupId: data.groupId ?? null,
         recurrence: data.recurrence !== "none" ? data.recurrence : null,
