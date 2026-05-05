@@ -1,413 +1,382 @@
 // client/src/pages/LiveMap.tsx
-import { useState, useEffect, useRef, useCallback } from "react";
-import Map, { Marker, NavigationControl, Popup } from "react-map-gl/maplibre";
+import { useState, useRef, useCallback } from "react";
+import Map, { Marker, NavigationControl } from "react-map-gl/maplibre";
 import "maplibre-gl/dist/maplibre-gl.css";
+import { useEvents } from "@/hooks/use-events";
+import { type EventWithTickets } from "@shared/schema";
+import { format } from "date-fns";
+import { Link } from "wouter";
+import { MapPin, ArrowLeft, Ticket, Filter, X, Wifi } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { motion, AnimatePresence } from "framer-motion";
+import { EVENT_CATEGORIES } from "@shared/categories";
 
-// ---- Types ----
-interface Event {
-  id: string | number;
-  title: string;
-  description?: string;
-  category?: string;
-  local_time: string;
-  venue_address: string;
-  lat?: number;
-  lng?: number;
-  source_url?: string;
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+const MAP_STYLE = "https://tiles.stadiamaps.com/styles/alidade_smooth_dark.json";
+const DEFAULT_CENTER = { longitude: 37.6173, latitude: 55.7558, zoom: 11 };
+
+function isHappeningNow(date: string | Date): boolean {
+  const d = new Date(date);
+  const now = new Date();
+  const diff = (d.getTime() - now.getTime()) / 60000;
+  return diff <= 0 && diff >= -120;
 }
 
-interface OnlineEvent {
-  id: string | number;
-  title: string;
-  category?: string;
-  local_time: string;
-  source_url?: string;
+function isStartingSoon(date: string | Date): boolean {
+  const diff = (new Date(date).getTime() - new Date().getTime()) / 60000;
+  return diff > 0 && diff <= 90;
 }
 
-// ---- Constants ----
-const MOSCOW_CENTER: [number, number] = [55.7558, 37.6173];
+function getMinPrice(event: EventWithTickets): string {
+  if (!event.ticketTypes.length) return "Free";
+  const min = Math.min(...event.ticketTypes.map(t => t.price));
+  return min === 0 ? "Free" : `${min} ₽`;
+}
 
-const CATEGORY_COLORS: Record<string, { bg: string; label: string }> = {
-  social:    { bg: "#f97316", label: "Social"    },
-  culture:   { bg: "#8b5cf6", label: "Culture"   },
-  education: { bg: "#3b82f6", label: "Education" },
-  language:  { bg: "#10b981", label: "Language"  },
-  sport:     { bg: "#ef4444", label: "Sport"     },
-  other:     { bg: "#6b7280", label: "Other"     },
+// Map each category value to a brand-adjacent colour (using CSS vars isn't
+// possible inside SVG/canvas, so we use fixed palette tokens)
+const CATEGORY_DOT: Record<string, string> = {
+  social:      "hsl(0 72% 51%)",   // primary-ish red
+  culture:     "hsl(270 60% 55%)",
+  education:   "hsl(213 94% 55%)",
+  language:    "hsl(158 64% 44%)",
+  sports:      "hsl(34 100% 50%)",
+  networking:  "hsl(340 80% 55%)",
+  music:       "hsl(290 70% 55%)",
+  food:        "hsl(25 90% 50%)",
+  wellness:    "hsl(175 60% 45%)",
+  tech:        "hsl(200 80% 50%)",
+  outdoor:     "hsl(85 65% 42%)",
+  other:       "hsl(220 15% 55%)",
 };
 
-const CATEGORY_EMOJI: Record<string, string> = {
-  social:    "🗣️",
-  culture:   "🎭",
-  education: "📚",
-  language:  "💬",
-  sport:     "⚽",
-  other:     "✨",
-};
-
-// ---- Helper functions ----
-function formatTime(isoString?: string): string {
-  if (!isoString) return "";
-  const d = new Date(isoString);
-  return d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Moscow" });
+function dotColor(category?: string | null): string {
+  return CATEGORY_DOT[category ?? "other"] ?? CATEGORY_DOT.other;
 }
 
-function isHappeningNow(isoString?: string): boolean {
-  if (!isoString) return false;
-  const start = new Date(isoString);
-  const now = new Date();
-  const diff = (start.getTime() - now.getTime()) / 60000; // minutes
-  return diff <= 0 && diff >= -120; // started within last 2 hours
-}
+// ── Marker ────────────────────────────────────────────────────────────────────
 
-function isUpcoming(isoString?: string): boolean {
-  if (!isoString) return false;
-  const start = new Date(isoString);
-  const now = new Date();
-  const diff = (start.getTime() - now.getTime()) / 60000;
-  return diff > 0 && diff <= 90; // starts within 90 min
-}
-
-// ---- Custom Marker Component ----
-const CustomMarker = ({ event, onClick }: { event: Event; onClick: () => void }) => {
-  const cat = event.category ?? "other";
-  const color = CATEGORY_COLORS[cat]?.bg ?? "#f97316";
-  const emoji = CATEGORY_EMOJI[cat] ?? "✨";
-  const happening = isHappeningNow(event.local_time);
-  const upcoming = isUpcoming(event.local_time);
+function EventMarker({
+  event,
+  selected,
+  onClick,
+}: {
+  event: EventWithTickets;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  const color = dotColor(event.category);
+  const now   = isHappeningNow(event.date);
+  const soon  = isStartingSoon(event.date);
 
   return (
     <Marker
-      longitude={event.lng!}
-      latitude={event.lat!}
+      longitude={(event as any).lng ?? (event as any).longitude ?? 0}
+      latitude={(event as any).lat ?? (event as any).latitude ?? 0}
       anchor="bottom"
-      onClick={onClick}
+      onClick={e => { e.originalEvent.stopPropagation(); onClick(); }}
     >
-      <div className="relative cursor-pointer group">
-        {/* Pulse animation (only for happening now) */}
-        {happening && (
-          <div
-            className="absolute inset-[-8px] rounded-full animate-ping"
-            style={{ background: `${color}40`, animationDuration: "1.5s" }}
+      <div className="relative cursor-pointer select-none" style={{ transform: selected ? "scale(1.25)" : "scale(1)", transition: "transform 0.2s" }}>
+        {/* Pulse ring for live events */}
+        {now && (
+          <span
+            className="absolute inset-[-6px] rounded-full animate-ping"
+            style={{ background: `${color}35`, animationDuration: "1.8s" }}
           />
         )}
-        {/* Main marker */}
+        {/* Pin shape */}
         <div
-          className="relative w-10 h-10 rounded-full border-2 border-white shadow-lg flex items-center justify-center"
+          className="relative w-9 h-9 border-[2.5px] border-white shadow-lg flex items-center justify-center"
           style={{
             background: color,
-            transform: "rotate(-45deg)",
             borderRadius: "50% 50% 50% 0",
+            transform: "rotate(-45deg)",
+            boxShadow: selected ? `0 0 0 3px ${color}60, 0 4px 16px ${color}50` : `0 2px 8px rgba(0,0,0,0.4)`,
           }}
         >
-          <span className="transform rotate-45 text-lg">{emoji}</span>
+          <span style={{ transform: "rotate(45deg)", fontSize: "15px" }}>
+            {EVENT_CATEGORIES.find(c => c.value === event.category)?.icon ?? "✨"}
+          </span>
         </div>
-        {/* Badge (NOW / SOON) */}
-        {(happening || upcoming) && (
+        {/* Badge */}
+        {(now || soon) && (
           <div
-            className="absolute -top-2 -right-2 px-1.5 py-0.5 rounded-full text-[10px] font-bold text-white whitespace-nowrap"
-            style={{ background: happening ? "#22c55e" : "#f59e0b" }}
+            className="absolute -top-2 -right-2 px-1.5 py-px rounded-full text-[9px] font-bold text-white whitespace-nowrap shadow"
+            style={{ background: now ? "#22c55e" : "#f59e0b" }}
           >
-            {happening ? "NOW" : "SOON"}
+            {now ? "LIVE" : "SOON"}
           </div>
         )}
       </div>
     </Marker>
   );
-};
+}
 
-// ---- Main Component ----
-export default function LiveMap() {
-  const mapRef = useRef<any>(null);
-  const [events, setEvents] = useState<Event[]>([]);
-  const [onlineEvents, setOnlineEvents] = useState<OnlineEvent[]>([]);
-  const [selected, setSelected] = useState<Event | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [dateLabel, setDateLabel] = useState("");
-  const [filter, setFilter] = useState("all");
-  const [showOnline, setShowOnline] = useState(false);
+// ── Event detail panel ────────────────────────────────────────────────────────
 
-  // Fetch events from local backend
-  useEffect(() => {
-    async function fetchEvents() {
-      try {
-        setLoading(true);
-        const res = await fetch("/api/live-map-events");
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        setEvents(data.events || []);
-        setOnlineEvents(data.online_events || []);
-        setDateLabel(data.date || "");
-      } catch (e) {
-        console.error(e);
-        setError("Could not load today's events.");
-      } finally {
-        setLoading(false);
-      }
-    }
-    fetchEvents();
-  }, []);
-
-  // Filter categories
-  const categories = [...new Set(events.map((e) => e.category).filter(Boolean))];
-  const nowCount = events.filter((e) => isHappeningNow(e.local_time)).length;
-  const soonCount = events.filter((e) => isUpcoming(e.local_time)).length;
-
-  // Filtered events for markers
-  const filteredEvents = events.filter((e) => {
-    if (!e.lat || !e.lng) return false;
-    if (filter === "all") return true;
-    if (filter === "now") return isHappeningNow(e.local_time);
-    if (filter === "soon") return isUpcoming(e.local_time);
-    return e.category === filter;
-  });
-
-  const handleMarkerClick = useCallback((event: Event) => {
-    setSelected(event);
-    // Fly to marker
-    if (mapRef.current && event.lat && event.lng) {
-      mapRef.current.flyTo({ center: [event.lng, event.lat], zoom: 15, duration: 700 });
-    }
-  }, []);
-
-  // Map style – dark CartoDB style (or any free style)
-  const MAP_STYLE = "https://tiles.stadiamaps.com/styles/alidade_smooth_dark.json"; // free, no API key
-  // Alternative: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
+function EventPanel({ event, onClose }: { event: EventWithTickets; onClose: () => void }) {
+  const minPrice = getMinPrice(event);
+  const now  = isHappeningNow(event.date);
+  const soon = isStartingSoon(event.date);
+  const color = dotColor(event.category);
 
   return (
-    <div className="h-screen w-full bg-gray-950 flex flex-col overflow-hidden">
-      {/* Header */}
-      <header className="bg-gray-900/95 backdrop-blur border-b border-gray-800 px-4 py-3 flex items-center gap-3 z-20 flex-shrink-0">
-        <a href="/" className="text-gray-400 hover:text-white text-lg transition-colors">
-          ←
-        </a>
+    <motion.div
+      initial={{ y: "100%" }}
+      animate={{ y: 0 }}
+      exit={{ y: "100%" }}
+      transition={{ type: "spring", stiffness: 340, damping: 36 }}
+      className="absolute bottom-0 left-0 right-0 z-30 bg-card border-t border-border rounded-t-3xl shadow-2xl"
+    >
+      {/* Drag handle */}
+      <div className="flex justify-center pt-3 pb-1">
+        <div className="w-10 h-1 rounded-full bg-border" />
+      </div>
+
+      <div className="px-5 pb-7 pt-2 relative">
+        <button
+          onClick={onClose}
+          className="absolute top-2 right-4 w-7 h-7 rounded-full flex items-center justify-center bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors"
+        >
+          <X className="w-4 h-4" />
+        </button>
+
+        {/* Status + category */}
+        <div className="flex items-center gap-2 mb-3 flex-wrap">
+          <Badge variant="secondary" className="capitalize gap-1 text-xs">
+            <span>{EVENT_CATEGORIES.find(c => c.value === event.category)?.icon}</span>
+            {event.category}
+          </Badge>
+          {now && (
+            <span className="flex items-center gap-1 text-xs font-semibold text-green-600 dark:text-green-400">
+              <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
+              Happening now
+            </span>
+          )}
+          {!now && soon && (
+            <span className="text-xs font-semibold text-amber-500">⏳ Starting soon</span>
+          )}
+        </div>
+
+        {/* Title */}
+        <h2 className="text-xl font-display font-bold text-foreground leading-tight mb-1 pr-8">
+          {event.title}
+        </h2>
+
+        {/* Meta */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground mb-3">
+          <span className="flex items-center gap-1">
+            <span>🕐</span>
+            {format(new Date(event.date), "EEE d MMM · h:mm a")}
+          </span>
+          <span className="flex items-center gap-1 truncate">
+            <MapPin className="w-3.5 h-3.5 shrink-0" />
+            {event.venueAddress}, {event.venueCity}
+          </span>
+        </div>
+
+        {event.description && (
+          <p className="text-sm text-muted-foreground leading-relaxed mb-4 line-clamp-2">
+            {event.description}
+          </p>
+        )}
+
+        {/* Price + CTA */}
+        <div className="flex gap-3 items-center mt-1">
+          <div className="flex items-center gap-1.5 text-sm">
+            <Ticket className="w-4 h-4 text-primary" />
+            <span className="font-bold text-foreground">{minPrice}</span>
+          </div>
+          <Button asChild className="flex-1 rounded-xl shadow-lg shadow-primary/20">
+            <Link href={`/events/${event.id}`}>View Event</Link>
+          </Button>
+          {(event as any).lat && (event as any).lng && (
+            <Button
+              variant="outline"
+              size="icon"
+              className="rounded-xl shrink-0"
+              onClick={() => window.open(`https://maps.google.com/?q=${(event as any).lat},${(event as any).lng}`, "_blank")}
+            >
+              <MapPin className="w-4 h-4" />
+            </Button>
+          )}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+// ── Main Page ─────────────────────────────────────────────────────────────────
+
+export default function LiveMap() {
+  const mapRef  = useRef<any>(null);
+  const [selected, setSelected]   = useState<EventWithTickets | null>(null);
+  const [category, setCategory]   = useState("all");
+  const [showFilter, setShowFilter] = useState(false);
+
+  const { data: allEvents, isLoading } = useEvents({ published: true });
+
+  // Only show events that have lat/lng coords
+  const mappableEvents = (allEvents ?? []).filter(
+    e => (e as any).lat != null && (e as any).lng != null && e.published
+  );
+
+  // Online events: published, upcoming, no coords
+  const onlineEvents = (allEvents ?? []).filter(
+    e => e.published && new Date(e.date) >= new Date() && !(e as any).lat
+  );
+
+  // Category filter
+  const filtered = mappableEvents.filter(e =>
+    category === "all" || e.category === category
+  );
+
+  const nowCount  = mappableEvents.filter(e => isHappeningNow(e.date)).length;
+  const soonCount = mappableEvents.filter(e => isStartingSoon(e.date)).length;
+
+  const handleMarkerClick = useCallback((event: EventWithTickets) => {
+    setSelected(event);
+    if (mapRef.current) {
+      mapRef.current.flyTo({
+        center: [(event as any).lng, (event as any).lat],
+        zoom: 15,
+        duration: 600,
+      });
+    }
+  }, []);
+
+  const usedCategories = [...new Set(mappableEvents.map(e => e.category).filter(Boolean))];
+
+  return (
+    <div className="h-[calc(100vh-4rem)] w-full flex flex-col overflow-hidden relative bg-background">
+
+      {/* ── Top bar ── */}
+      <div className="absolute top-0 left-0 right-0 z-20 flex items-center gap-3 px-4 py-3 glass border-b border-border/60">
+        <Button asChild variant="ghost" size="icon" className="rounded-full shrink-0 -ml-1">
+          <Link href="/"><ArrowLeft className="w-5 h-5" /></Link>
+        </Button>
+
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <h1 className="font-bold text-white text-base">🗺️ Live Map</h1>
+            <h1 className="font-display font-bold text-base">Live Map</h1>
             {nowCount > 0 && (
-              <span className="flex items-center gap-1 bg-green-500/20 text-green-400 text-xs px-2 py-0.5 rounded-full border border-green-500/30">
-                <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
-                {nowCount} live now
+              <span className="flex items-center gap-1 bg-green-500/15 text-green-600 dark:text-green-400 text-xs px-2 py-0.5 rounded-full border border-green-500/30 font-semibold">
+                <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
+                {nowCount} live
+              </span>
+            )}
+            {soonCount > 0 && (
+              <span className="text-xs bg-amber-500/15 text-amber-600 dark:text-amber-400 px-2 py-0.5 rounded-full border border-amber-500/30 font-semibold">
+                {soonCount} soon
               </span>
             )}
           </div>
-          <p className="text-xs text-gray-400 truncate">{dateLabel || "Today in Moscow"}</p>
+          <p className="text-xs text-muted-foreground">
+            {isLoading ? "Loading…" : `${filtered.length} event${filtered.length !== 1 ? "s" : ""} on the map`}
+          </p>
         </div>
-        <div className="text-xs text-gray-500">
-          {loading ? "..." : `${events.length + onlineEvents.length} events`}
-        </div>
-      </header>
 
-      {/* Filter bar */}
-      <div className="bg-gray-900/90 border-b border-gray-800 px-3 py-2 flex gap-2 overflow-x-auto scrollbar-hide z-20 flex-shrink-0">
-        {[
-          { key: "all", label: "🗺 All" },
-          { key: "now", label: `🟢 Now${nowCount > 0 ? ` (${nowCount})` : ""}` },
-          { key: "soon", label: `⏳ Soon${soonCount > 0 ? ` (${soonCount})` : ""}` },
-          ...categories.map((c) => ({
-            key: c,
-            label: `${CATEGORY_EMOJI[c] || "✨"} ${CATEGORY_COLORS[c]?.label || c}`,
-          })),
-        ].map(({ key, label }) => (
-          <button
-            key={key}
-            onClick={() => setFilter(key)}
-            className={`flex-shrink-0 text-xs px-3 py-1.5 rounded-full border font-medium transition-all ${
-              filter === key
-                ? "bg-orange-500 border-orange-500 text-white"
-                : "bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-500 hover:text-gray-200"
-            }`}
-          >
-            {label}
-          </button>
-        ))}
+        <Button
+          variant={showFilter ? "default" : "outline"}
+          size="sm"
+          className="rounded-full gap-1.5 shrink-0"
+          onClick={() => setShowFilter(v => !v)}
+        >
+          <Filter className="w-3.5 h-3.5" />
+          {category !== "all" ? EVENT_CATEGORIES.find(c => c.value === category)?.label : "Filter"}
+        </Button>
       </div>
 
-      {/* Map */}
-      <div className="flex-1 relative overflow-hidden">
+      {/* ── Filter dropdown ── */}
+      <AnimatePresence>
+        {showFilter && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            className="absolute top-[3.75rem] left-0 right-0 z-20 px-4 pt-2 pb-3 glass border-b border-border/60 flex flex-wrap gap-2"
+          >
+            {[{ value: "all", label: "All", icon: "🗺️" }, ...EVENT_CATEGORIES.filter(c => usedCategories.includes(c.value))].map(cat => (
+              <button
+                key={cat.value}
+                onClick={() => { setCategory(cat.value); setShowFilter(false); }}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
+                  category === cat.value
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-background border-border text-muted-foreground hover:border-primary/40 hover:text-foreground"
+                }`}
+              >
+                <span>{cat.icon}</span> {cat.label}
+              </button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Map ── */}
+      <div className="flex-1 relative">
         <Map
           ref={mapRef}
-          initialViewState={{
-            longitude: MOSCOW_CENTER[1],
-            latitude: MOSCOW_CENTER[0],
-            zoom: 12,
-          }}
+          initialViewState={DEFAULT_CENTER}
           mapStyle={MAP_STYLE}
           style={{ width: "100%", height: "100%" }}
           attributionControl={false}
+          onClick={() => setSelected(null)}
         >
           <NavigationControl position="bottom-right" />
-          {filteredEvents.map((event) => (
-            <CustomMarker
+          {filtered.map(event => (
+            <EventMarker
               key={event.id}
               event={event}
+              selected={selected?.id === event.id}
               onClick={() => handleMarkerClick(event)}
             />
           ))}
         </Map>
 
         {/* Loading overlay */}
-        {loading && (
-          <div className="absolute inset-0 bg-gray-950 flex items-center justify-center z-10">
+        {isLoading && (
+          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-10">
             <div className="text-center">
-              <div className="w-10 h-10 border-2 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-              <p className="text-gray-400 text-sm">Loading today's map…</p>
+              <div className="w-10 h-10 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+              <p className="text-muted-foreground text-sm">Loading events…</p>
             </div>
           </div>
         )}
 
-        {/* Error */}
-        {error && !loading && (
-          <div className="absolute inset-0 bg-gray-950 flex items-center justify-center z-10">
-            <div className="text-center px-6">
-              <div className="text-4xl mb-3">😕</div>
-              <p className="text-gray-300 font-medium">{error}</p>
-              <button
-                onClick={() => window.location.reload()}
-                className="mt-4 px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium"
-              >
-                Try again
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* No events overlay */}
-        {!loading && !error && events.length === 0 && (
+        {/* No geocoded events */}
+        {!isLoading && filtered.length === 0 && (
           <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
-            <div className="bg-gray-900/90 backdrop-blur rounded-2xl px-6 py-5 text-center mx-6">
+            <div className="glass rounded-2xl px-6 py-5 text-center mx-8 border border-border/60 shadow-xl">
               <div className="text-4xl mb-2">🗓️</div>
-              <p className="text-gray-200 font-semibold">No events on the map today</p>
-              <p className="text-gray-400 text-sm mt-1">Check the online events below ↓</p>
+              <p className="font-semibold text-foreground">No events on the map</p>
+              <p className="text-muted-foreground text-sm mt-1">
+                {category !== "all" ? "Try a different category." : "Events need location data to appear here."}
+              </p>
             </div>
           </div>
         )}
 
-        {/* Online events toggle button */}
-        {!loading && onlineEvents.length > 0 && (
-          <button
-            onClick={() => setShowOnline(!showOnline)}
-            className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 bg-gray-900/95 backdrop-blur border border-gray-700 text-gray-200 text-sm font-medium px-4 py-2 rounded-full shadow-lg hover:border-orange-500 transition-all"
-          >
-            <span className="text-base">💻</span>
-            {onlineEvents.length} online event{onlineEvents.length !== 1 ? "s" : ""} today
-            <span className={`transition-transform ${showOnline ? "rotate-180" : ""}`}>↑</span>
-          </button>
+        {/* Online events pill */}
+        {!isLoading && onlineEvents.length > 0 && !selected && (
+          <Link href="/">
+            <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 glass border border-border/60 text-sm font-medium px-4 py-2 rounded-full shadow-lg hover:border-primary/40 transition-all cursor-pointer">
+              <Wifi className="w-4 h-4 text-primary" />
+              <span>{onlineEvents.length} online event{onlineEvents.length !== 1 ? "s" : ""} — browse all</span>
+            </div>
+          </Link>
         )}
+
+        {/* Event panel */}
+        <AnimatePresence>
+          {selected && (
+            <EventPanel event={selected} onClose={() => setSelected(null)} />
+          )}
+        </AnimatePresence>
       </div>
-
-      {/* Online events drawer */}
-      {showOnline && (
-        <div className="bg-gray-900 border-t border-gray-800 max-h-56 overflow-y-auto z-20 flex-shrink-0">
-          <div className="px-4 py-3 border-b border-gray-800 flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-              💻 Online Events Today
-            </h3>
-            <button onClick={() => setShowOnline(false)} className="text-gray-500 hover:text-white text-lg leading-none">
-              ×
-            </button>
-          </div>
-          <div className="divide-y divide-gray-800">
-            {onlineEvents.map((e) => {
-              const cat = e.category ?? "other";
-              const color = CATEGORY_COLORS[cat]?.bg ?? "#6b7280";
-              return (
-                <div key={e.id} className="px-4 py-3 flex items-center gap-3">
-                  <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: color }} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-white font-medium truncate">{e.title}</p>
-                    <p className="text-xs text-gray-400">{formatTime(e.local_time)} · Online</p>
-                  </div>
-                  {e.source_url && (
-                    <a
-                      href={e.source_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-orange-400 hover:text-orange-300 flex-shrink-0"
-                    >
-                      Details →
-                    </a>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Event detail panel */}
-      {selected && (
-        <div className="absolute bottom-0 left-0 right-0 z-30 bg-gray-900 border-t border-gray-700 rounded-t-2xl shadow-2xl">
-          {/* Drag handle */}
-          <div className="flex justify-center pt-3 pb-1">
-            <div className="w-10 h-1 bg-gray-600 rounded-full" />
-          </div>
-
-          <div className="px-5 pb-6 pt-2">
-            <button
-              onClick={() => setSelected(null)}
-              className="absolute top-4 right-4 w-7 h-7 flex items-center justify-center rounded-full bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700 transition-all text-sm"
-            >
-              ×
-            </button>
-
-            {/* Category badge */}
-            <div className="flex items-center gap-2 mb-3">
-              <span
-                className="text-xs font-semibold px-2.5 py-1 rounded-full text-white"
-                style={{ background: CATEGORY_COLORS[selected.category ?? "other"]?.bg ?? "#6b7280" }}
-              >
-                {CATEGORY_EMOJI[selected.category ?? "other"]} {CATEGORY_COLORS[selected.category ?? "other"]?.label ?? selected.category}
-              </span>
-              {isHappeningNow(selected.local_time) && (
-                <span className="flex items-center gap-1 text-xs text-green-400 font-semibold">
-                  <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
-                  Happening now
-                </span>
-              )}
-              {isUpcoming(selected.local_time) && !isHappeningNow(selected.local_time) && (
-                <span className="text-xs text-amber-400 font-semibold">⏳ Starting soon</span>
-              )}
-            </div>
-
-            <h2 className="text-lg font-bold text-white leading-tight mb-1 pr-8">{selected.title}</h2>
-
-            <div className="flex items-center gap-3 text-sm text-gray-400 mb-3">
-              <span>🕐 {formatTime(selected.local_time)}</span>
-              <span className="text-gray-600">·</span>
-              <span className="truncate">📍 {selected.venue_address}</span>
-            </div>
-
-            {selected.description && (
-              <p className="text-sm text-gray-300 leading-relaxed mb-4 line-clamp-3">{selected.description}</p>
-            )}
-
-            <div className="flex gap-3">
-              {selected.source_url && (
-                <a
-                  href={selected.source_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex-1 bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold py-2.5 rounded-xl text-center transition-colors"
-                >
-                  View Details
-                </a>
-              )}
-              <button
-                onClick={() => {
-                  if (selected.lat && selected.lng) {
-                    window.open(`https://maps.google.com/?q=${selected.lat},${selected.lng}`, "_blank");
-                  }
-                }}
-                className="flex-1 bg-gray-800 hover:bg-gray-700 text-white text-sm font-semibold py-2.5 rounded-xl text-center transition-colors border border-gray-700"
-              >
-                🗺 Open in Maps
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
