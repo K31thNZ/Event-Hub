@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useForm, useFieldArray, Controller, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -32,8 +32,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import Map, { Marker, NavigationControl } from "react-map-gl/maplibre";
-import "maplibre-gl/dist/maplibre-gl.css";
+
+// ── Yandex Maps API key (replace with your own) ──────────────────────────
+const YANDEX_API_KEY = "YOUR_YANDEX_MAPS_API_KEY"; // 👈 insert your actual key
 
 // ── Default images (unchanged) ───────────────────────────────────────────
 const CATEGORY_DEFAULT_IMAGES: Record<string, string> = {
@@ -61,9 +62,7 @@ const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? "https://auth.expatevents.org"
 function moscowToUtc(dateStr: string, timeStr: string): Date {
   const [year, month, day] = dateStr.split("-").map(Number);
   const [hours, minutes] = timeStr.split(":").map(Number);
-  // Create a date in UTC but with the local Moscow wall‑clock values
   const localDate = new Date(Date.UTC(year, month - 1, day, hours, minutes, 0));
-  // Moscow is UTC+3 → subtract 3 hours to get UTC
   const utcDate = new Date(localDate.getTime() - 3 * 60 * 60 * 1000);
   return utcDate;
 }
@@ -137,8 +136,111 @@ async function uploadEventImage(file: File): Promise<string> {
   return data.url;
 }
 
-// Map style (same as LiveMap)
-const MAP_STYLE = "https://tiles.stadiamaps.com/styles/alidade_smooth_dark.json";
+// ── Yandex Map component ──────────────────────────────────────────────
+interface YandexMapPickerProps {
+  lat: number | null;
+  lng: number | null;
+  onLocationSelect: (lat: number, lng: number, address: string, city: string) => void;
+}
+
+function YandexMapPicker({ lat, lng, onLocationSelect }: YandexMapPickerProps) {
+  const mapRef = useRef<HTMLDivElement>(null);
+  const [map, setMap] = useState<any>(null);
+  const [marker, setMarker] = useState<any>(null);
+  const [apiLoaded, setApiLoaded] = useState(false);
+
+  // Load Yandex Maps API
+  useEffect(() => {
+    if (window.ymaps) {
+      setApiLoaded(true);
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = `https://api-maps.yandex.ru/2.1/?apikey=${YANDEX_API_KEY}&lang=en_RU`;
+    script.async = true;
+    script.onload = () => {
+      window.ymaps.ready(() => setApiLoaded(true));
+    };
+    document.head.appendChild(script);
+    return () => {
+      // cleanup not needed
+    };
+  }, []);
+
+  // Initialize map when API is ready and container exists
+  useEffect(() => {
+    if (!apiLoaded || !mapRef.current || map) return;
+    const initMap = () => {
+      const center = [lat ?? 55.7558, lng ?? 37.6173];
+      const zoom = 12;
+      const newMap = new window.ymaps.Map(mapRef.current, {
+        center: center,
+        zoom: zoom,
+        controls: ["zoomControl", "typeSelector"],
+      });
+      setMap(newMap);
+
+      // Add marker
+      const newMarker = new window.ymaps.Placemark(center, {}, {
+        draggable: true,
+        preset: "islands#redIcon",
+      });
+      newMap.geoObjects.add(newMarker);
+      setMarker(newMarker);
+
+      // Click event
+      newMap.events.add("click", async (e: any) => {
+        const coords = e.get("coords");
+        newMarker.geometry.setCoordinates(coords);
+        // Reverse geocode
+        try {
+          const geocodeResult = await window.ymaps.geocode(coords);
+          const firstGeoObject = geocodeResult.geoObjects.get(0);
+          const address = firstGeoObject.getAddressLine();
+          const city = firstGeoObject.getLocalities().length
+            ? firstGeoObject.getLocalities()[0]
+            : "";
+          onLocationSelect(coords[0], coords[1], address, city);
+        } catch (err) {
+          console.error("Yandex reverse geocode error:", err);
+          onLocationSelect(coords[0], coords[1], "", "");
+        }
+      });
+
+      // Drag end event
+      newMarker.events.add("dragend", async () => {
+        const coords = newMarker.geometry.getCoordinates();
+        try {
+          const geocodeResult = await window.ymaps.geocode(coords);
+          const firstGeoObject = geocodeResult.geoObjects.get(0);
+          const address = firstGeoObject.getAddressLine();
+          const city = firstGeoObject.getLocalities().length
+            ? firstGeoObject.getLocalities()[0]
+            : "";
+          onLocationSelect(coords[0], coords[1], address, city);
+        } catch (err) {
+          console.error("Yandex reverse geocode error:", err);
+          onLocationSelect(coords[0], coords[1], "", "");
+        }
+      });
+    };
+    initMap();
+  }, [apiLoaded, lat, lng, onLocationSelect]);
+
+  // Update marker position if lat/lng change externally
+  useEffect(() => {
+    if (marker && lat && lng) {
+      marker.geometry.setCoordinates([lat, lng]);
+      if (map) map.setCenter([lat, lng], 12);
+    }
+  }, [lat, lng, marker, map]);
+
+  if (!apiLoaded) {
+    return <div className="w-full h-full flex items-center justify-center bg-muted rounded-xl">Loading map…</div>;
+  }
+
+  return <div ref={mapRef} className="w-full h-full rounded-xl" />;
+}
 
 export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) {
   const [, setLocation] = useLocation();
@@ -234,39 +336,18 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
   };
   const removeImage = () => setValue("imageUrl", null);
 
-  // ── Map modal helpers ─────────────────────────────────────────────────
-  const handleMapClick = async (event: any) => {
-    const { lng, lat } = event.lngLat;
+  // ── Yandex map handler ─────────────────────────────────────────────────
+  const handleLocationSelect = (lat: number, lng: number, address: string, city: string) => {
     setTempMarkerCoords({ lat, lng });
-    setGeocoding(true);
-    try {
-      const res = await fetch("/api/reverse-geocode", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lat, lng }),
-      });
-      if (res.ok) {
-        const { address, city } = await res.json();
-        setValue("venueAddress", address);
-        setValue("venueCity", city);
-        setValue("lat", lat);
-        setValue("lng", lng);
-      } else {
-        console.error("Reverse geocode failed");
-        // Still set coordinates even if address not found
-        setValue("lat", lat);
-        setValue("lng", lng);
-      }
-    } catch (err) {
-      console.error("Reverse geocode error:", err);
-    } finally {
-      setGeocoding(false);
-    }
+    setValue("venueAddress", address);
+    setValue("venueCity", city);
+    setValue("lat", lat);
+    setValue("lng", lng);
   };
 
   const handleConfirmLocation = () => {
     setMapModalOpen(false);
-    // Coordinates already set inside handleMapClick
+    // coordinates already saved in handleLocationSelect
   };
 
   // Navigation
@@ -287,7 +368,6 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
     if (!user) return;
     setSubmitError(null);
     try {
-      // Convert Moscow wall time to UTC using our custom function
       const utcDate = moscowToUtc(data.dateStr, data.time);
       const result = await createEvent.mutateAsync({
         ...data,
@@ -557,7 +637,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                   </Card>
                 )}
 
-                {/* Step 2: Location & Media (with map picker) */}
+                {/* Step 2: Location & Media (with Yandex map picker) */}
                 {step === 2 && (
                   <Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
                     <div className="bg-primary/5 px-8 py-4 border-b border-border/50">
@@ -568,12 +648,12 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="space-y-2">
                           <Label>Venue Address</Label>
-                          <Input {...register("venueAddress")} className="h-12 rounded-xl" placeholder="Vabaduse väljak 1" />
+                          <Input {...register("venueAddress")} className="h-12 rounded-xl" placeholder="Ulitsa Arbat, 1" />
                           {errors.venueAddress && <p className="text-destructive text-sm">{errors.venueAddress.message}</p>}
                         </div>
                         <div className="space-y-2">
                           <Label>City</Label>
-                          <Input {...register("venueCity")} className="h-12 rounded-xl" placeholder="Tallinn" />
+                          <Input {...register("venueCity")} className="h-12 rounded-xl" placeholder="Moscow" />
                           {errors.venueCity && <p className="text-destructive text-sm">{errors.venueCity.message}</p>}
                         </div>
                       </div>
@@ -619,7 +699,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                   </Card>
                 )}
 
-                {/* Step 3: Tickets (unchanged) */}
+                {/* Step 3: Tickets (currency changed to ₽) */}
                 {step === 3 && (
                   <Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
                     <div className="bg-primary/5 px-8 py-4 border-b border-border/50 flex justify-between items-center">
@@ -631,7 +711,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                         <div key={field.id} className="relative bg-card p-6 rounded-2xl border border-border shadow-sm flex flex-col md:flex-row gap-4 items-start md:items-end">
                           {fields.length > 1 && (<button type="button" onClick={() => remove(idx)} className="absolute top-4 right-4 text-muted-foreground hover:text-destructive"><Trash2 className="w-5 h-5" /></button>)}
                           <div className="flex-1 w-full space-y-2"><Label>Ticket Name</Label><Input {...register(`ticketTypes.${idx}.name`)} placeholder="General Admission" className="h-11 rounded-xl" />{errors.ticketTypes?.[idx]?.name && <p className="text-destructive text-xs">{errors.ticketTypes[idx].name?.message}</p>}</div>
-                          <div className="w-full md:w-28 space-y-2"><Label>Price (€)</Label><Input type="number" {...register(`ticketTypes.${idx}.price`)} className="h-11 rounded-xl" /></div>
+                          <div className="w-full md:w-28 space-y-2"><Label>Price (₽)</Label><Input type="number" {...register(`ticketTypes.${idx}.price`)} className="h-11 rounded-xl" /></div>
                           <div className="w-full md:w-28 space-y-2"><Label>Total Qty</Label><Input type="number" {...register(`ticketTypes.${idx}.quantity`)} className="h-11 rounded-xl" /></div>
                           <div className="w-full md:w-28 space-y-2"><Label>Max / Order</Label><Input type="number" {...register(`ticketTypes.${idx}.maxPerOrder`)} className="h-11 rounded-xl" /></div>
                         </div>
@@ -641,7 +721,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                   </Card>
                 )}
 
-                {/* Step 4: Preview (unchanged) */}
+                {/* Step 4: Preview (currency changed to ₽) */}
                 {step === 4 && (
                   <Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
                     <div className="bg-primary/5 px-8 py-4 border-b border-border/50">
@@ -673,7 +753,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                       {(allValues.ticketTypes?.length ?? 0) > 0 && (
                         <div>
                           <p className="text-xs uppercase tracking-wide text-muted-foreground font-medium mb-2">Tickets</p>
-                          <div className="space-y-2">{allValues.ticketTypes.map((t, i) => (<div key={i} className="flex justify-between items-center bg-muted/30 rounded-xl px-4 py-3 text-sm"><span className="font-medium">{t.name || "Unnamed"}</span><span className="text-muted-foreground">{t.price === 0 ? "Free" : `€${t.price}`} · {t.quantity} available</span></div>))}</div>
+                          <div className="space-y-2">{allValues.ticketTypes.map((t, i) => (<div key={i} className="flex justify-between items-center bg-muted/30 rounded-xl px-4 py-3 text-sm"><span className="font-medium">{t.name || "Unnamed"}</span><span className="text-muted-foreground">{t.price === 0 ? "Free" : `${t.price} ₽`} · {t.quantity} available</span></div>))}</div>
                         </div>
                       )}
                       <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-2xl p-5 text-xs text-amber-900 dark:text-amber-200 leading-relaxed">
@@ -706,35 +786,23 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
         </form>
       </div>
 
-      {/* Map Modal */}
+      {/* Yandex Map Modal */}
       <Dialog open={mapModalOpen} onOpenChange={setMapModalOpen}>
         <DialogContent className="max-w-3xl h-[80vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>Select Event Location</DialogTitle>
           </DialogHeader>
           <div className="flex-1 relative min-h-[300px] rounded-lg overflow-hidden">
-            <Map
-              initialViewState={{
-                longitude: watchedLng ?? 37.6173,
-                latitude: watchedLat ?? 55.7558,
-                zoom: 12,
-              }}
-              mapStyle={MAP_STYLE}
-              onClick={handleMapClick}
-              style={{ width: "100%", height: "100%" }}
-            >
-              <NavigationControl position="top-right" />
-              {tempMarkerCoords && (
-                <Marker longitude={tempMarkerCoords.lng} latitude={tempMarkerCoords.lat}>
-                  <div className="w-6 h-6 bg-red-500 rounded-full border-2 border-white shadow-lg" />
-                </Marker>
-              )}
-            </Map>
+            <YandexMapPicker
+              lat={watchedLat}
+              lng={watchedLng}
+              onLocationSelect={handleLocationSelect}
+            />
           </div>
           <div className="flex justify-end gap-3 mt-4">
             <Button variant="outline" onClick={() => setMapModalOpen(false)}>Cancel</Button>
-            <Button onClick={handleConfirmLocation} disabled={!tempMarkerCoords || geocoding}>
-              {geocoding ? "Loading address…" : "Use this location"}
+            <Button onClick={handleConfirmLocation} disabled={!tempMarkerCoords}>
+              Use this location
             </Button>
           </div>
         </DialogContent>
