@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useEvents } from "@/hooks/use-events";
 import { type EventWithTickets } from "@shared/schema";
 import { format } from "date-fns";
@@ -73,7 +73,7 @@ function dotColor(category?: string | null): string {
   return CATEGORY_DOT[category ?? "other"] ?? CATEGORY_DOT.other;
 }
 
-// Tiny transparent GIF as placeholder image – required by Yandex for custom HTML markers
+// Tiny transparent GIF – required by Yandex for custom HTML markers
 const TRANSPARENT_GIF =
   "data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==";
 
@@ -87,11 +87,17 @@ export default function LiveMap() {
 
   const { data: allEvents, isLoading } = useEvents({ published: true });
 
+  // ── Events that have valid coordinates (will be placed on the map) ──
   const mappableEvents = (allEvents ?? []).filter(
     e => (e as any).lat != null && (e as any).lng != null && e.published
   );
+
+  // ── Genuine online/virtual events (venue address is exactly "Online") ──
   const onlineEvents = (allEvents ?? []).filter(
-    e => e.published && new Date(e.date) >= new Date() && !(e as any).lat
+    e =>
+      e.published &&
+      new Date(e.date) >= new Date() &&
+      e.venueAddress?.toLowerCase() === "online"
   );
 
   const filtered = mappableEvents.filter(e =>
@@ -199,7 +205,7 @@ export default function LiveMap() {
         iconContent: markerHtml,
       }, {
         iconLayout: 'default#imageWithContent',
-        iconImageHref: TRANSPARENT_GIF,      // required to make the container visible
+        iconImageHref: TRANSPARENT_GIF,
         iconImageSize: [40, 40],
         iconImageOffset: [-20, -20],
         iconContentOffset: [-20, -20],
@@ -219,7 +225,6 @@ export default function LiveMap() {
 
   return (
     <div className="h-[calc(100vh-4rem)] w-full flex flex-col overflow-hidden relative bg-background">
-      {/* Global style for pulse */}
       <style>{`
         @keyframes ymap-pulse {
           0% { transform: scale(1); opacity: 0.4; }
@@ -304,7 +309,7 @@ export default function LiveMap() {
           </div>
         )}
 
-        {/* No events */}
+        {/* No events on map */}
         {mapLoaded && !isLoading && filtered.length === 0 && (
           <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
             <div className="glass rounded-2xl px-6 py-5 text-center mx-8 border border-border/60 shadow-xl">
@@ -317,7 +322,7 @@ export default function LiveMap() {
           </div>
         )}
 
-        {/* Online events pill */}
+        {/* Online events pill – only for genuine virtual events */}
         {mapLoaded && !isLoading && onlineEvents.length > 0 && !selected && (
           <Link href="/">
             <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 glass border border-border/60 text-sm font-medium px-4 py-2 rounded-full shadow-lg hover:border-primary/40 transition-all cursor-pointer">
