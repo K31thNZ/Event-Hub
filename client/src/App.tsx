@@ -1,6 +1,7 @@
 // client/src/App.tsx
 import Spark from "@/pages/Spark";
-import LiveMap from "@/pages/LiveMap"; // 👈 added import
+import LiveMap from "@/pages/LiveMap";
+import AdminEventReview from "@/pages/AdminEventReview";
 import { Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -49,6 +50,18 @@ function Router() {
     return <PitchDeck />;
   }
 
+  // Admin routes — full-screen, no Navbar
+  if (location.startsWith("/admin")) {
+    return (
+      <Switch>
+        <Route path="/admin/events">
+          <ProtectedRoute component={AdminEventReview} />
+        </Route>
+        <Route component={NotFound} />
+      </Switch>
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col bg-background font-sans">
       <Navbar />
@@ -58,7 +71,7 @@ function Router() {
           <Route path="/" component={Home} />
           <Route path="/picks" component={Picks} />
           <Route path="/language-exchange" component={LanguageExchange} />
-          <Route path="/live-map" component={LiveMap} /> {/* 👈 new live map route */}
+          <Route path="/live-map" component={LiveMap} />
           <Route path="/profile">
             <ProtectedRoute component={Profile} />
           </Route>
@@ -98,7 +111,7 @@ function Router() {
           <Route path="/sparks">
             <ProtectedRoute component={Spark} />
           </Route>
-          
+
           {/* Fallback */}
           <Route component={NotFound} />
         </Switch>
