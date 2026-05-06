@@ -1,5 +1,5 @@
 import { Link } from "wouter";
-import { Users, Zap } from "lucide-react";
+import { Users, Zap, MapPin } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -28,7 +28,7 @@ export function Navbar() {
   const getInitials = (name: string) => name?.substring(0, 2).toUpperCase() || "U";
   const roleBadge = user?.role ? ROLE_BADGE[user.role] : undefined;
 
-  // 👇 Condition: show Language Exchange only if the user has selected that interest
+  // Condition: show Language Exchange only if the user has selected that interest
   const showLanguageExchange = user?.interests?.includes("language_exchange");
 
   const handleLogin = () => login();
@@ -50,16 +50,25 @@ export function Navbar() {
 
         {/* Desktop Nav */}
         <nav className="hidden md:flex items-center gap-8 font-medium">
+          {/* ── Recommended (picks) – commented out ──
           <Link href="/picks" className="flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors">
             <Sparkles className="w-4 h-4" />
             Recommended
           </Link>
+          */}
+
+          {/* Live Map */}
+          <Link href="/live-map" className="flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors">
+            <MapPin className="w-4 h-4" />
+            Live Map
+          </Link>
+
           <Link href="/groups" className="flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors">
             <Users className="w-4 h-4" />
             Groups
           </Link>
 
-          {/* ⚡ Sparks – only for authenticated users */}
+          {/* Sparks – only for authenticated users */}
           {isAuthenticated && (
             <Link href="/sparks" className="flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors">
               <Zap className="w-4 h-4" />
@@ -169,14 +178,22 @@ export function Navbar() {
               <Button variant="ghost" size="icon"><Menu className="w-6 h-6" /></Button>
             </SheetTrigger>
             <SheetContent side="right" className="flex flex-col gap-6 pt-12">
+              {/* ── Recommended (picks) – commented out ──
               <Link href="/picks" onClick={() => setMobileMenuOpen(false)} className="text-lg font-semibold flex items-center gap-2">
                 <Sparkles className="w-5 h-5 text-primary" /> Recommended
               </Link>
+              */}
+
+              {/* Live Map */}
+              <Link href="/live-map" onClick={() => setMobileMenuOpen(false)} className="text-lg font-semibold flex items-center gap-2">
+                <MapPin className="w-5 h-5 text-primary" /> Live Map
+              </Link>
+
               <Link href="/groups" onClick={() => setMobileMenuOpen(false)} className="text-lg font-semibold flex items-center gap-2">
                 <Users className="w-5 h-5 text-primary" /> Groups
               </Link>
 
-              {/* ⚡ Mobile Sparks link */}
+              {/* Mobile Sparks link */}
               {isAuthenticated && (
                 <Link href="/sparks" onClick={() => setMobileMenuOpen(false)} className="text-lg font-semibold flex items-center gap-2">
                   <Zap className="w-5 h-5 text-primary" /> Sparks
