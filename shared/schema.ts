@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { jsonb, pgTable, text, serial, integer, boolean, timestamp, varchar } from "drizzle-orm/pg-core";
+import { jsonb, pgTable, text, serial, integer, boolean, timestamp, varchar, real } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -50,6 +50,8 @@ export const events = pgTable("events", {
   imageUrl:     text("image_url"),
   published:    boolean("published").default(true).notNull(),
   isPrivate:    boolean("is_private").default(false).notNull(),
+  lat:          real("lat"),               // ✅ latitude (double precision)
+  lng:          real("lng"),               // ✅ longitude (double precision)
   recurrence:      text("recurrence"),
   recurrenceDay:   integer("recurrence_day"),
   recurrenceUntil: timestamp("recurrence_until", { withTimezone: true }),
@@ -177,11 +179,14 @@ export const sparkResponsesRelations = relations(sparkResponses, ({ one }) => ({
   spark: one(sparks, { fields: [sparkResponses.sparkId], references: [sparks.id] }),
 }));
 
-// ── Insert schemas (other tables unchanged) ─────────────────────────────────
+// ── Insert schemas (including lat/lng) ─────────────────────────────────────
 export const insertEventSchema = createInsertSchema(events, {
   organizerId: z.string(),
   date: z.coerce.date(),
-}).omit({ id: true, createdAt: true });
+}).omit({ id: true, createdAt: true }).extend({
+  lat: z.number().optional().nullable(),
+  lng: z.number().optional().nullable(),
+});
 
 export const insertTicketTypeSchema = createInsertSchema(ticketTypes, {
   eventId: z.number(),
@@ -250,7 +255,7 @@ export type SparkWithResponses = Spark & {
   myResponse?: SparkResponse | null;
 };
 
-// ── Request types ─────────────────────────────────────────────────────────
+// ── Request types (now include lat/lng) ────────────────────────────────────
 export type CreateEventRequest = {
   organizerId: string;
   groupId?: number | null;
@@ -266,6 +271,8 @@ export type CreateEventRequest = {
   isPrivate?: boolean;
   recurrence?: "weekly" | "biweekly" | "monthly" | null;
   recurrenceUntil?: Date | string | null;
+  lat?: number | null;
+  lng?: number | null;
   ticketTypes: { name: string; price: number; quantity: number; maxPerOrder: number }[];
 };
 
