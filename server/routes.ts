@@ -1,3 +1,5 @@
+
+import { registerAdminRoutes } from "./admin-routes";
 import { registerGroupRoutes } from "./group-routes";
 import { registerSparkRoutes } from "./spark-routes";
 import { scheduleTicketReminders } from "./ticket-reminders";
@@ -22,6 +24,7 @@ export async function registerRoutes(
   registerPicksRoutes(app);
   registerGroupRoutes(app);
   registerSparkRoutes(app);
+  registerAdminRoutes(app);
 
   // ── Server‑mediated uploads (avatars + event images) ────────────────
   app.use(uploadRouter);
