@@ -511,7 +511,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                           <Controller control={control} name="category" render={({ field }) => (
                             <Select onValueChange={field.onChange} value={field.value}>
                               <SelectTrigger className="h-12 rounded-xl"><SelectValue placeholder="Select a category…" /></SelectTrigger>
-                              <SelectContent>
+                              <SelectContent className="bg-white dark:bg-zinc-900">
                                 {EVENT_CATEGORIES.map(cat => <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>)}
                               </SelectContent>
                             </Select>
@@ -524,7 +524,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                             <Controller control={control} name="category2" render={({ field }) => (
                               <Select onValueChange={v => field.onChange(v === "__none__" ? null : v)} value={field.value ?? "__none__"}>
                                 <SelectTrigger className="h-12 rounded-xl"><SelectValue placeholder="None" /></SelectTrigger>
-                                <SelectContent>
+                                <SelectContent className="bg-white dark:bg-zinc-900">
                                   <SelectItem value="__none__">— None —</SelectItem>
                                   {EVENT_CATEGORIES.filter(c => c.value !== watchedCategory).map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
                                 </SelectContent>
@@ -544,7 +544,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                           <Controller control={control} name="groupId" render={({ field }) => (
                             <Select onValueChange={v => field.onChange(v === "__none__" ? null : parseInt(v))} value={field.value != null ? String(field.value) : "__none__"}>
                               <SelectTrigger className="h-12 rounded-xl"><SelectValue placeholder="No group (public event)" /></SelectTrigger>
-                              <SelectContent>
+                              <SelectContent className="bg-white dark:bg-zinc-900">
                                 <SelectItem value="__none__">— No group (public event) —</SelectItem>
                                 {eligibleGroups.map(g => <SelectItem key={g.id} value={String(g.id)}>{g.name} {g.currentUserRole === "owner" ? "(owner)" : "(moderator)"}</SelectItem>)}
                               </SelectContent>
@@ -581,7 +581,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                           <Controller control={control} name="time" render={({ field }) => (
                             <Select onValueChange={field.onChange} value={field.value}>
                               <SelectTrigger className="h-12 rounded-xl"><SelectValue /></SelectTrigger>
-                              <SelectContent className="max-h-64">
+                              <SelectContent className="max-h-64 bg-white dark:bg-zinc-900">
                                 {TIME_SLOTS.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
                               </SelectContent>
                             </Select>
@@ -596,7 +596,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                             <Controller control={control} name="recurrence" render={({ field }) => (
                               <Select onValueChange={field.onChange} value={field.value}>
                                 <SelectTrigger className="h-12 rounded-xl"><SelectValue placeholder="Does not repeat" /></SelectTrigger>
-                                <SelectContent>
+                                <SelectContent className="bg-white dark:bg-zinc-900">
                                   <SelectItem value="none">Does not repeat</SelectItem>
                                   <SelectItem value="daily">Daily</SelectItem>
                                   <SelectItem value="weekly">Weekly</SelectItem>
@@ -699,7 +699,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                   </Card>
                 )}
 
-                {/* Step 3: Tickets (currency changed to ₽) */}
+                {/* Step 3: Tickets */}
                 {step === 3 && (
                   <Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
                     <div className="bg-primary/5 px-8 py-4 border-b border-border/50 flex justify-between items-center">
@@ -721,7 +721,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                   </Card>
                 )}
 
-                {/* Step 4: Preview (currency changed to ₽) */}
+                {/* Step 4: Preview */}
                 {step === 4 && (
                   <Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
                     <div className="bg-primary/5 px-8 py-4 border-b border-border/50">
