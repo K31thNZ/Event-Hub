@@ -1,9 +1,13 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useEvents } from "@/hooks/use-events";
+import { useSparks, type Spark } from "@/hooks/use-sparks";
 import { type EventWithTickets } from "@shared/schema";
-import { format, addHours } from "date-fns";
+import { format, addHours, isPast } from "date-fns";
 import { Link } from "wouter";
-import { MapPin, ArrowLeft, Ticket, Filter, X, Wifi, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  MapPin, ArrowLeft, Ticket, Filter, X, Wifi,
+  ChevronLeft, ChevronRight, Zap, Clock, Users,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { motion, AnimatePresence } from "framer-motion";
@@ -13,6 +17,8 @@ import { loadYandexMaps } from "@/utils/yandex-maps";
 declare global {
   interface Window { ymaps: any; }
 }
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function isHappeningNow(date: string | Date): boolean {
   const diff = (new Date(date).getTime() - Date.now()) / 60000;
@@ -30,6 +36,8 @@ function getMinPrice(event: EventWithTickets): string {
   return min === 0 ? "Free" : `${min} ₽`;
 }
 
+// ── Colours ───────────────────────────────────────────────────────────────────
+
 const CATEGORY_DOT: Record<string, string> = {
   social:     "hsl(0 72% 51%)",
   culture:    "hsl(270 60% 55%)",
@@ -45,6 +53,10 @@ const CATEGORY_DOT: Record<string, string> = {
   other:      "hsl(220 15% 55%)",
 };
 
+// Spark markers use a fixed purple/violet accent so they're visually distinct
+// from event markers on the map.
+const SPARK_COLOR = "hsl(265 80% 58%)";
+
 function dotColor(category?: string | null): string {
   return CATEGORY_DOT[category ?? "other"] ?? CATEGORY_DOT.other;
 }
@@ -52,55 +64,63 @@ function dotColor(category?: string | null): string {
 const TRANSPARENT_GIF =
   "data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==";
 
-// How many hours to step forward/back with the arrows
 const WINDOW_STEP_HOURS = 6;
 
+// ── Selected item — either an event or a spark ────────────────────────────────
+
+type SelectedItem =
+  | { kind: "event"; data: EventWithTickets }
+  | { kind: "spark"; data: Spark };
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
 export default function LiveMap() {
-  const mapContainerRef = useRef<HTMLDivElement>(null);
-  const mapRef          = useRef<any>(null);
-  const markersRef      = useRef<any[]>([]);          // ← track markers separately
+  const mapContainerRef  = useRef<HTMLDivElement>(null);
+  const mapRef           = useRef<any>(null);
+  const eventMarkersRef  = useRef<any[]>([]);
+  const sparkMarkersRef  = useRef<any[]>([]);
 
-  const [selected,    setSelected]    = useState<EventWithTickets | null>(null);
-  const [category,    setCategory]    = useState("all");
-  const [showFilter,  setShowFilter]  = useState(false);
-  const [showLegend,  setShowLegend]  = useState(false);
-  const [mapLoaded,   setMapLoaded]   = useState(false);
+  const [selected,   setSelected]   = useState<SelectedItem | null>(null);
+  const [category,   setCategory]   = useState("all");
+  const [showFilter, setShowFilter] = useState(false);
+  const [showLegend, setShowLegend] = useState(false);
+  const [mapLoaded,  setMapLoaded]  = useState(false);
 
-  // windowStart: the beginning of the 24-hour window; always >= now
+  // Toggle spark layer on/off
+  const [showSparks, setShowSparks] = useState(true);
+
   const [windowStart, setWindowStart] = useState<Date>(() => new Date());
-
   const windowEnd = addHours(windowStart, 24);
 
-  const shiftWindow = useCallback((direction: "back" | "forward") => {
+  const shiftWindow = useCallback((dir: "back" | "forward") => {
     setWindowStart(prev => {
       const now  = new Date();
-      const next = addHours(prev, direction === "forward" ? WINDOW_STEP_HOURS : -WINDOW_STEP_HOURS);
-      // Floor at now — can't look into the past
+      const next = addHours(prev, dir === "forward" ? WINDOW_STEP_HOURS : -WINDOW_STEP_HOURS);
       return next < now ? now : next;
     });
   }, []);
 
-  const { data: allEvents, isLoading } = useEvents({ published: true });
+  const { data: allEvents, isLoading: eventsLoading } = useEvents({ published: true });
+  const { data: allSparks, isLoading: sparksLoading  } = useSparks();
 
+  const isLoading = eventsLoading || sparksLoading;
   const now = new Date();
 
-  // Events with valid coordinates
+  // ── Event filtering ───────────────────────────────────────────────────────
+
   const mappableEvents = (allEvents ?? []).filter(
     e => (e as any).lat != null && (e as any).lng != null && e.published
   );
 
-  // Within the 24-hour window
   const windowedEvents = mappableEvents.filter(e => {
     const d = new Date(e.date);
     return d >= windowStart && d < windowEnd;
   });
 
-  // Online events for the pill
   const onlineEvents = (allEvents ?? []).filter(
     e => e.published && new Date(e.date) >= now && e.venueAddress?.toLowerCase() === "online"
   );
 
-  // Apply category filter on top of window
   const filtered = windowedEvents.filter(
     e => category === "all" || e.category === category
   );
@@ -108,10 +128,22 @@ export default function LiveMap() {
   const nowCount  = mappableEvents.filter(e => isHappeningNow(e.date)).length;
   const soonCount = mappableEvents.filter(e => isStartingSoon(e.date)).length;
 
-  // Categories present in the windowed (not just filtered) set, for legend + filter
-  const usedCategories = [...new Set(windowedEvents.map(e => e.category).filter(Boolean))] as string[];
+  const usedCategories = [
+    ...new Set(windowedEvents.map(e => e.category).filter(Boolean)),
+  ] as string[];
 
-  // ── Init map ────────────────────────────────────────────────────────────────
+  // ── Spark filtering — only active/pending sparks with coordinates ─────────
+
+  const mappableSparks = (allSparks ?? []).filter(
+    s =>
+      (s as any).lat != null &&
+      (s as any).lng != null &&
+      ["pending", "active"].includes(s.status) &&
+      !isPast(new Date(s.expiresAt))
+  );
+
+  // ── Init map ──────────────────────────────────────────────────────────────
+
   useEffect(() => {
     const apiKey = import.meta.env.VITE_YANDEX_MAPS_API_KEY;
     if (!apiKey) {
@@ -139,25 +171,19 @@ export default function LiveMap() {
     };
   }, []);
 
-  // ── Update markers whenever filter/window/map changes ───────────────────────
+  // ── Event markers ─────────────────────────────────────────────────────────
+
   useEffect(() => {
     if (!mapLoaded || !mapRef.current) return;
     const map = mapRef.current;
 
-    // Safe removal: operate on snapshot, not live iteration
-    markersRef.current.forEach(pm => map.geoObjects.remove(pm));
-    markersRef.current = [];
+    eventMarkersRef.current.forEach(pm => map.geoObjects.remove(pm));
+    eventMarkersRef.current = [];
 
     filtered.forEach(event => {
-      // ── Coordinate swap guard ──────────────────────────────────────────────
-      // Yandex expects [lat, lng]. If lng is clearly a latitude-range value
-      // (−90 to 90) and lat is clearly a longitude-range value (outside ±90),
-      // they were stored swapped — correct it silently.
       let lat = Number((event as any).lat);
       let lng = Number((event as any).lng);
-      if (Math.abs(lat) > 90 && Math.abs(lng) <= 90) {
-        [lat, lng] = [lng, lat];
-      }
+      if (Math.abs(lat) > 90 && Math.abs(lng) <= 90) [lat, lng] = [lng, lat];
       if (!lat || !lng) return;
 
       const color = dotColor(event.category);
@@ -189,7 +215,7 @@ export default function LiveMap() {
 
       const placemark = new window.ymaps.Placemark(
         [lat, lng],
-        { isEventMarker: true, eventId: event.id, iconContent: markerHtml },
+        { iconContent: markerHtml },
         {
           iconLayout: "default#imageWithContent",
           iconImageHref: TRANSPARENT_GIF,
@@ -201,20 +227,86 @@ export default function LiveMap() {
       );
 
       placemark.events.add("click", () => {
-        setSelected(event);
+        setSelected({ kind: "event", data: event });
         map.setCenter([lat, lng], 15, { duration: 300 });
       });
 
       map.geoObjects.add(placemark);
-      markersRef.current.push(placemark);
+      eventMarkersRef.current.push(placemark);
     });
   }, [mapLoaded, filtered]);
 
-  // ── Window label for header ─────────────────────────────────────────────────
-  const isCurrentWindow = windowStart <= new Date(Date.now() + 60_000); // within ~1 min of now
+  // ── Spark markers ─────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!mapLoaded || !mapRef.current) return;
+    const map = mapRef.current;
+
+    sparkMarkersRef.current.forEach(pm => map.geoObjects.remove(pm));
+    sparkMarkersRef.current = [];
+
+    if (!showSparks) return;
+
+    mappableSparks.forEach(spark => {
+      let lat = Number((spark as any).lat);
+      let lng = Number((spark as any).lng);
+      if (Math.abs(lat) > 90 && Math.abs(lng) <= 90) [lat, lng] = [lng, lat];
+      if (!lat || !lng) return;
+
+      // Spark markers are hexagonal/diamond with a ⚡ icon and pulse animation
+      const markerHtml = `
+        <div style="position:relative;width:40px;height:40px;">
+          <div style="position:absolute;inset:-6px;border-radius:50%;background:${SPARK_COLOR}30;animation:ymap-pulse 2s infinite;"></div>
+          <div style="
+            width:36px;height:36px;background:${SPARK_COLOR};
+            border-radius:8px;transform:rotate(45deg);
+            border:2.5px solid white;box-shadow:0 2px 10px rgba(0,0,0,.35);
+            display:flex;align-items:center;justify-content:center;cursor:pointer;
+          ">
+            <span style="transform:rotate(-45deg);font-size:16px;">⚡</span>
+          </div>
+          <div style="
+            position:absolute;top:-8px;right:-10px;
+            background:${SPARK_COLOR};color:white;
+            font-size:9px;font-weight:bold;padding:1px 5px;
+            border-radius:20px;white-space:nowrap;
+            box-shadow:0 1px 3px rgba(0,0,0,.2);pointer-events:none;
+          ">SPARK</div>
+        </div>`;
+
+      const placemark = new window.ymaps.Placemark(
+        [lat, lng],
+        { iconContent: markerHtml },
+        {
+          iconLayout: "default#imageWithContent",
+          iconImageHref: TRANSPARENT_GIF,
+          iconImageSize: [40, 40],
+          iconImageOffset: [-20, -20],
+          iconContentOffset: [-20, -20],
+          hideIconOnBalloonOpen: false,
+        }
+      );
+
+      placemark.events.add("click", () => {
+        setSelected({ kind: "spark", data: spark });
+        map.setCenter([lat, lng], 15, { duration: 300 });
+      });
+
+      map.geoObjects.add(placemark);
+      sparkMarkersRef.current.push(placemark);
+    });
+  }, [mapLoaded, mappableSparks, showSparks]);
+
+  // ── Window label ──────────────────────────────────────────────────────────
+
+  const isCurrentWindow = windowStart <= new Date(Date.now() + 60_000);
   const windowLabel = isCurrentWindow
     ? "Next 24 hours"
     : `${format(windowStart, "EEE d MMM · HH:mm")} → ${format(windowEnd, "HH:mm")}`;
+
+  const totalVisible = filtered.length + (showSparks ? mappableSparks.length : 0);
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="h-[calc(100vh-4rem)] w-full flex flex-col overflow-hidden relative bg-background">
@@ -245,15 +337,21 @@ export default function LiveMap() {
                 {soonCount} soon
               </span>
             )}
+            {showSparks && mappableSparks.length > 0 && (
+              <span className="text-xs px-2 py-0.5 rounded-full border font-semibold"
+                style={{ background: `${SPARK_COLOR}15`, color: SPARK_COLOR, borderColor: `${SPARK_COLOR}40` }}>
+                ⚡ {mappableSparks.length}
+              </span>
+            )}
           </div>
           <p className="text-xs text-muted-foreground">
             {isLoading
               ? "Loading…"
-              : `${filtered.length} event${filtered.length !== 1 ? "s" : ""} · ${windowLabel}`}
+              : `${totalVisible} item${totalVisible !== 1 ? "s" : ""} · ${windowLabel}`}
           </p>
         </div>
 
-        {/* ← window arrows + filter → */}
+        {/* Controls */}
         <div className="flex items-center gap-1 shrink-0">
           <Button
             variant="outline"
@@ -274,6 +372,19 @@ export default function LiveMap() {
           >
             <ChevronRight className="w-4 h-4" />
           </Button>
+
+          {/* Spark layer toggle */}
+          <button
+            onClick={() => setShowSparks(v => !v)}
+            title={showSparks ? "Hide sparks" : "Show sparks"}
+            className={`w-8 h-8 rounded-full flex items-center justify-center border text-sm transition-all ${
+              showSparks
+                ? "border-violet-400 bg-violet-50 dark:bg-violet-900/30 text-violet-600 dark:text-violet-300"
+                : "border-border text-muted-foreground hover:border-violet-400/40"
+            }`}
+          >
+            ⚡
+          </button>
 
           <Button
             variant={showFilter ? "default" : "outline"}
@@ -297,7 +408,7 @@ export default function LiveMap() {
             className="absolute top-[3.75rem] left-0 right-0 z-20 px-4 pt-2 pb-3 glass border-b border-border/60 flex flex-wrap gap-2"
           >
             {[{ value: "all", label: "All", icon: "🗺️" },
-              ...EVENT_CATEGORIES.filter(c => usedCategories.includes(c.value))
+              ...EVENT_CATEGORIES.filter(c => usedCategories.includes(c.value)),
             ].map(cat => (
               <button
                 key={cat.value}
@@ -319,7 +430,7 @@ export default function LiveMap() {
       <div className="flex-1 relative">
         <div ref={mapContainerRef} className="absolute inset-0" style={{ width: "100%", height: "100%" }} />
 
-        {/* Loading overlay */}
+        {/* Loading */}
         {(!mapLoaded || isLoading) && (
           <div className="absolute inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-10">
             <div className="text-center">
@@ -329,12 +440,12 @@ export default function LiveMap() {
           </div>
         )}
 
-        {/* No events */}
-        {mapLoaded && !isLoading && filtered.length === 0 && (
+        {/* Nothing visible */}
+        {mapLoaded && !isLoading && totalVisible === 0 && (
           <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
             <div className="glass rounded-2xl px-6 py-5 text-center mx-8 border border-border/60 shadow-xl">
               <div className="text-4xl mb-2">🗓️</div>
-              <p className="font-semibold text-foreground">No events in this window</p>
+              <p className="font-semibold text-foreground">Nothing in this window</p>
               <p className="text-muted-foreground text-sm mt-1">
                 {category !== "all"
                   ? "Try a different category or shift the time window."
@@ -344,8 +455,8 @@ export default function LiveMap() {
           </div>
         )}
 
-        {/* ── Legend toggle ── */}
-        {mapLoaded && !isLoading && usedCategories.length > 0 && !selected && (
+        {/* ── Legend ── */}
+        {mapLoaded && !isLoading && (usedCategories.length > 0 || mappableSparks.length > 0) && !selected && (
           <div className="absolute bottom-[4.5rem] left-4 z-20">
             <AnimatePresence>
               {showLegend && (
@@ -353,27 +464,43 @@ export default function LiveMap() {
                   initial={{ opacity: 0, y: 6, scale: 0.97 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 6, scale: 0.97 }}
-                  className="mb-2 glass border border-border/60 rounded-2xl px-3 py-2.5 shadow-xl min-w-[160px]"
+                  className="mb-2 glass border border-border/60 rounded-2xl px-3 py-2.5 shadow-xl min-w-[170px]"
                 >
-                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-1">
-                    Categories
-                  </p>
-                  <div className="flex flex-col gap-1.5">
-                    {usedCategories.map(cat => {
-                      const meta = EVENT_CATEGORIES.find(c => c.value === cat);
-                      return (
-                        <div key={cat} className="flex items-center gap-2 px-1">
-                          <span
-                            className="w-2.5 h-2.5 rounded-full shrink-0"
-                            style={{ background: dotColor(cat) }}
-                          />
-                          <span className="text-xs text-foreground capitalize">{meta?.icon} {meta?.label ?? cat}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  {/* Status indicators */}
-                  <div className="border-t border-border/40 mt-2 pt-2 flex flex-col gap-1.5 px-1">
+                  {/* Event categories */}
+                  {usedCategories.length > 0 && (
+                    <>
+                      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-1">
+                        Events
+                      </p>
+                      <div className="flex flex-col gap-1.5 mb-2">
+                        {usedCategories.map(cat => {
+                          const meta = EVENT_CATEGORIES.find(c => c.value === cat);
+                          return (
+                            <div key={cat} className="flex items-center gap-2 px-1">
+                              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: dotColor(cat) }} />
+                              <span className="text-xs text-foreground capitalize">{meta?.icon} {meta?.label ?? cat}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+
+                  {/* Spark layer */}
+                  {showSparks && mappableSparks.length > 0 && (
+                    <>
+                      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-1 border-t border-border/40 pt-2">
+                        Sparks
+                      </p>
+                      <div className="flex items-center gap-2 px-1 mb-2">
+                        <span className="w-2.5 h-2.5 rounded-sm shrink-0 rotate-45" style={{ background: SPARK_COLOR }} />
+                        <span className="text-xs text-foreground">⚡ Impromptu meetup</span>
+                      </div>
+                    </>
+                  )}
+
+                  {/* Status key */}
+                  <div className="border-t border-border/40 mt-1 pt-2 flex flex-col gap-1.5 px-1">
                     <div className="flex items-center gap-2">
                       <span className="w-2.5 h-2.5 rounded-full bg-green-500 shrink-0 animate-pulse" />
                       <span className="text-xs text-foreground">Happening now</span>
@@ -389,13 +516,18 @@ export default function LiveMap() {
             <button
               onClick={() => setShowLegend(v => !v)}
               className={`flex items-center gap-1.5 glass border text-xs font-medium px-3 py-1.5 rounded-full shadow-lg transition-all ${
-                showLegend ? "border-primary/50 text-primary" : "border-border/60 text-muted-foreground hover:text-foreground hover:border-primary/30"
+                showLegend
+                  ? "border-primary/50 text-primary"
+                  : "border-border/60 text-muted-foreground hover:text-foreground hover:border-primary/30"
               }`}
             >
               <span className="flex gap-0.5">
-                {usedCategories.slice(0, 4).map(cat => (
+                {usedCategories.slice(0, 3).map(cat => (
                   <span key={cat} className="w-2 h-2 rounded-full" style={{ background: dotColor(cat) }} />
                 ))}
+                {showSparks && mappableSparks.length > 0 && (
+                  <span className="w-2 h-2 rounded-sm rotate-45" style={{ background: SPARK_COLOR }} />
+                )}
               </span>
               Legend
             </button>
@@ -412,7 +544,7 @@ export default function LiveMap() {
           </Link>
         )}
 
-        {/* ── Event panel ── */}
+        {/* ── Bottom panel — event or spark ── */}
         <AnimatePresence>
           {selected && (
             <motion.div
@@ -425,73 +557,157 @@ export default function LiveMap() {
               <div className="flex justify-center pt-3 pb-1">
                 <div className="w-10 h-1 rounded-full bg-border" />
               </div>
-              <div className="px-5 pb-7 pt-2 relative">
-                <button
-                  onClick={() => setSelected(null)}
-                  className="absolute top-2 right-4 w-7 h-7 rounded-full flex items-center justify-center bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-                <div className="flex items-center gap-2 mb-3 flex-wrap">
-                  <Badge variant="secondary" className="capitalize gap-1 text-xs">
-                    <span>{EVENT_CATEGORIES.find(c => c.value === selected.category)?.icon}</span>
-                    {selected.category}
-                  </Badge>
-                  {isHappeningNow(selected.date) && (
-                    <span className="flex items-center gap-1 text-xs font-semibold text-green-600 dark:text-green-400">
-                      <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
-                      Happening now
-                    </span>
-                  )}
-                  {!isHappeningNow(selected.date) && isStartingSoon(selected.date) && (
-                    <span className="text-xs font-semibold text-amber-500">⏳ Starting soon</span>
-                  )}
-                </div>
-                <h2 className="text-xl font-display font-bold text-foreground leading-tight mb-1 pr-8">
-                  {selected.title}
-                </h2>
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground mb-3">
-                  <span className="flex items-center gap-1">
-                    <span>🕐</span>
-                    {format(new Date(selected.date), "EEE d MMM · h:mm a")}
-                  </span>
-                  {/* ── Location name (new) ── */}
-                  {(selected as any).locationName && (
-                    <span className="flex items-center gap-1 font-medium text-foreground">
-                      <MapPin className="w-3.5 h-3.5 shrink-0 text-primary" />
-                      {(selected as any).locationName}
-                    </span>
-                  )}
-                  <span className="flex items-center gap-1 truncate">
-                    <MapPin className="w-3.5 h-3.5 shrink-0" />
-                    {selected.venueAddress}, {selected.venueCity}
-                  </span>
-                </div>
-                {selected.description && (
-                  <p className="text-sm text-muted-foreground leading-relaxed mb-4 line-clamp-2">
-                    {selected.description}
-                  </p>
-                )}
-                <div className="flex gap-3 items-center mt-1">
-                  <div className="flex items-center gap-1.5 text-sm">
-                    <Ticket className="w-4 h-4 text-primary" />
-                    <span className="font-bold text-foreground">{getMinPrice(selected)}</span>
-                  </div>
-                  <Button asChild className="flex-1 rounded-xl shadow-lg shadow-primary/20">
-                    <Link href={`/events/${selected.id}`}>View Event</Link>
-                  </Button>
-                  {(selected as any).lat && (selected as any).lng && (
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      className="rounded-xl shrink-0"
-                      onClick={() => window.open(`https://maps.google.com/?q=${(selected as any).lat},${(selected as any).lng}`, "_blank")}
+
+              {/* ── Event panel ── */}
+              {selected.kind === "event" && (() => {
+                const event = selected.data;
+                return (
+                  <div className="px-5 pb-7 pt-2 relative">
+                    <button
+                      onClick={() => setSelected(null)}
+                      className="absolute top-2 right-4 w-7 h-7 rounded-full flex items-center justify-center bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors"
                     >
-                      <MapPin className="w-4 h-4" />
-                    </Button>
-                  )}
-                </div>
-              </div>
+                      <X className="w-4 h-4" />
+                    </button>
+                    <div className="flex items-center gap-2 mb-3 flex-wrap">
+                      <Badge variant="secondary" className="capitalize gap-1 text-xs">
+                        <span>{EVENT_CATEGORIES.find(c => c.value === event.category)?.icon}</span>
+                        {event.category}
+                      </Badge>
+                      {isHappeningNow(event.date) && (
+                        <span className="flex items-center gap-1 text-xs font-semibold text-green-600 dark:text-green-400">
+                          <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
+                          Happening now
+                        </span>
+                      )}
+                      {!isHappeningNow(event.date) && isStartingSoon(event.date) && (
+                        <span className="text-xs font-semibold text-amber-500">⏳ Starting soon</span>
+                      )}
+                    </div>
+                    <h2 className="text-xl font-display font-bold text-foreground leading-tight mb-1 pr-8">
+                      {event.title}
+                    </h2>
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground mb-3">
+                      <span className="flex items-center gap-1">
+                        <span>🕐</span>
+                        {format(new Date(event.date), "EEE d MMM · h:mm a")}
+                      </span>
+                      <span className="flex items-center gap-1 truncate">
+                        <MapPin className="w-3.5 h-3.5 shrink-0" />
+                        {event.venueAddress}, {event.venueCity}
+                      </span>
+                    </div>
+                    {event.description && (
+                      <p className="text-sm text-muted-foreground leading-relaxed mb-4 line-clamp-2">
+                        {event.description}
+                      </p>
+                    )}
+                    <div className="flex gap-3 items-center mt-1">
+                      <div className="flex items-center gap-1.5 text-sm">
+                        <Ticket className="w-4 h-4 text-primary" />
+                        <span className="font-bold text-foreground">{getMinPrice(event)}</span>
+                      </div>
+                      <Button asChild className="flex-1 rounded-xl shadow-lg shadow-primary/20">
+                        <Link href={`/events/${event.id}`}>View Event</Link>
+                      </Button>
+                      {(event as any).lat && (event as any).lng && (
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="rounded-xl shrink-0"
+                          onClick={() => window.open(
+                            `https://maps.google.com/?q=${(event as any).lat},${(event as any).lng}`,
+                            "_blank"
+                          )}
+                        >
+                          <MapPin className="w-4 h-4" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* ── Spark panel ── */}
+              {selected.kind === "spark" && (() => {
+                const spark = selected.data;
+                const accepted = spark.responses.filter(r => r.status === "accepted");
+                return (
+                  <div className="px-5 pb-7 pt-2 relative">
+                    <button
+                      onClick={() => setSelected(null)}
+                      className="absolute top-2 right-4 w-7 h-7 rounded-full flex items-center justify-center bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+
+                    {/* Spark badge */}
+                    <div className="flex items-center gap-2 mb-3">
+                      <span
+                        className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-0.5 rounded-full border"
+                        style={{
+                          background: `${SPARK_COLOR}15`,
+                          color: SPARK_COLOR,
+                          borderColor: `${SPARK_COLOR}40`,
+                        }}
+                      >
+                        <Zap className="w-3 h-3" /> Spark
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        by {spark.senderDisplayName ?? "Someone"}
+                      </span>
+                    </div>
+
+                    <h2 className="text-xl font-display font-bold text-foreground leading-tight mb-1 pr-8">
+                      {spark.title}
+                    </h2>
+
+                    {spark.description && (
+                      <p className="text-sm text-muted-foreground leading-relaxed mb-3 line-clamp-3">
+                        {spark.description}
+                      </p>
+                    )}
+
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground mb-4">
+                      <span className="flex items-center gap-1">
+                        <MapPin className="w-3.5 h-3.5 shrink-0" />
+                        {spark.location}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Clock className="w-3.5 h-3.5 shrink-0" />
+                        {format(new Date(spark.meetTime), "EEE d MMM · h:mm a")}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Users className="w-3.5 h-3.5 shrink-0" />
+                        {accepted.length}/{spark.maxRespondents} going
+                      </span>
+                    </div>
+
+                    <div className="flex gap-3 items-center mt-1">
+                      <Button
+                        asChild
+                        className="flex-1 rounded-xl"
+                        style={{ background: SPARK_COLOR }}
+                      >
+                        <Link href="/sparks">View in Sparks</Link>
+                      </Button>
+                      {(spark as any).lat && (spark as any).lng && (
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="rounded-xl shrink-0"
+                          onClick={() => window.open(
+                            `https://maps.google.com/?q=${(spark as any).lat},${(spark as any).lng}`,
+                            "_blank"
+                          )}
+                        >
+                          <MapPin className="w-4 h-4" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
             </motion.div>
           )}
         </AnimatePresence>
