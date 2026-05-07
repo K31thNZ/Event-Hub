@@ -41,6 +41,8 @@ export const api = {
         date:        z.string().or(z.date()),
         venueAddress: z.string().min(1, "Venue Address is required"),
         venueCity:   z.string().min(1, "City is required"),
+        // 🌟 Location name (venue / place)
+        locationName: z.string().optional().nullable(),
         // 📍 Latitude & Longitude
         lat:         z.number().optional().nullable(),
         lng:         z.number().optional().nullable(),
@@ -84,6 +86,8 @@ export const api = {
         date:        z.string().or(z.date()).optional(),
         venueAddress: z.string().min(1).optional(),
         venueCity:   z.string().min(1).optional(),
+        // 🌟 Location name (venue / place)
+        locationName: z.string().optional().nullable(),
         // 📍 Latitude & Longitude
         lat:         z.number().optional().nullable(),
         lng:         z.number().optional().nullable(),
