@@ -35,6 +35,8 @@ export const events = pgTable("events", {
   date:         timestamp("date", { withTimezone: true }).notNull(),
   venueAddress: text("venue_address").notNull(),
   venueCity:    text("venue_city").notNull(),
+  lat:          real("lat"),           // 🌍 latitude (nullable)
+  lng:          real("lng"),           // 🌍 longitude (nullable)
   imageUrl:     text("image_url"),
   published:    boolean("published").default(true).notNull(),
   isPrivate:    boolean("is_private").default(false).notNull(),
@@ -269,6 +271,8 @@ export type CreateEventRequest = {
   date: Date | string;
   venueAddress: string;
   venueCity: string;
+  lat?: number | null;        // 🌍 optional latitude
+  lng?: number | null;        // 🌍 optional longitude
   imageUrl?: string | null;
   published?: boolean;
   isPrivate?: boolean;
