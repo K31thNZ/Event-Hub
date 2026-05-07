@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { motion, AnimatePresence } from "framer-motion";
 import { EVENT_CATEGORIES } from "@shared/categories";
+import { loadYandexMaps } from "@/utils/yandex-maps";
 
 declare global {
   interface Window { ymaps: any; }
