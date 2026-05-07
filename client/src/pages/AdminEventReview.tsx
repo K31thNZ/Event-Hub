@@ -1,11 +1,6 @@
 // client/src/pages/AdminEventReview.tsx
 //
 // Full admin event review UI — designed for the publish/reject workflow.
-// Replaces the basic "events" section inside AdminPanel in Dashboard.tsx.
-// Add the route in App.tsx:
-//   import AdminEventReview from "@/pages/AdminEventReview";
-//   <Route path="/admin/events"><ProtectedRoute component={AdminEventReview} /></Route>
-//
 // Backend endpoints used (all in admin-routes.ts):
 //   GET    /api/admin/events          — all events (published + draft)
 //   PATCH  /api/admin/events/:id      — update any field incl. published
