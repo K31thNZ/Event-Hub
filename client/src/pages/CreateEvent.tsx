@@ -36,7 +36,7 @@ import {
 // ── Yandex Maps API key ───────────────────────────────────────────────────
 const YANDEX_API_KEY = import.meta.env.VITE_YANDEX_MAPS_API_KEY as string;
 
-// ── Shared Yandex Maps loader (singleton – prevents duplicate <script> tags) ──
+// ── Shared Yandex Maps loader (singleton) ─────────────────────────────────
 let _yandexScriptPromise: Promise<void> | null = null;
 
 function loadYandexMaps(apiKey: string): Promise<void> {
@@ -48,7 +48,7 @@ function loadYandexMaps(apiKey: string): Promise<void> {
     script.async = true;
     script.onload = () => window.ymaps.ready(resolve);
     script.onerror = () => {
-      _yandexScriptPromise = null; // allow retry on next mount
+      _yandexScriptPromise = null;
       reject(new Error("Failed to load Yandex Maps script"));
     };
     document.head.appendChild(script);
@@ -56,14 +56,12 @@ function loadYandexMaps(apiKey: string): Promise<void> {
   return _yandexScriptPromise;
 }
 
-// ── Reverse geocode helper: house-level precision with generic fallback ───
+// ── Reverse geocode helper ───────────────────────────────────────────────
 async function reverseGeocode(coords: number[]): Promise<{ address: string; city: string }> {
   try {
-    // Try building-level accuracy first
     let result = await window.ymaps.geocode(coords, { kind: "house", results: 1 });
     let geo = result.geoObjects.get(0);
     if (!geo) {
-      // Fallback to generic search
       result = await window.ymaps.geocode(coords);
       geo = result.geoObjects.get(0);
     }
@@ -99,8 +97,8 @@ const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? "https://auth.expatevents.org"
 
 // ── Moscow → UTC helper (UTC+3, no DST) ──────────────────────────────────
 function moscowToUtc(dateStr: string, timeStr: string): Date {
-  const [year, month, day]   = dateStr.split("-").map(Number);
-  const [hours, minutes]     = timeStr.split(":").map(Number);
+  const [year, month, day] = dateStr.split("-").map(Number);
+  const [hours, minutes] = timeStr.split(":").map(Number);
   const localDate = new Date(Date.UTC(year, month - 1, day, hours, minutes, 0));
   return new Date(localDate.getTime() - 3 * 60 * 60 * 1000);
 }
@@ -117,6 +115,7 @@ const createEventSchema = z.object({
   time:            z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Select a valid time"),
   venueAddress:    z.string().min(3, "Address is required"),
   venueCity:       z.string().min(2, "City is required"),
+  locationName:    z.string().optional().nullable(),   // 🌟 new field
   imageUrl:        z.string().optional().nullable(),
   recurrence:      z.enum(["none", "daily", "weekly", "monthly"]).default("none"),
   recurrenceUntil: z.string().nullable().optional(),
@@ -137,7 +136,7 @@ type FormValues = z.infer<typeof createEventSchema>;
 const STEP_FIELDS: Record<number, (keyof FormValues)[]> = {
   0: ["title", "description", "category"],
   1: ["dateStr", "time", "recurrence", "recurrenceUntil"],
-  2: ["venueAddress", "venueCity"],
+  2: ["venueAddress", "venueCity", "locationName"],
   3: ["ticketTypes"],
   4: [],
 };
@@ -175,12 +174,12 @@ async function uploadEventImage(file: File): Promise<string> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// YandexMapPicker
+// YandexMapPicker (updated to pass location name)
 // ─────────────────────────────────────────────────────────────────────────
 interface YandexMapPickerProps {
   lat: number | null;
   lng: number | null;
-  onLocationSelect: (lat: number, lng: number, address: string, city: string) => void;
+  onLocationSelect: (lat: number, lng: number, address: string, city: string, name?: string) => void;
 }
 
 function YandexMapPicker({ lat, lng, onLocationSelect }: YandexMapPickerProps) {
@@ -204,7 +203,7 @@ function YandexMapPicker({ lat, lng, onLocationSelect }: YandexMapPickerProps) {
       .catch(err => console.error("Yandex Maps load error:", err));
   }, []);
 
-  // ── Init map (runs once after API is ready) ─────────────────────────────
+  // ── Init map (once after API is ready) ──────────────────────────────────
   useEffect(() => {
     if (!apiLoaded || !mapRef.current || map) return;
 
@@ -218,7 +217,6 @@ function YandexMapPicker({ lat, lng, onLocationSelect }: YandexMapPickerProps) {
     });
     setMap(newMap);
 
-    // Draggable marker
     const newMarker = new window.ymaps.Placemark(center, {}, {
       draggable: true,
       preset: "islands#redIcon",
@@ -226,7 +224,7 @@ function YandexMapPicker({ lat, lng, onLocationSelect }: YandexMapPickerProps) {
     newMap.geoObjects.add(newMarker);
     setMarker(newMarker);
 
-    // Click → move marker + reverse geocode
+    // Click → move marker + reverse geocode (no name)
     newMap.events.add("click", async (e: any) => {
       const coords = e.get("coords");
       newMarker.geometry.setCoordinates(coords);
@@ -234,16 +232,16 @@ function YandexMapPicker({ lat, lng, onLocationSelect }: YandexMapPickerProps) {
       onLocationSelect(coords[0], coords[1], address, city);
     });
 
-    // Drag end → reverse geocode new position
+    // Drag end → reverse geocode new position (no name)
     newMarker.events.add("dragend", async () => {
       const coords = newMarker.geometry.getCoordinates();
       const { address, city } = await reverseGeocode(coords);
       onLocationSelect(coords[0], coords[1], address, city);
     });
 
-  }, [apiLoaded]); // intentionally omit lat/lng – marker position is synced below
+  }, [apiLoaded]); // intentional: lat/lng handled separately
 
-  // ── Sync marker when lat/lng change externally ──────────────────────────
+  // Sync marker when lat/lng change externally
   useEffect(() => {
     if (marker && lat && lng) {
       marker.geometry.setCoordinates([lat, lng]);
@@ -261,13 +259,12 @@ function YandexMapPicker({ lat, lng, onLocationSelect }: YandexMapPickerProps) {
     setSearchLoading(true);
     setSearchError(null);
     try {
-      // Bias search to current map viewport center
       const center = map?.getCenter() ?? [55.7558, 37.6173];
       const url = [
         "https://search-maps.yandex.ru/v1/",
         `?text=${encodeURIComponent(query)}`,
         `&type=biz`,
-        `&ll=${center[1]},${center[0]}`,   // API expects lng,lat
+        `&ll=${center[1]},${center[0]}`,
         `&spn=0.1,0.1`,
         `&lang=en_RU`,
         `&apikey=${YANDEX_API_KEY}`,
@@ -286,7 +283,7 @@ function YandexMapPicker({ lat, lng, onLocationSelect }: YandexMapPickerProps) {
           address: f.properties?.description
                 || f.properties?.CompanyMetaData?.address
                 || "",
-          coords: f.geometry?.coordinates, // GeoJSON order: [lng, lat]
+          coords: f.geometry?.coordinates, // [lng, lat]
         }))
       );
       setSearchOpen(true);
@@ -309,18 +306,13 @@ function YandexMapPicker({ lat, lng, onLocationSelect }: YandexMapPickerProps) {
 
   // ── Select a search result ───────────────────────────────────────────────
   const handleSelectResult = async (result: any) => {
-    // GeoJSON coords are [lng, lat] — swap for Yandex [lat, lng]
     const [lngCoord, latCoord] = result.coords;
-
     marker?.geometry.setCoordinates([latCoord, lngCoord]);
     map?.setCenter([latCoord, lngCoord], 16, { duration: 300 });
 
-    // Try to extract city from business address string before falling back to
-    // reverse geocode (avoids an extra network round-trip when address is present)
     let city = "";
     if (result.address) {
-      const parts   = result.address.split(",");
-      // Pick first segment that has no digits and is reasonably long
+      const parts = result.address.split(",");
       const segment = parts.find((p: string) =>
         p.trim().length > 2 && !/\d/.test(p.trim())
       );
@@ -332,7 +324,8 @@ function YandexMapPicker({ lat, lng, onLocationSelect }: YandexMapPickerProps) {
     }
 
     const fullAddress = result.name + (result.address ? `, ${result.address}` : "");
-    onLocationSelect(latCoord, lngCoord, fullAddress, city);
+    // Pass the business name as the location name
+    onLocationSelect(latCoord, lngCoord, fullAddress, city, result.name);
 
     setSearchQuery("");
     setSearchResults([]);
@@ -369,7 +362,6 @@ function YandexMapPicker({ lat, lng, onLocationSelect }: YandexMapPickerProps) {
           )}
         </div>
 
-        {/* Results dropdown */}
         {searchOpen && !searchLoading && searchResults.length > 0 && (
           <div className="mt-1 bg-white border border-border rounded-xl shadow-lg overflow-hidden max-h-48 overflow-y-auto">
             {searchResults.map((r, i) => (
@@ -379,9 +371,7 @@ function YandexMapPicker({ lat, lng, onLocationSelect }: YandexMapPickerProps) {
                 className="w-full text-left px-4 py-2.5 hover:bg-muted/60 transition-colors border-b border-border/20 last:border-none"
               >
                 <p className="text-sm font-medium">{r.name}</p>
-                {r.address && (
-                  <p className="text-xs text-muted-foreground truncate">{r.address}</p>
-                )}
+                {r.address && <p className="text-xs text-muted-foreground truncate">{r.address}</p>}
               </button>
             ))}
           </div>
@@ -400,7 +390,6 @@ function YandexMapPicker({ lat, lng, onLocationSelect }: YandexMapPickerProps) {
         )}
       </div>
 
-      {/* Map container */}
       <div ref={mapRef} className="w-full h-full" />
     </div>
   );
@@ -446,19 +435,21 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
       recurrenceUntil: null,
       lat: null,
       lng: null,
+      locationName: null,   // 🌟 new default
     },
     mode: "onTouched",
   });
 
-  const watchedCategory   = watch("category");
-  const watchedImageUrl   = watch("imageUrl");
-  const watchedGroupId    = watch("groupId");
-  const watchedRecurrence = watch("recurrence");
-  const watchedDateStr    = watch("dateStr");
-  const watchedTime       = watch("time");
-  const watchedLat        = watch("lat");
-  const watchedLng        = watch("lng");
-  const allValues         = watch();
+  const watchedCategory    = watch("category");
+  const watchedImageUrl    = watch("imageUrl");
+  const watchedGroupId     = watch("groupId");
+  const watchedRecurrence  = watch("recurrence");
+  const watchedDateStr     = watch("dateStr");
+  const watchedTime        = watch("time");
+  const watchedLat         = watch("lat");
+  const watchedLng         = watch("lng");
+  const watchedLocationName = watch("locationName");
+  const allValues          = watch();
 
   // Auto-fill cover image on category select
   useEffect(() => {
@@ -499,13 +490,16 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
   };
   const removeImage = () => setValue("imageUrl", null);
 
-  // Map location handler – called from YandexMapPicker on every interaction
-  const handleLocationSelect = (lat: number, lng: number, address: string, city: string) => {
+  // Map location handler – now receives optional name
+  const handleLocationSelect = (lat: number, lng: number, address: string, city: string, name?: string) => {
     setTempMarkerCoords({ lat, lng });
     setValue("venueAddress", address);
     setValue("venueCity",    city);
     setValue("lat", lat);
     setValue("lng", lng);
+    if (name) {
+      setValue("locationName", name);
+    }
   };
 
   const handleConfirmLocation = () => setMapModalOpen(false);
@@ -536,6 +530,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
         groupId:         data.groupId ?? null,
         recurrence:      data.recurrence !== "none" ? data.recurrence : null,
         recurrenceUntil: data.recurrenceUntil ? new Date(data.recurrenceUntil) : null,
+        // locationName already spread from data
       } as any);
       setPublishSuccess({ id: result.id, title: result.title });
       setTimeout(() => setLocation(`/events/${result.id}`), 2000);
@@ -863,6 +858,17 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                       <p className="text-sm text-muted-foreground mt-0.5">Where is your event and how should it look?</p>
                     </div>
                     <CardContent className="p-8 space-y-6">
+                      {/* 🌟 New: Venue Name */}
+                      <div className="space-y-2">
+                        <Label>Venue / Place Name <span className="font-normal text-muted-foreground">(optional)</span></Label>
+                        <Input
+                          {...register("locationName")}
+                          placeholder="e.g. Surf Coffee, Gorky Park"
+                          className="h-12 rounded-xl"
+                        />
+                        {errors.locationName && <p className="text-destructive text-sm">{errors.locationName.message}</p>}
+                      </div>
+
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="space-y-2">
                           <Label>Venue Address</Label>
@@ -1029,9 +1035,11 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                           },
                           {
                             icon: "📍", label: "Location",
-                            value: allValues.venueAddress && allValues.venueCity
-                              ? `${allValues.venueAddress}, ${allValues.venueCity}`
-                              : null,
+                            value: [
+                              allValues.locationName,
+                              allValues.venueAddress,
+                              allValues.venueCity,
+                            ].filter(Boolean).join(", ") || null,
                           },
                         ].filter(r => r.value).map(row => (
                           <div key={row.label} className="flex items-start gap-3 px-5 py-3.5 bg-card">
