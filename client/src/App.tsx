@@ -16,7 +16,6 @@ import { Navbar } from "@/components/layout/Navbar";
 import Home from "@/pages/Home";
 import EventDetails from "@/pages/EventDetails";
 import Dashboard from "@/pages/Dashboard";
-import AdminEventReview from "@/pages/AdminEventReview";
 import CreateEvent from "@/pages/CreateEvent";
 import OrderView from "@/pages/OrderView";
 import Profile from "@/pages/Profile";
