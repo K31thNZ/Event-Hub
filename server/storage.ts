@@ -133,6 +133,8 @@ export class DatabaseStorage implements IStorage {
         date:         new Date(eventData.date),
         venueAddress: eventData.venueAddress,
         venueCity:    eventData.venueCity,
+        lat:          eventData.lat ?? null,           // 🌍 latitude
+        lng:          eventData.lng ?? null,           // 🌍 longitude
         imageUrl:     eventData.imageUrl ?? null,
         published:    eventData.published ?? true,
         isPrivate:    eventData.isPrivate ?? false,
@@ -166,15 +168,24 @@ export class DatabaseStorage implements IStorage {
   async updateEvent(id: number, eventData: UpdateEventRequest): Promise<EventWithTickets> {
     return await db.transaction(async (tx) => {
       const updates: Record<string, any> = {};
-      if (eventData.title       !== undefined) updates.title       = eventData.title;
-      if (eventData.description !== undefined) updates.description = eventData.description;
-      if (eventData.category    !== undefined) updates.category    = eventData.category;
-      if (eventData.category2   !== undefined) updates.category2   = eventData.category2;
-      if (eventData.date        !== undefined) updates.date        = new Date(eventData.date as string);
+      if (eventData.title        !== undefined) updates.title        = eventData.title;
+      if (eventData.description  !== undefined) updates.description  = eventData.description;
+      if (eventData.category     !== undefined) updates.category     = eventData.category;
+      if (eventData.category2    !== undefined) updates.category2    = eventData.category2;
+      if (eventData.date         !== undefined) updates.date         = new Date(eventData.date as string);
       if (eventData.venueAddress !== undefined) updates.venueAddress = eventData.venueAddress;
-      if (eventData.venueCity   !== undefined) updates.venueCity   = eventData.venueCity;
-      if (eventData.imageUrl    !== undefined) updates.imageUrl    = eventData.imageUrl;
-      if (eventData.published   !== undefined) updates.published   = eventData.published;
+      if (eventData.venueCity    !== undefined) updates.venueCity    = eventData.venueCity;
+      if (eventData.lat          !== undefined) updates.lat          = eventData.lat;   // 🌍
+      if (eventData.lng          !== undefined) updates.lng          = eventData.lng;   // 🌍
+      if (eventData.imageUrl     !== undefined) updates.imageUrl     = eventData.imageUrl;
+      if (eventData.published    !== undefined) updates.published    = eventData.published;
+      if (eventData.isPrivate    !== undefined) updates.isPrivate    = eventData.isPrivate;
+      if (eventData.recurrence   !== undefined) updates.recurrence   = eventData.recurrence;
+      if (eventData.recurrenceUntil !== undefined) {
+        updates.recurrenceUntil = eventData.recurrenceUntil
+          ? new Date(eventData.recurrenceUntil as string)
+          : null;
+      }
 
       if (Object.keys(updates).length) {
         await tx.update(events).set(updates).where(eq(events.id, id));
