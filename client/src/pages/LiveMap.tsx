@@ -14,22 +14,6 @@ declare global {
   interface Window { ymaps: any; }
 }
 
-let yandexScriptPromise: Promise<void> | null = null;
-
-function loadYandexMaps(apiKey: string): Promise<void> {
-  if (window.ymaps?.ready) return window.ymaps.ready();
-  if (yandexScriptPromise) return yandexScriptPromise;
-  yandexScriptPromise = new Promise((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = `https://api-maps.yandex.ru/2.1/?apikey=${apiKey}&lang=en_US`;
-    script.async = true;
-    script.onload = () => window.ymaps.ready(resolve);
-    script.onerror = reject;
-    document.head.appendChild(script);
-  });
-  return yandexScriptPromise;
-}
-
 function isHappeningNow(date: string | Date): boolean {
   const diff = (new Date(date).getTime() - Date.now()) / 60000;
   return diff <= 0 && diff >= -120;
