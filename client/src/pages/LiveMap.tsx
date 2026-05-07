@@ -455,6 +455,13 @@ export default function LiveMap() {
                     <span>🕐</span>
                     {format(new Date(selected.date), "EEE d MMM · h:mm a")}
                   </span>
+                  {/* ── Location name (new) ── */}
+                  {(selected as any).locationName && (
+                    <span className="flex items-center gap-1 font-medium text-foreground">
+                      <MapPin className="w-3.5 h-3.5 shrink-0 text-primary" />
+                      {(selected as any).locationName}
+                    </span>
+                  )}
                   <span className="flex items-center gap-1 truncate">
                     <MapPin className="w-3.5 h-3.5 shrink-0" />
                     {selected.venueAddress}, {selected.venueCity}
