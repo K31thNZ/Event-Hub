@@ -405,7 +405,7 @@ export default function LiveMap() {
             initial={{ opacity: 0, y: -8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
-            className="absolute top-[3.75rem] left-0 right-0 z-20 px-4 pt-2 pb-3 glass border-b border-border/60 flex flex-wrap gap-2"
+            className="absolute top-[3.75rem] left-0 right-0 z-20 px-4 pt-2 pb-3 bg-white dark:bg-zinc-900 border-b border-border/60 flex flex-wrap gap-2"
           >
             {[{ value: "all", label: "All", icon: "🗺️" },
               ...EVENT_CATEGORIES.filter(c => usedCategories.includes(c.value)),
@@ -464,7 +464,7 @@ export default function LiveMap() {
                   initial={{ opacity: 0, y: 6, scale: 0.97 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 6, scale: 0.97 }}
-                  className="mb-2 glass border border-border/60 rounded-2xl px-3 py-2.5 shadow-xl min-w-[170px]"
+                  className="mb-2 bg-white dark:bg-zinc-900 border border-border/60 rounded-2xl px-3 py-2.5 shadow-xl min-w-[170px]"
                 >
                   {/* Event categories */}
                   {usedCategories.length > 0 && (
