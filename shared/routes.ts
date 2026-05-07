@@ -41,6 +41,9 @@ export const api = {
         date:        z.string().or(z.date()),
         venueAddress: z.string().min(1, "Venue Address is required"),
         venueCity:   z.string().min(1, "City is required"),
+        // 📍 Latitude & Longitude
+        lat:         z.number().optional().nullable(),
+        lng:         z.number().optional().nullable(),
         imageUrl:    z.string().optional().nullable(),
         published:   z.boolean().default(true),
         // Group + privacy
@@ -81,6 +84,9 @@ export const api = {
         date:        z.string().or(z.date()).optional(),
         venueAddress: z.string().min(1).optional(),
         venueCity:   z.string().min(1).optional(),
+        // 📍 Latitude & Longitude
+        lat:         z.number().optional().nullable(),
+        lng:         z.number().optional().nullable(),
         imageUrl:    z.string().optional().nullable(),
         published:   z.boolean().optional(),
         groupId:     z.number().optional().nullable(),
