@@ -194,7 +194,7 @@ function EditSheet({
               <Controller control={form.control} name="category" render={({ field }) => (
                 <Select onValueChange={field.onChange} value={field.value}>
                   <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="bg-white dark:bg-zinc-900">
                     {EVENT_CATEGORIES.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
@@ -205,7 +205,7 @@ function EditSheet({
               <Controller control={form.control} name="category2" render={({ field }) => (
                 <Select onValueChange={v => field.onChange(v === "__none__" ? null : v)} value={field.value ?? "__none__"}>
                   <SelectTrigger className="h-11 rounded-xl"><SelectValue placeholder="None" /></SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="bg-white dark:bg-zinc-900">
                     <SelectItem value="__none__">— None —</SelectItem>
                     {EVENT_CATEGORIES.filter(c => c.value !== watchedCategory).map(c =>
                       <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
@@ -864,7 +864,7 @@ export default function AdminEventReview() {
               <Tag className="w-3.5 h-3.5 mr-1.5 text-muted-foreground" />
               <SelectValue placeholder="Category" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="bg-white dark:bg-zinc-900">
               <SelectItem value="all">All categories</SelectItem>
               {EVENT_CATEGORIES.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
             </SelectContent>
@@ -876,7 +876,7 @@ export default function AdminEventReview() {
               <ArrowUpDown className="w-3.5 h-3.5 mr-1.5 text-muted-foreground" />
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="bg-white dark:bg-zinc-900">
               <SelectItem value="created_desc">Newest first</SelectItem>
               <SelectItem value="date_asc">Date ↑</SelectItem>
               <SelectItem value="date_desc">Date ↓</SelectItem>
