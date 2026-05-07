@@ -1,952 +1,717 @@
-// client/src/pages/Spark.tsx
-import { useState, useMemo } from "react";
-import { useAuth } from "@/hooks/use-auth";
-import { useForm, Controller } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
-import { format, formatDistanceToNow, isPast } from "date-fns";
-import { motion, AnimatePresence } from "framer-motion";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { useEvents } from "@/hooks/use-events";
+import { useSparks, type Spark } from "@/hooks/use-sparks";
+import { type EventWithTickets } from "@shared/schema";
+import { format, addHours, isPast } from "date-fns";
+import { Link } from "wouter";
 import {
-  Zap, X, MapPin, Clock, Users, Check, Flame, Send, Timer, Trophy,
-  ArrowLeft, ArrowRight,
+  MapPin, ArrowLeft, Ticket, Filter, X, Wifi,
+  ChevronLeft, ChevronRight, Zap, Clock, Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useToast } from "@/hooks/use-toast";
-import {
-  useSparks, useMySparks, useCreateSpark, useCancelSpark,
-  useRespondToSpark, useConfirmSpark, type Spark,
-} from "@/hooks/use-sparks";
+import { motion, AnimatePresence } from "framer-motion";
 import { EVENT_CATEGORIES } from "@shared/categories";
-import { WordBankSelector } from "@/components/WordBankSelector";
+import { loadYandexMaps } from "@/utils/yandex-maps";
 
-// ── Constants ─────────────────────────────────────────────────────────────────
-
-const EXPIRE_OPTIONS = [
-  { value: 30,  label: "30 minutes" },
-  { value: 60,  label: "1 hour" },
-  { value: 120, label: "2 hours" },
-  { value: 240, label: "4 hours" },
-  { value: 480, label: "8 hours" },
-];
-
-const ACTIVITY_CATEGORIES = EVENT_CATEGORIES.filter(c =>
-  ["social", "food", "outdoor", "sports", "culture", "games", "wellness", "networking", "language"].includes(c.value)
-);
-
-const CATEGORY_ICONS: Record<string, string> = {
-  social: "🤝", food: "🍔", outdoor: "🏕️", sports: "⚽",
-  culture: "🎨", games: "🎮", wellness: "🧘", networking: "🔗", language: "🌍",
-};
-
-// ── Word banks ────────────────────────────────────────────────────────────────
-
-const ACTIVITIES = ACTIVITY_CATEGORIES.map(c => ({ value: c.value, label: c.label, icon: CATEGORY_ICONS[c.value] ?? "📌" }));
-
-const LANGUAGE_INTERESTS = [
-  { value: "english",  label: "English",   icon: "🇬🇧" },
-  { value: "russian",  label: "Russian",   icon: "🇷🇺" },
-  { value: "spanish",  label: "Spanish",   icon: "🇪🇸" },
-  { value: "german",   label: "German",    icon: "🇩🇪" },
-  { value: "french",   label: "French",    icon: "🇫🇷" },
-  { value: "chinese",  label: "Chinese",   icon: "🇨🇳" },
-  { value: "italian",  label: "Italian",   icon: "🇮🇹" },
-  { value: "japanese", label: "Japanese",  icon: "🇯🇵" },
-  { value: "korean",   label: "Korean",    icon: "🇰🇷" },
-  { value: "arabic",   label: "Arabic",    icon: "🇸🇦" },
-];
-
-const BUSINESS_GOALS = [
-  { value: "cofounder",   label: "Find a co-founder" },
-  { value: "mentorship",  label: "Seek mentorship" },
-  { value: "job",         label: "Explore job opportunities" },
-  { value: "insights",    label: "Share industry insights" },
-  { value: "collaborate", label: "Build collaborations" },
-  { value: "pitch",       label: "Practice your pitch" },
-];
-
-const INTEREST_GROUPS = [
-  { value: "creative",  label: "Creative workshops" },
-  { value: "games",     label: "Board games & trivia" },
-  { value: "fitness",   label: "Fitness & outdoor" },
-  { value: "books",     label: "Book club" },
-  { value: "music",     label: "Live music" },
-  { value: "photography", label: "Photography walks" },
-  { value: "culture",   label: "Cultural celebrations" },
-];
-
-const VENUE_CATEGORIES = [
-  { value: "cafe",    label: "Café / Coffee Shop", icon: "☕" },
-  { value: "bar",     label: "Bar / Pub",           icon: "🍸" },
-  { value: "park",    label: "Park / Outdoor Space", icon: "🌳" },
-  { value: "museum",  label: "Museum / Gallery",    icon: "🖼️" },
-  { value: "cowork",  label: "Co‑working Space",    icon: "🏢" },
-  { value: "library", label: "Library",             icon: "📚" },
-  { value: "other",   label: "Other (specify)",     icon: "📍" },
-];
-
-const POPULAR_VENUES: Record<string, { value: string; label: string; icon?: string }[]> = {
-  cafe: [
-    { value: "surf",       label: "Surf Coffee", icon: "☕" },
-    { value: "doubleshot", label: "Double B Coffee & Tea", icon: "☕" },
-  ],
-  bar: [
-    { value: "redoctober", label: "Red October area", icon: "🍸" },
-  ],
-  park: [
-    { value: "gorky",      label: "Gorky Park", icon: "🌳" },
-    { value: "vdnkh",      label: "VDNKh", icon: "🌳" },
-  ],
-  museum: [
-    { value: "garage",     label: "Garage Museum", icon: "🖼️" },
-  ],
-  cowork: [
-    { value: "flacon",     label: "Flacon Design Factory", icon: "🏢" },
-  ],
-  library: [
-    { value: "leninlib",   label: "Russian State Library", icon: "📚" },
-  ],
-};
-
-const TITLES = [
-  { value: "coffee",    label: "Coffee & Chat", icon: "☕" },
-  { value: "bite",      label: "Quick Bite",     icon: "🍔" },
-  { value: "stroll",    label: "Park Stroll",    icon: "🌳" },
-  { value: "swap",      label: "Language Swap",  icon: "🌍" },
-  { value: "brainstorm",label: "Brainstorm Walk", icon: "💡" },
-  { value: "drinks",    label: "TGIF Drinks",    icon: "🍹" },
-  { value: "culture",   label: "Culture Fix",    icon: "🎨" },
-  { value: "game",      label: "Game On!",       icon: "🎮" },
-];
-
-// ── Create Spark form schema (still used for validation on submission) ────────
-
-const createSchema = z.object({
-  title:          z.string().min(3, "At least 3 characters").max(100),
-  description:    z.string().max(500).optional(),
-  activity:       z.string().min(1, "Pick an activity"),
-  location:       z.string().min(2, "Enter a location").max(200),
-  meetTimeDate:   z.string().min(1, "Pick a date"),
-  meetTimeHour:   z.string().min(1, "Pick a time"),
-  expiresInMins:  z.number().min(10).max(480),
-  maxRespondents: z.number().min(1).max(20),
-});
-type CreateForm = z.infer<typeof createSchema>;
-
-// ── Status badge config ───────────────────────────────────────────────────────
-
-const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
-  pending:   { label: "Open",      className: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200" },
-  active:    { label: "Active",    className: "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200" },
-  confirmed: { label: "Confirmed", className: "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200" },
-  expired:   { label: "Expired",   className: "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400" },
-  cancelled: { label: "Cancelled", className: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-200" },
-};
-
-// ── Timer countdown ───────────────────────────────────────────────────────────
-
-function TimeLeft({ expiresAt }: { expiresAt: string }) {
-  const expired = isPast(new Date(expiresAt));
-  if (expired) return <span className="text-xs text-muted-foreground">Expired</span>;
-  return (
-    <span className="text-xs font-medium text-amber-600 dark:text-amber-400 flex items-center gap-1">
-      <Timer className="w-3 h-3" />
-      {formatDistanceToNow(new Date(expiresAt), { addSuffix: false })} left
-    </span>
-  );
+declare global {
+  interface Window { ymaps: any; }
 }
 
-// ── Spark card (corrected with flat sender fields) ────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-function SparkCard({
-  spark,
-  currentUserId,
-  onRespond,
-  onCancel,
-  onConfirm,
-}: {
-  spark: Spark;
-  currentUserId: string;
-  onRespond: (spark: Spark, status: "accepted" | "declined") => void;
-  onCancel:  (spark: Spark) => void;
-  onConfirm: (spark: Spark) => void;
-}) {
-  const isMine     = spark.senderId === currentUserId;
-  const myResponse = spark.myResponse;
-  const accepted   = spark.responses.filter(r => r.status === "accepted");
-  const isFull     = accepted.length >= spark.maxRespondents;
-  const isExpiredOrClosed = ["expired", "cancelled", "confirmed"].includes(spark.status);
-  const statusCfg  = STATUS_CONFIG[spark.status] ?? STATUS_CONFIG.pending;
-  const catIcon    = CATEGORY_ICONS[spark.activity] ?? "📌";
-  const catLabel   = ACTIVITY_CATEGORIES.find(c => c.value === spark.activity)?.label ?? spark.activity;
+function isHappeningNow(date: string | Date): boolean {
+  const diff = (new Date(date).getTime() - Date.now()) / 60000;
+  return diff <= 0 && diff >= -120;
+}
 
-  return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1,  y: 0 }}
-      exit={{    opacity: 0,  scale: 0.96 }}
-      className={`bg-card border rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow ${
-        isExpiredOrClosed ? "opacity-60" : ""
-      } ${isMine ? "border-primary/30 ring-1 ring-primary/10" : "border-border"}`}
-    >
-      {/* Header */}
-      <div className="flex items-start justify-between gap-3 mb-3">
-        <div className="flex items-center gap-3 min-w-0">
-          <Avatar className="h-9 w-9 shrink-0">
-            <AvatarImage src={spark.senderAvatarUrl ?? ""} />
-            <AvatarFallback className="bg-primary/10 text-primary text-sm">
-              {(spark.senderDisplayName ?? "?").substring(0, 2).toUpperCase()}
-            </AvatarFallback>
-          </Avatar>
-          <div className="min-w-0">
-            <p className="font-semibold text-sm truncate">
-              {isMine ? "You" : spark.senderDisplayName ?? "Someone"}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {format(new Date(spark.createdAt), "h:mm a")}
-            </p>
+function isStartingSoon(date: string | Date): boolean {
+  const diff = (new Date(date).getTime() - Date.now()) / 60000;
+  return diff > 0 && diff <= 90;
+}
+
+function getMinPrice(event: EventWithTickets): string {
+  if (!event.ticketTypes.length) return "Free";
+  const min = Math.min(...event.ticketTypes.map(t => t.price));
+  return min === 0 ? "Free" : `${min} ₽`;
+}
+
+// ── Colours ───────────────────────────────────────────────────────────────────
+
+const CATEGORY_DOT: Record<string, string> = {
+  social:     "hsl(0 72% 51%)",
+  culture:    "hsl(270 60% 55%)",
+  education:  "hsl(213 94% 55%)",
+  language:   "hsl(158 64% 44%)",
+  sports:     "hsl(34 100% 50%)",
+  networking: "hsl(340 80% 55%)",
+  music:      "hsl(290 70% 55%)",
+  food:       "hsl(25 90% 50%)",
+  wellness:   "hsl(175 60% 45%)",
+  tech:       "hsl(200 80% 50%)",
+  outdoor:    "hsl(85 65% 42%)",
+  other:      "hsl(220 15% 55%)",
+};
+
+// Spark markers use a fixed purple/violet accent so they're visually distinct
+// from event markers on the map.
+const SPARK_COLOR = "hsl(265 80% 58%)";
+
+function dotColor(category?: string | null): string {
+  return CATEGORY_DOT[category ?? "other"] ?? CATEGORY_DOT.other;
+}
+
+const TRANSPARENT_GIF =
+  "data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==";
+
+const WINDOW_STEP_HOURS = 6;
+
+// ── Selected item — either an event or a spark ────────────────────────────────
+
+type SelectedItem =
+  | { kind: "event"; data: EventWithTickets }
+  | { kind: "spark"; data: Spark };
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
+export default function LiveMap() {
+  const mapContainerRef  = useRef<HTMLDivElement>(null);
+  const mapRef           = useRef<any>(null);
+  const eventMarkersRef  = useRef<any[]>([]);
+  const sparkMarkersRef  = useRef<any[]>([]);
+
+  const [selected,   setSelected]   = useState<SelectedItem | null>(null);
+  const [category,   setCategory]   = useState("all");
+  const [showFilter, setShowFilter] = useState(false);
+  const [showLegend, setShowLegend] = useState(false);
+  const [mapLoaded,  setMapLoaded]  = useState(false);
+
+  // Toggle spark layer on/off
+  const [showSparks, setShowSparks] = useState(true);
+
+  const [windowStart, setWindowStart] = useState<Date>(() => new Date());
+  const windowEnd = addHours(windowStart, 24);
+
+  const shiftWindow = useCallback((dir: "back" | "forward") => {
+    setWindowStart(prev => {
+      const now  = new Date();
+      const next = addHours(prev, dir === "forward" ? WINDOW_STEP_HOURS : -WINDOW_STEP_HOURS);
+      return next < now ? now : next;
+    });
+  }, []);
+
+  const { data: allEvents, isLoading: eventsLoading } = useEvents({ published: true });
+  const { data: allSparks, isLoading: sparksLoading  } = useSparks();
+
+  const isLoading = eventsLoading || sparksLoading;
+  const now = new Date();
+
+  // ── Event filtering ───────────────────────────────────────────────────────
+
+  const mappableEvents = (allEvents ?? []).filter(
+    e => (e as any).lat != null && (e as any).lng != null && e.published
+  );
+
+  const windowedEvents = mappableEvents.filter(e => {
+    const d = new Date(e.date);
+    return d >= windowStart && d < windowEnd;
+  });
+
+  const onlineEvents = (allEvents ?? []).filter(
+    e => e.published && new Date(e.date) >= now && e.venueAddress?.toLowerCase() === "online"
+  );
+
+  const filtered = windowedEvents.filter(
+    e => category === "all" || e.category === category
+  );
+
+  const nowCount  = mappableEvents.filter(e => isHappeningNow(e.date)).length;
+  const soonCount = mappableEvents.filter(e => isStartingSoon(e.date)).length;
+
+  const usedCategories = [
+    ...new Set(windowedEvents.map(e => e.category).filter(Boolean)),
+  ] as string[];
+
+  // ── Spark filtering — only active/pending sparks with coordinates ─────────
+
+  const mappableSparks = (allSparks ?? []).filter(
+    s =>
+      (s as any).lat != null &&
+      (s as any).lng != null &&
+      ["pending", "active"].includes(s.status) &&
+      !isPast(new Date(s.expiresAt))
+  );
+
+  // ── Init map ──────────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    const apiKey = import.meta.env.VITE_YANDEX_MAPS_API_KEY;
+    if (!apiKey) {
+      console.error("Yandex Maps API key missing. Add VITE_YANDEX_MAPS_API_KEY to .env");
+      return;
+    }
+    loadYandexMaps(apiKey)
+      .then(() => {
+        if (!mapContainerRef.current || mapRef.current) return;
+        const mapInstance = new window.ymaps.Map(mapContainerRef.current, {
+          center: [55.7558, 37.6173],
+          zoom: 11,
+          controls: ["zoomControl", "typeSelector", "fullscreenControl"],
+        });
+        mapRef.current = mapInstance;
+        mapInstance.controls.add(
+          new window.ymaps.control.GeolocationControl({ options: { float: "right" } })
+        );
+        setMapLoaded(true);
+      })
+      .catch(err => console.error("Failed to load Yandex Maps:", err));
+
+    return () => {
+      if (mapRef.current) { mapRef.current.destroy(); mapRef.current = null; }
+    };
+  }, []);
+
+  // ── Event markers ─────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!mapLoaded || !mapRef.current) return;
+    const map = mapRef.current;
+
+    eventMarkersRef.current.forEach(pm => map.geoObjects.remove(pm));
+    eventMarkersRef.current = [];
+
+    filtered.forEach(event => {
+      let lat = Number((event as any).lat);
+      let lng = Number((event as any).lng);
+      if (Math.abs(lat) > 90 && Math.abs(lng) <= 90) [lat, lng] = [lng, lat];
+      if (!lat || !lng) return;
+
+      const color = dotColor(event.category);
+      const live  = isHappeningNow(event.date);
+      const soon  = isStartingSoon(event.date);
+      const icon  = EVENT_CATEGORIES.find(c => c.value === event.category)?.icon ?? "✨";
+
+      const markerHtml = `
+        <div style="position:relative;width:40px;height:40px;">
+          ${live ? `<div style="position:absolute;inset:-6px;border-radius:50%;background:${color}35;animation:ymap-pulse 1.8s infinite;"></div>` : ""}
+          <div style="
+            width:36px;height:36px;background:${color};
+            border-radius:50% 50% 50% 0;transform:rotate(-45deg);
+            border:2.5px solid white;box-shadow:0 2px 8px rgba(0,0,0,.4);
+            display:flex;align-items:center;justify-content:center;cursor:pointer;
+          ">
+            <span style="transform:rotate(45deg);font-size:15px;">${icon}</span>
           </div>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Badge className={`text-xs px-2 py-0.5 rounded-full border-0 font-medium ${statusCfg.className}`}>
-            {statusCfg.label}
-          </Badge>
-          {isMine && !isExpiredOrClosed && (
-            <button
-              onClick={() => onCancel(spark)}
-              className="text-muted-foreground hover:text-destructive transition-colors"
-              title="Cancel spark"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-      </div>
+          ${(live || soon) ? `
+            <div style="
+              position:absolute;top:-8px;right:-8px;
+              background:${live ? "#22c55e" : "#f59e0b"};color:white;
+              font-size:9px;font-weight:bold;padding:1px 6px;
+              border-radius:20px;white-space:nowrap;
+              box-shadow:0 1px 3px rgba(0,0,0,.2);pointer-events:none;
+            ">${live ? "LIVE" : "SOON"}</div>
+          ` : ""}
+        </div>`;
 
-      {/* Title */}
-      <div className="flex items-start gap-2 mb-3">
-        <span className="text-2xl leading-none mt-0.5">{catIcon}</span>
-        <div>
-          <h3 className="font-bold text-base leading-snug">{spark.title}</h3>
-          {spark.description && (
-            <p className="text-sm text-muted-foreground mt-0.5 line-clamp-2">{spark.description}</p>
-          )}
-        </div>
-      </div>
+      const placemark = new window.ymaps.Placemark(
+        [lat, lng],
+        { iconContent: markerHtml },
+        {
+          iconLayout: "default#imageWithContent",
+          iconImageHref: TRANSPARENT_GIF,
+          iconImageSize: [40, 40],
+          iconImageOffset: [-20, -20],
+          iconContentOffset: [-20, -20],
+          hideIconOnBalloonOpen: false,
+        }
+      );
 
-      {/* Meta */}
-      <div className="flex flex-wrap gap-3 text-sm text-muted-foreground mb-4">
-        <span className="flex items-center gap-1.5">
-          <MapPin className="w-3.5 h-3.5 shrink-0" />
-          {spark.location}
-        </span>
-        <span className="flex items-center gap-1.5">
-          <Clock className="w-3.5 h-3.5 shrink-0" />
-          {format(new Date(spark.meetTime), "MMM d · h:mm a")}
-        </span>
-        <span className="flex items-center gap-1.5">
-          <Users className="w-3.5 h-3.5 shrink-0" />
-          {accepted.length}/{spark.maxRespondents} going
-        </span>
-      </div>
-
-      {/* Respondent avatars (anonymous for now) */}
-      {accepted.length > 0 && (
-        <div className="flex items-center gap-1.5 mb-4">
-          <div className="flex -space-x-2">
-            {accepted.slice(0, 5).map(r => (
-              <Avatar key={r.id} className="h-6 w-6 ring-2 ring-background">
-                <AvatarImage src={""} />
-                <AvatarFallback className="text-[10px] bg-gray-300 text-gray-600">
-                  ?
-                </AvatarFallback>
-              </Avatar>
-            ))}
-          </div>
-          {accepted.length > 5 && (
-            <span className="text-xs text-muted-foreground">+{accepted.length - 5} more</span>
-          )}
-        </div>
-      )}
-
-      {/* Footer: expiry + actions */}
-      <div className="flex items-center justify-between gap-3">
-        <TimeLeft expiresAt={spark.expiresAt} />
-
-        <div className="flex items-center gap-2">
-          {isMine && spark.status === "active" && accepted.length > 0 && (
-            <Button
-              size="sm"
-              className="rounded-full h-8 px-3 text-xs gap-1.5"
-              onClick={() => onConfirm(spark)}
-            >
-              <Trophy className="w-3.5 h-3.5" /> Confirm group
-            </Button>
-          )}
-
-          {!isMine && !isExpiredOrClosed && (
-            myResponse?.status === "accepted" ? (
-              <div className="flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400 font-medium">
-                <Check className="w-3.5 h-3.5" /> You're in!
-                <button
-                  onClick={() => onRespond(spark, "declined")}
-                  className="text-muted-foreground hover:text-destructive text-xs underline ml-1"
-                >
-                  Undo
-                </button>
-              </div>
-            ) : myResponse?.status === "declined" ? (
-              <button
-                onClick={() => onRespond(spark, "accepted")}
-                className="text-xs text-muted-foreground hover:text-primary underline"
-              >
-                Change to accept
-              </button>
-            ) : (
-              <div className="flex items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={isFull}
-                  className="rounded-full h-8 px-3 text-xs gap-1.5 border-green-500 text-green-700 hover:bg-green-50 dark:text-green-400 dark:hover:bg-green-900/20"
-                  onClick={() => onRespond(spark, "accepted")}
-                >
-                  <Zap className="w-3.5 h-3.5" />
-                  {isFull ? "Full" : "I'm in"}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="rounded-full h-8 px-3 text-xs text-muted-foreground"
-                  onClick={() => onRespond(spark, "declined")}
-                >
-                  Pass
-                </Button>
-              </div>
-            )
-          )}
-
-          {spark.status === "confirmed" && (
-            <span className="text-xs text-blue-600 dark:text-blue-400 font-medium flex items-center gap-1">
-              <Check className="w-3.5 h-3.5" /> Meet confirmed
-            </span>
-          )}
-        </div>
-      </div>
-    </motion.div>
-  );
-}
-
-// ── Confirm respondents dialog (with anonymous avatars) ───────────────────────
-
-function ConfirmDialog({
-  spark, open, onClose,
-}: { spark: Spark | null; open: boolean; onClose: () => void }) {
-  const confirmSpark = useConfirmSpark();
-  const { toast }    = useToast();
-  const [selected, setSelected] = useState<string[]>([]);
-
-  const accepted = spark?.responses.filter(r => r.status === "accepted") ?? [];
-
-  const toggle = (id: string) =>
-    setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
-
-  const handleConfirm = async () => {
-    if (!spark || selected.length === 0) return;
-    try {
-      await confirmSpark.mutateAsync({ sparkId: spark.id, responderIds: selected });
-      toast({ title: "Spark confirmed! 🎉", description: `${selected.length} people confirmed for your meetup.` });
-      onClose();
-    } catch (err: any) {
-      toast({ title: "Failed", description: err.message, variant: "destructive" });
-    }
-  };
-
-  return (
-    <AlertDialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Confirm your group</AlertDialogTitle>
-          <AlertDialogDescription>
-            Select who's joining you for "{spark?.title}". Others will be notified they missed out.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <div className="space-y-2 max-h-64 overflow-y-auto py-2">
-          {accepted.length === 0 && (
-            <p className="text-sm text-muted-foreground text-center py-4">No accepted responses yet.</p>
-          )}
-          {accepted.map(r => (
-            <button
-              key={r.id}
-              onClick={() => toggle(r.responderId)}
-              className={`w-full flex items-center gap-3 p-3 rounded-xl transition-colors text-left ${
-                selected.includes(r.responderId)
-                  ? "bg-primary/10 border border-primary/30"
-                  : "bg-muted/40 hover:bg-muted"
-              }`}
-            >
-              <Avatar className="h-8 w-8 shrink-0">
-                <AvatarImage src={""} />
-                <AvatarFallback className="text-xs bg-gray-300 text-gray-600">
-                  ?
-                </AvatarFallback>
-              </Avatar>
-              <span className="flex-1 font-medium text-sm">Member</span>
-              {r.message && <span className="text-xs text-muted-foreground italic truncate max-w-[100px]">"{r.message}"</span>}
-              {selected.includes(r.responderId) && <Check className="w-4 h-4 text-primary shrink-0" />}
-            </button>
-          ))}
-        </div>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            disabled={selected.length === 0 || confirmSpark.isPending}
-            onClick={handleConfirm}
-          >
-            {confirmSpark.isPending ? "Confirming…" : `Confirm ${selected.length > 0 ? `(${selected.length})` : ""}`}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-  );
-}
-
-// ── Updated CreateSparkSheet with word‑bank steps ─────────────────────────────
-
-function CreateSparkSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const createSpark = useCreateSpark();
-  const { toast }   = useToast();
-  const [step, setStep] = useState(0);
-
-  // Step states
-  const [activityChip, setActivityChip] = useState<string[]>([]);
-  const [languageRoles, setLanguageRoles] = useState<string[]>([]);
-  const [selectedLangs, setSelectedLangs] = useState<string[]>([]);
-  const [proficiency, setProficiency] = useState<string[]>([]);
-  const [businessGoals, setBusinessGoals] = useState<string[]>([]);
-  const [interestChips, setInterestChips] = useState<string[]>([]);
-  const [venueCategory, setVenueCategory] = useState<string[]>([]);
-  const [popularPick, setPopularPick] = useState<string[]>([]);
-  const [customLocation, setCustomLocation] = useState("");
-  const [titleChip, setTitleChip] = useState<string[]>([]);
-  const [meetTimeDate, setMeetTimeDate] = useState(format(new Date(), "yyyy-MM-dd"));
-  const [meetTimeHour, setMeetTimeHour] = useState(format(new Date(Date.now() + 3600_000), "HH:00"));
-  const [expiresInMins, setExpiresInMins] = useState(60);
-  const [maxRespondents, setMaxRespondents] = useState(5);
-
-  const resetForm = () => {
-    setStep(0);
-    setActivityChip([]);
-    setLanguageRoles([]);
-    setSelectedLangs([]);
-    setProficiency([]);
-    setBusinessGoals([]);
-    setInterestChips([]);
-    setVenueCategory([]);
-    setPopularPick([]);
-    setCustomLocation("");
-    setTitleChip([]);
-    setMeetTimeDate(format(new Date(), "yyyy-MM-dd"));
-    setMeetTimeHour(format(new Date(Date.now() + 3600_000), "HH:00"));
-    setExpiresInMins(60);
-    setMaxRespondents(5);
-  };
-
-  const handleClose = () => {
-    resetForm();
-    onClose();
-  };
-
-  const nextStep = () => setStep(prev => Math.min(prev + 1, 3));
-  const prevStep = () => setStep(prev => Math.max(prev - 1, 0));
-
-  const buildTitle = () => {
-    if (titleChip.length > 0) {
-      const chosen = TITLES.find(t => t.value === titleChip[0]);
-      return chosen?.label ?? "Quick Meetup";
-    }
-    return "Quick Meetup";
-  };
-
-  const buildLocation = () => {
-    if (popularPick.length > 0) {
-      const allPopular = Object.values(POPULAR_VENUES).flat();
-      const chosen = allPopular.find(v => v.value === popularPick[0]);
-      return chosen?.label ?? customLocation;
-    }
-    if (venueCategory[0] === "other") return customLocation.trim() || "Moscow";
-    if (venueCategory.length > 0) return venueCategory[0];
-    return customLocation.trim() || "Moscow";
-  };
-
-  const buildInterests = () => {
-    if (activityChip[0] === "language") {
-      return [...selectedLangs, ...languageRoles];
-    }
-    if (activityChip[0] === "networking") {
-      return businessGoals;
-    }
-    return interestChips;
-  };
-
-  const buildDescription = () => {
-    let desc = "";
-    if (activityChip[0] === "language") {
-      desc = `Language exchange: ${selectedLangs.join(", ")}. `;
-      if (languageRoles.length > 0) desc += `Roles: ${languageRoles.join(", ")}. `;
-      if (proficiency.length > 0) desc += `Level: ${proficiency[0]}.`;
-    } else if (activityChip[0] === "networking") {
-      desc = `Networking goals: ${businessGoals.join(", ")}.`;
-    } else {
-      if (interestChips.length > 0) desc = `Interests: ${interestChips.join(", ")}.`;
-    }
-    return desc || undefined;
-  };
-
-  const handleSubmit = async () => {
-    try {
-      const meetTime = new Date(`${meetTimeDate}T${meetTimeHour}`).toISOString();
-      await createSpark.mutateAsync({
-        title:           buildTitle(),
-        description:     buildDescription(),
-        activity:        activityChip[0] || "social",
-        location:        buildLocation(),
-        meetTime,
-        expiresInMins,
-        maxRespondents,
-        filterInterests: buildInterests().length ? buildInterests() : undefined,
+      placemark.events.add("click", () => {
+        setSelected({ kind: "event", data: event });
+        map.setCenter([lat, lng], 15, { duration: 300 });
       });
-      toast({ title: "Spark sent! ⚡", description: "People nearby will see your ping." });
-      resetForm();
-      onClose();
-    } catch (err: any) {
-      toast({ title: "Failed to send spark", description: err.message, variant: "destructive" });
-    }
-  };
 
-  const isActivityLang = activityChip[0] === "language";
-  const isActivityBiz = activityChip[0] === "networking";
-  const needsDetailsStep = isActivityLang || isActivityBiz;
-  const actualSteps = needsDetailsStep ? 4 : 3; // skip step 2 for other activities
+      map.geoObjects.add(placemark);
+      eventMarkersRef.current.push(placemark);
+    });
+  }, [mapLoaded, filtered]);
+
+  // ── Spark markers ─────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!mapLoaded || !mapRef.current) return;
+    const map = mapRef.current;
+
+    sparkMarkersRef.current.forEach(pm => map.geoObjects.remove(pm));
+    sparkMarkersRef.current = [];
+
+    if (!showSparks) return;
+
+    mappableSparks.forEach(spark => {
+      let lat = Number((spark as any).lat);
+      let lng = Number((spark as any).lng);
+      if (Math.abs(lat) > 90 && Math.abs(lng) <= 90) [lat, lng] = [lng, lat];
+      if (!lat || !lng) return;
+
+      // Spark markers are hexagonal/diamond with a ⚡ icon and pulse animation
+      const markerHtml = `
+        <div style="position:relative;width:40px;height:40px;">
+          <div style="position:absolute;inset:-6px;border-radius:50%;background:${SPARK_COLOR}30;animation:ymap-pulse 2s infinite;"></div>
+          <div style="
+            width:36px;height:36px;background:${SPARK_COLOR};
+            border-radius:8px;transform:rotate(45deg);
+            border:2.5px solid white;box-shadow:0 2px 10px rgba(0,0,0,.35);
+            display:flex;align-items:center;justify-content:center;cursor:pointer;
+          ">
+            <span style="transform:rotate(-45deg);font-size:16px;">⚡</span>
+          </div>
+          <div style="
+            position:absolute;top:-8px;right:-10px;
+            background:${SPARK_COLOR};color:white;
+            font-size:9px;font-weight:bold;padding:1px 5px;
+            border-radius:20px;white-space:nowrap;
+            box-shadow:0 1px 3px rgba(0,0,0,.2);pointer-events:none;
+          ">SPARK</div>
+        </div>`;
+
+      const placemark = new window.ymaps.Placemark(
+        [lat, lng],
+        { iconContent: markerHtml },
+        {
+          iconLayout: "default#imageWithContent",
+          iconImageHref: TRANSPARENT_GIF,
+          iconImageSize: [40, 40],
+          iconImageOffset: [-20, -20],
+          iconContentOffset: [-20, -20],
+          hideIconOnBalloonOpen: false,
+        }
+      );
+
+      placemark.events.add("click", () => {
+        setSelected({ kind: "spark", data: spark });
+        map.setCenter([lat, lng], 15, { duration: 300 });
+      });
+
+      map.geoObjects.add(placemark);
+      sparkMarkersRef.current.push(placemark);
+    });
+  }, [mapLoaded, mappableSparks, showSparks]);
+
+  // ── Window label ──────────────────────────────────────────────────────────
+
+  const isCurrentWindow = windowStart <= new Date(Date.now() + 60_000);
+  const windowLabel = isCurrentWindow
+    ? "Next 24 hours"
+    : `${format(windowStart, "EEE d MMM · HH:mm")} → ${format(windowEnd, "HH:mm")}`;
+
+  const totalVisible = filtered.length + (showSparks ? mappableSparks.length : 0);
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <Sheet open={open} onOpenChange={v => { if (!v) handleClose(); }}>
-      <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto">
-        <SheetHeader className="mb-6">
-          <SheetTitle className="text-2xl font-display flex items-center gap-2">
-            <Zap className="w-6 h-6 text-primary" /> Spark
-          </SheetTitle>
-          <SheetDescription>
-            Step {step + 1} of {actualSteps}
-          </SheetDescription>
-        </SheetHeader>
+    <div className="h-[calc(100vh-4rem)] w-full flex flex-col overflow-hidden relative bg-background">
+      <style>{`
+        @keyframes ymap-pulse {
+          0%   { transform: scale(1);   opacity: .4; }
+          100% { transform: scale(1.5); opacity: 0;  }
+        }
+      `}</style>
 
-        {/* Step 0 – Activity */}
-        {step === 0 && (
-          <div className="space-y-4">
-            <Label className="text-base">What are you up for?</Label>
-            <WordBankSelector
-              options={ACTIVITIES}
-              selected={activityChip}
-              onToggle={setActivityChip}
-              multiSelect={false}
-            />
-          </div>
-        )}
+      {/* ── Top bar ── */}
+      <div className="absolute top-0 left-0 right-0 z-20 flex items-center gap-3 px-4 py-3 glass border-b border-border/60">
+        <Button asChild variant="ghost" size="icon" className="rounded-full shrink-0 -ml-1">
+          <Link href="/"><ArrowLeft className="w-5 h-5" /></Link>
+        </Button>
 
-        {/* Step 1 – Details (only if language/networking) */}
-        {step === 1 && isActivityLang && (
-          <div className="space-y-6">
-            <div>
-              <Label>I am a…</Label>
-              <WordBankSelector
-                options={[
-                  { value: "native", label: "Native Speaker" },
-                  { value: "learner", label: "Learner (B1/B2)" },
-                  { value: "beginner", label: "Beginner (A1/A2)" },
-                ]}
-                selected={languageRoles}
-                onToggle={setLanguageRoles}
-                multiSelect
-              />
-            </div>
-            <div>
-              <Label>Speaking / learning</Label>
-              <WordBankSelector
-                options={LANGUAGE_INTERESTS}
-                selected={selectedLangs}
-                onToggle={setSelectedLangs}
-                multiSelect
-              />
-            </div>
-            <div>
-              <Label>Proficiency</Label>
-              <WordBankSelector
-                options={[
-                  { value: "beginner", label: "Beginner" },
-                  { value: "intermediate", label: "Intermediate" },
-                  { value: "advanced", label: "Advanced" },
-                ]}
-                selected={proficiency}
-                onToggle={setProficiency}
-                multiSelect={false}
-              />
-            </div>
-          </div>
-        )}
-
-        {step === 1 && isActivityBiz && (
-          <div className="space-y-4">
-            <Label>What are your networking goals?</Label>
-            <WordBankSelector
-              options={BUSINESS_GOALS}
-              selected={businessGoals}
-              onToggle={setBusinessGoals}
-              multiSelect
-            />
-          </div>
-        )}
-
-        {/* Step 2 – Location */}
-        {(step === 2 || (step === 1 && !needsDetailsStep)) && (
-          <div className="space-y-5">
-            <div>
-              <Label>Pick a venue type</Label>
-              <WordBankSelector
-                options={VENUE_CATEGORIES}
-                selected={venueCategory}
-                onToggle={setVenueCategory}
-                multiSelect={false}
-              />
-            </div>
-            {venueCategory.length > 0 && POPULAR_VENUES[venueCategory[0]] && (
-              <div>
-                <Label>Popular spots</Label>
-                <WordBankSelector
-                  options={POPULAR_VENUES[venueCategory[0]]}
-                  selected={popularPick}
-                  onToggle={setPopularPick}
-                  multiSelect={false}
-                />
-              </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <h1 className="font-display font-bold text-base">Live Map</h1>
+            {nowCount > 0 && (
+              <span className="flex items-center gap-1 bg-green-500/15 text-green-600 dark:text-green-400 text-xs px-2 py-0.5 rounded-full border border-green-500/30 font-semibold">
+                <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
+                {nowCount} live
+              </span>
             )}
-            {(venueCategory[0] === "other" || venueCategory.length === 0) && (
-              <div>
-                <Label>Enter a location</Label>
-                <Input
-                  placeholder="Gorky Park, Surf Coffee, …"
-                  value={customLocation}
-                  onChange={e => setCustomLocation(e.target.value)}
-                  className="h-11 rounded-xl"
-                />
-              </div>
+            {soonCount > 0 && (
+              <span className="text-xs bg-amber-500/15 text-amber-600 dark:text-amber-400 px-2 py-0.5 rounded-full border border-amber-500/30 font-semibold">
+                {soonCount} soon
+              </span>
+            )}
+            {showSparks && mappableSparks.length > 0 && (
+              <span className="text-xs px-2 py-0.5 rounded-full border font-semibold"
+                style={{ background: `${SPARK_COLOR}15`, color: SPARK_COLOR, borderColor: `${SPARK_COLOR}40` }}>
+                ⚡ {mappableSparks.length}
+              </span>
             )}
           </div>
-        )}
-
-        {/* Step 3 – Plan */}
-        {step === actualSteps - 1 && (
-          <div className="space-y-5">
-            <div>
-              <Label>Quick title</Label>
-              <WordBankSelector
-                options={TITLES}
-                selected={titleChip}
-                onToggle={setTitleChip}
-                multiSelect={false}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Date</Label>
-                <Input type="date" value={meetTimeDate} onChange={e => setMeetTimeDate(e.target.value)} className="h-11 rounded-xl" />
-              </div>
-              <div>
-                <Label>Time</Label>
-                <Input type="time" value={meetTimeHour} onChange={e => setMeetTimeHour(e.target.value)} className="h-11 rounded-xl" />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Expires in</Label>
-                <Select onValueChange={v => setExpiresInMins(parseInt(v))} value={String(expiresInMins)}>
-                  <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {EXPIRE_OPTIONS.map(o => (
-                      <SelectItem key={o.value} value={String(o.value)}>{o.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Max people</Label>
-                <Input type="number" min={1} max={20} value={maxRespondents} onChange={e => setMaxRespondents(parseInt(e.target.value) || 5)} className="h-11 rounded-xl" />
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Navigation */}
-        <div className="flex gap-3 pt-6">
-          {step > 0 && (
-            <Button variant="outline" className="flex-1 rounded-xl" onClick={prevStep}>
-              <ArrowLeft className="w-4 h-4 mr-2" /> Back
-            </Button>
-          )}
-          {step < actualSteps - 1 ? (
-            <Button
-              className="flex-1 rounded-xl gap-2"
-              disabled={step === 0 && activityChip.length === 0}
-              onClick={nextStep}
-            >
-              Next <ArrowRight className="w-4 h-4" />
-            </Button>
-          ) : (
-            <Button
-              className="flex-1 rounded-xl gap-2"
-              disabled={createSpark.isPending}
-              onClick={handleSubmit}
-            >
-              {createSpark.isPending ? "Sending…" : "Send Spark"}
-              <Zap className="w-4 h-4" />
-            </Button>
-          )}
+          <p className="text-xs text-muted-foreground">
+            {isLoading
+              ? "Loading…"
+              : `${totalVisible} item${totalVisible !== 1 ? "s" : ""} · ${windowLabel}`}
+          </p>
         </div>
-      </SheetContent>
-    </Sheet>
-  );
-}
 
-// ── Main page (unchanged except it still renders SparkCard etc.) ──────────────
-
-export default function SparkPage() {
-  const { user }                    = useAuth();
-  const { data: sparks,   isLoading } = useSparks();
-  const { data: mySparks }          = useMySparks();
-  const cancelSpark                 = useCancelSpark();
-  const respondToSpark              = useRespondToSpark();
-  const { toast }                   = useToast();
-
-  const [createOpen,    setCreateOpen]    = useState(false);
-  const [cancelTarget,  setCancelTarget]  = useState<Spark | null>(null);
-  const [confirmTarget, setConfirmTarget] = useState<Spark | null>(null);
-  const [activeFilter,  setActiveFilter]  = useState<string>("all");
-
-  const currentUserId = String(user?.id ?? "");
-
-  const filteredSparks = useMemo(() => {
-    if (!sparks) return [];
-    if (activeFilter === "all") return sparks;
-    return sparks.filter(s => s.activity === activeFilter);
-  }, [sparks, activeFilter]);
-
-  const handleRespond = async (spark: Spark, status: "accepted" | "declined") => {
-    try {
-      await respondToSpark.mutateAsync({ sparkId: spark.id, status });
-      if (status === "accepted") {
-        toast({ title: "You're in! ⚡", description: `See you at ${spark.location}.` });
-      }
-    } catch (err: any) {
-      toast({ title: "Failed", description: err.message, variant: "destructive" });
-    }
-  };
-
-  const handleCancel = async () => {
-    if (!cancelTarget) return;
-    try {
-      await cancelSpark.mutateAsync(cancelTarget.id);
-      toast({ title: "Spark cancelled" });
-    } catch (err: any) {
-      toast({ title: "Failed to cancel", description: err.message, variant: "destructive" });
-    } finally {
-      setCancelTarget(null);
-    }
-  };
-
-  const activeSentCount = mySparks?.filter(s => ["pending", "active"].includes(s.status)).length ?? 0;
-
-  return (
-    <div className="min-h-screen bg-background">
-      <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8">
-
-        {/* Hero */}
-        <div className="mb-8 flex items-start justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-11 h-11 bg-primary/10 rounded-2xl flex items-center justify-center">
-                <Zap className="w-6 h-6 text-primary" />
-              </div>
-              <div>
-                <h1 className="font-display text-3xl font-bold">Spark</h1>
-                <p className="text-sm text-muted-foreground">Impromptu meetups, right now</p>
-              </div>
-            </div>
-            <p className="text-muted-foreground text-sm max-w-sm">
-              Send a ping to members nearby. They accept, you confirm — no planning needed.
-            </p>
-          </div>
+        {/* Controls */}
+        <div className="flex items-center gap-1 shrink-0">
           <Button
-            onClick={() => setCreateOpen(true)}
-            className="rounded-full shadow-lg shadow-primary/20 gap-2 shrink-0"
+            variant="outline"
+            size="icon"
+            className="rounded-full w-8 h-8"
+            disabled={isCurrentWindow}
+            onClick={() => shiftWindow("back")}
+            title="Earlier"
           >
-            <Zap className="w-4 h-4" /> Spark
+            <ChevronLeft className="w-4 h-4" />
           </Button>
-        </div>
+          <Button
+            variant="outline"
+            size="icon"
+            className="rounded-full w-8 h-8"
+            onClick={() => shiftWindow("forward")}
+            title="Later"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </Button>
 
-        {/* Activity filter chips */}
-        <div className="flex gap-2 overflow-x-auto pb-2 mb-6 scrollbar-none">
+          {/* Spark layer toggle */}
           <button
-            onClick={() => setActiveFilter("all")}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium border whitespace-nowrap transition-all shrink-0 ${
-              activeFilter === "all"
-                ? "bg-primary text-primary-foreground border-primary"
-                : "border-border text-muted-foreground hover:border-primary/40"
+            onClick={() => setShowSparks(v => !v)}
+            title={showSparks ? "Hide sparks" : "Show sparks"}
+            className={`w-8 h-8 rounded-full flex items-center justify-center border text-sm transition-all ${
+              showSparks
+                ? "border-violet-400 bg-violet-50 dark:bg-violet-900/30 text-violet-600 dark:text-violet-300"
+                : "border-border text-muted-foreground hover:border-violet-400/40"
             }`}
           >
-            <Flame className="w-3.5 h-3.5" /> All
+            ⚡
           </button>
-          {ACTIVITY_CATEGORIES.map(cat => (
-            <button
-              key={cat.value}
-              onClick={() => setActiveFilter(activeFilter === cat.value ? "all" : cat.value)}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium border whitespace-nowrap transition-all shrink-0 ${
-                activeFilter === cat.value
-                  ? "bg-primary text-primary-foreground border-primary"
-                  : "border-border text-muted-foreground hover:border-primary/40"
-              }`}
-            >
-              <span>{CATEGORY_ICONS[cat.value]}</span>
-              {cat.label}
-            </button>
-          ))}
+
+          <Button
+            variant={showFilter ? "default" : "outline"}
+            size="sm"
+            className="rounded-full gap-1.5 ml-1"
+            onClick={() => setShowFilter(v => !v)}
+          >
+            <Filter className="w-3.5 h-3.5" />
+            {category !== "all" ? EVENT_CATEGORIES.find(c => c.value === category)?.label : "Filter"}
+          </Button>
         </div>
-
-        <Tabs defaultValue="feed">
-          <TabsList className="mb-6 p-1 bg-muted/50 rounded-xl">
-            <TabsTrigger value="feed" className="rounded-lg px-4 py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">
-              <Flame className="w-4 h-4 mr-2" /> Live Feed
-              {filteredSparks.length > 0 && (
-                <span className="ml-2 bg-primary/15 text-primary text-xs rounded-full px-1.5 py-0.5 font-semibold">
-                  {filteredSparks.length}
-                </span>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="mine" className="rounded-lg px-4 py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">
-              <Send className="w-4 h-4 mr-2" /> My Sparks
-              {activeSentCount > 0 && (
-                <span className="ml-2 bg-amber-100 text-amber-700 text-xs rounded-full px-1.5 py-0.5 font-semibold">
-                  {activeSentCount}
-                </span>
-              )}
-            </TabsTrigger>
-          </TabsList>
-
-          {/* Live feed */}
-          <TabsContent value="feed">
-            {isLoading ? (
-              <div className="text-center py-20">
-                <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full mx-auto" />
-              </div>
-            ) : filteredSparks.length === 0 ? (
-              <div className="text-center py-24 bg-card border border-dashed border-border rounded-3xl">
-                <Zap className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
-                <h3 className="font-semibold text-lg mb-2">No sparks right now</h3>
-                <p className="text-muted-foreground text-sm mb-6 max-w-xs mx-auto">
-                  Be the first to send a ping — someone nearby might be free too.
-                </p>
-                <Button onClick={() => setCreateOpen(true)} className="rounded-full gap-2">
-                  <Zap className="w-4 h-4" /> Send the first Spark
-                </Button>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <AnimatePresence mode="popLayout">
-                  {filteredSparks.map(spark => (
-                    <SparkCard
-                      key={spark.id}
-                      spark={spark}
-                      currentUserId={currentUserId}
-                      onRespond={handleRespond}
-                      onCancel={setCancelTarget}
-                      onConfirm={setConfirmTarget}
-                    />
-                  ))}
-                </AnimatePresence>
-              </div>
-            )}
-          </TabsContent>
-
-          {/* My sparks */}
-          <TabsContent value="mine">
-            {!mySparks || mySparks.length === 0 ? (
-              <div className="text-center py-24 bg-card border border-dashed border-border rounded-3xl">
-                <Send className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
-                <h3 className="font-semibold text-lg mb-2">No sparks sent yet</h3>
-                <p className="text-muted-foreground text-sm mb-6">
-                  Create your first impromptu meetup ping.
-                </p>
-                <Button onClick={() => setCreateOpen(true)} className="rounded-full gap-2">
-                  <Zap className="w-4 h-4" /> Send a Spark
-                </Button>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <AnimatePresence mode="popLayout">
-                  {mySparks.map(spark => (
-                    <SparkCard
-                      key={spark.id}
-                      spark={spark}
-                      currentUserId={currentUserId}
-                      onRespond={handleRespond}
-                      onCancel={setCancelTarget}
-                      onConfirm={setConfirmTarget}
-                    />
-                  ))}
-                </AnimatePresence>
-              </div>
-            )}
-          </TabsContent>
-        </Tabs>
       </div>
 
-      {/* Sheets & dialogs */}
-      <CreateSparkSheet open={createOpen} onClose={() => setCreateOpen(false)} />
+      {/* ── Filter dropdown ── */}
+      <AnimatePresence>
+        {showFilter && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            className="absolute top-[3.75rem] left-0 right-0 z-20 px-4 pt-2 pb-3 glass border-b border-border/60 flex flex-wrap gap-2"
+          >
+            {[{ value: "all", label: "All", icon: "🗺️" },
+              ...EVENT_CATEGORIES.filter(c => usedCategories.includes(c.value)),
+            ].map(cat => (
+              <button
+                key={cat.value}
+                onClick={() => { setCategory(cat.value); setShowFilter(false); }}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
+                  category === cat.value
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-background border-border text-muted-foreground hover:border-primary/40 hover:text-foreground"
+                }`}
+              >
+                <span>{cat.icon}</span> {cat.label}
+              </button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      <ConfirmDialog
-        spark={confirmTarget}
-        open={!!confirmTarget}
-        onClose={() => setConfirmTarget(null)}
-      />
+      {/* ── Map ── */}
+      <div className="flex-1 relative">
+        <div ref={mapContainerRef} className="absolute inset-0" style={{ width: "100%", height: "100%" }} />
 
-      <AlertDialog open={!!cancelTarget} onOpenChange={v => { if (!v) setCancelTarget(null); }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Cancel this spark?</AlertDialogTitle>
-            <AlertDialogDescription>
-              "{cancelTarget?.title}" will be removed from the feed. Anyone who accepted will no longer see it.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Keep it</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleCancel}
-              disabled={cancelSpark.isPending}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+        {/* Loading */}
+        {(!mapLoaded || isLoading) && (
+          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-10">
+            <div className="text-center">
+              <div className="w-10 h-10 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+              <p className="text-muted-foreground text-sm">Loading map…</p>
+            </div>
+          </div>
+        )}
+
+        {/* Nothing visible */}
+        {mapLoaded && !isLoading && totalVisible === 0 && (
+          <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+            <div className="glass rounded-2xl px-6 py-5 text-center mx-8 border border-border/60 shadow-xl">
+              <div className="text-4xl mb-2">🗓️</div>
+              <p className="font-semibold text-foreground">Nothing in this window</p>
+              <p className="text-muted-foreground text-sm mt-1">
+                {category !== "all"
+                  ? "Try a different category or shift the time window."
+                  : "Use the arrows to browse a different 24-hour window."}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* ── Legend ── */}
+        {mapLoaded && !isLoading && (usedCategories.length > 0 || mappableSparks.length > 0) && !selected && (
+          <div className="absolute bottom-[4.5rem] left-4 z-20">
+            <AnimatePresence>
+              {showLegend && (
+                <motion.div
+                  initial={{ opacity: 0, y: 6, scale: 0.97 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 6, scale: 0.97 }}
+                  className="mb-2 glass border border-border/60 rounded-2xl px-3 py-2.5 shadow-xl min-w-[170px]"
+                >
+                  {/* Event categories */}
+                  {usedCategories.length > 0 && (
+                    <>
+                      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-1">
+                        Events
+                      </p>
+                      <div className="flex flex-col gap-1.5 mb-2">
+                        {usedCategories.map(cat => {
+                          const meta = EVENT_CATEGORIES.find(c => c.value === cat);
+                          return (
+                            <div key={cat} className="flex items-center gap-2 px-1">
+                              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: dotColor(cat) }} />
+                              <span className="text-xs text-foreground capitalize">{meta?.icon} {meta?.label ?? cat}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+
+                  {/* Spark layer */}
+                  {showSparks && mappableSparks.length > 0 && (
+                    <>
+                      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-1 border-t border-border/40 pt-2">
+                        Sparks
+                      </p>
+                      <div className="flex items-center gap-2 px-1 mb-2">
+                        <span className="w-2.5 h-2.5 rounded-sm shrink-0 rotate-45" style={{ background: SPARK_COLOR }} />
+                        <span className="text-xs text-foreground">⚡ Impromptu meetup</span>
+                      </div>
+                    </>
+                  )}
+
+                  {/* Status key */}
+                  <div className="border-t border-border/40 mt-1 pt-2 flex flex-col gap-1.5 px-1">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-green-500 shrink-0 animate-pulse" />
+                      <span className="text-xs text-foreground">Happening now</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-amber-400 shrink-0" />
+                      <span className="text-xs text-foreground">Starting soon</span>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+            <button
+              onClick={() => setShowLegend(v => !v)}
+              className={`flex items-center gap-1.5 glass border text-xs font-medium px-3 py-1.5 rounded-full shadow-lg transition-all ${
+                showLegend
+                  ? "border-primary/50 text-primary"
+                  : "border-border/60 text-muted-foreground hover:text-foreground hover:border-primary/30"
+              }`}
             >
-              {cancelSpark.isPending ? "Cancelling…" : "Cancel Spark"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+              <span className="flex gap-0.5">
+                {usedCategories.slice(0, 3).map(cat => (
+                  <span key={cat} className="w-2 h-2 rounded-full" style={{ background: dotColor(cat) }} />
+                ))}
+                {showSparks && mappableSparks.length > 0 && (
+                  <span className="w-2 h-2 rounded-sm rotate-45" style={{ background: SPARK_COLOR }} />
+                )}
+              </span>
+              Legend
+            </button>
+          </div>
+        )}
+
+        {/* Online events pill */}
+        {mapLoaded && !isLoading && onlineEvents.length > 0 && !selected && (
+          <Link href="/">
+            <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 glass border border-border/60 text-sm font-medium px-4 py-2 rounded-full shadow-lg hover:border-primary/40 transition-all cursor-pointer">
+              <Wifi className="w-4 h-4 text-primary" />
+              <span>{onlineEvents.length} online event{onlineEvents.length !== 1 ? "s" : ""} — browse all</span>
+            </div>
+          </Link>
+        )}
+
+        {/* ── Bottom panel — event or spark ── */}
+        <AnimatePresence>
+          {selected && (
+            <motion.div
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", stiffness: 340, damping: 36 }}
+              className="absolute bottom-0 left-0 right-0 z-30 bg-card border-t border-border rounded-t-3xl shadow-2xl"
+            >
+              <div className="flex justify-center pt-3 pb-1">
+                <div className="w-10 h-1 rounded-full bg-border" />
+              </div>
+
+              {/* ── Event panel ── */}
+              {selected.kind === "event" && (() => {
+                const event = selected.data;
+                return (
+                  <div className="px-5 pb-7 pt-2 relative">
+                    <button
+                      onClick={() => setSelected(null)}
+                      className="absolute top-2 right-4 w-7 h-7 rounded-full flex items-center justify-center bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                    <div className="flex items-center gap-2 mb-3 flex-wrap">
+                      <Badge variant="secondary" className="capitalize gap-1 text-xs">
+                        <span>{EVENT_CATEGORIES.find(c => c.value === event.category)?.icon}</span>
+                        {event.category}
+                      </Badge>
+                      {isHappeningNow(event.date) && (
+                        <span className="flex items-center gap-1 text-xs font-semibold text-green-600 dark:text-green-400">
+                          <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
+                          Happening now
+                        </span>
+                      )}
+                      {!isHappeningNow(event.date) && isStartingSoon(event.date) && (
+                        <span className="text-xs font-semibold text-amber-500">⏳ Starting soon</span>
+                      )}
+                    </div>
+                    <h2 className="text-xl font-display font-bold text-foreground leading-tight mb-1 pr-8">
+                      {event.title}
+                    </h2>
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground mb-3">
+                      <span className="flex items-center gap-1">
+                        <span>🕐</span>
+                        {format(new Date(event.date), "EEE d MMM · h:mm a")}
+                      </span>
+                      <span className="flex items-center gap-1 truncate">
+                        <MapPin className="w-3.5 h-3.5 shrink-0" />
+                        {event.venueAddress}, {event.venueCity}
+                      </span>
+                    </div>
+                    {event.description && (
+                      <p className="text-sm text-muted-foreground leading-relaxed mb-4 line-clamp-2">
+                        {event.description}
+                      </p>
+                    )}
+                    <div className="flex gap-3 items-center mt-1">
+                      <div className="flex items-center gap-1.5 text-sm">
+                        <Ticket className="w-4 h-4 text-primary" />
+                        <span className="font-bold text-foreground">{getMinPrice(event)}</span>
+                      </div>
+                      <Button asChild className="flex-1 rounded-xl shadow-lg shadow-primary/20">
+                        <Link href={`/events/${event.id}`}>View Event</Link>
+                      </Button>
+                      {(event as any).lat && (event as any).lng && (
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="rounded-xl shrink-0"
+                          onClick={() => window.open(
+                            `https://maps.google.com/?q=${(event as any).lat},${(event as any).lng}`,
+                            "_blank"
+                          )}
+                        >
+                          <MapPin className="w-4 h-4" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* ── Spark panel ── */}
+              {selected.kind === "spark" && (() => {
+                const spark = selected.data;
+                const accepted = spark.responses.filter(r => r.status === "accepted");
+                return (
+                  <div className="px-5 pb-7 pt-2 relative">
+                    <button
+                      onClick={() => setSelected(null)}
+                      className="absolute top-2 right-4 w-7 h-7 rounded-full flex items-center justify-center bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+
+                    {/* Spark badge */}
+                    <div className="flex items-center gap-2 mb-3">
+                      <span
+                        className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-0.5 rounded-full border"
+                        style={{
+                          background: `${SPARK_COLOR}15`,
+                          color: SPARK_COLOR,
+                          borderColor: `${SPARK_COLOR}40`,
+                        }}
+                      >
+                        <Zap className="w-3 h-3" /> Spark
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        by {spark.senderDisplayName ?? "Someone"}
+                      </span>
+                    </div>
+
+                    <h2 className="text-xl font-display font-bold text-foreground leading-tight mb-1 pr-8">
+                      {spark.title}
+                    </h2>
+
+                    {spark.description && (
+                      <p className="text-sm text-muted-foreground leading-relaxed mb-3 line-clamp-3">
+                        {spark.description}
+                      </p>
+                    )}
+
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground mb-4">
+                      <span className="flex items-center gap-1">
+                        <MapPin className="w-3.5 h-3.5 shrink-0" />
+                        {spark.location}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Clock className="w-3.5 h-3.5 shrink-0" />
+                        {format(new Date(spark.meetTime), "EEE d MMM · h:mm a")}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Users className="w-3.5 h-3.5 shrink-0" />
+                        {accepted.length}/{spark.maxRespondents} going
+                      </span>
+                    </div>
+
+                    <div className="flex gap-3 items-center mt-1">
+                      <Button
+                        asChild
+                        className="flex-1 rounded-xl"
+                        style={{ background: SPARK_COLOR }}
+                      >
+                        <Link href="/sparks">View in Sparks</Link>
+                      </Button>
+                      {(spark as any).lat && (spark as any).lng && (
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="rounded-xl shrink-0"
+                          onClick={() => window.open(
+                            `https://maps.google.com/?q=${(spark as any).lat},${(spark as any).lng}`,
+                            "_blank"
+                          )}
+                        >
+                          <MapPin className="w-4 h-4" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }
