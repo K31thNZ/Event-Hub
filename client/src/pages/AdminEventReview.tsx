@@ -65,6 +65,7 @@ interface AdminEvent {
   date: string;
   venueAddress: string;
   venueCity: string;
+  locationName?: string | null;   // 🌟 added
   lat?: number | null;
   lng?: number | null;
   imageUrl?: string | null;
@@ -86,6 +87,9 @@ const editSchema = z.object({
   date:         z.string().min(1),
   venueAddress: z.string().min(2),
   venueCity:    z.string().min(2),
+  locationName: z.string().optional().nullable(),   // 🌟 added
+  lat:          z.number().optional().nullable(),
+  lng:          z.number().optional().nullable(),
   imageUrl:     z.string().optional().nullable(),
   sourceUrl:    z.string().optional().nullable(),
   published:    z.boolean(),
@@ -130,6 +134,9 @@ function EditSheet({
       date:         format(new Date(event.date), "yyyy-MM-dd'T'HH:mm"),
       venueAddress: event.venueAddress,
       venueCity:    event.venueCity,
+      locationName: event.locationName ?? null,   // 🌟
+      lat:          event.lat ?? null,
+      lng:          event.lng ?? null,
       imageUrl:     event.imageUrl ?? "",
       sourceUrl:    event.sourceUrl ?? "",
       published:    event.published,
@@ -214,6 +221,11 @@ function EditSheet({
           <div className="space-y-1.5">
             <Label>Date & Time</Label>
             <Input {...form.register("date")} type="datetime-local" className="h-11 rounded-xl" />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Venue / Place Name <span className="text-muted-foreground text-xs">(optional)</span></Label>
+            <Input {...form.register("locationName")} className="h-11 rounded-xl" placeholder="e.g. Surf Coffee, Gorky Park" />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -337,6 +349,12 @@ function EventDetailPanel({
               <Calendar className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
               <span>{format(eventDate, "EEEE, d MMMM yyyy")} at {format(eventDate, "HH:mm")}</span>
             </div>
+            {event.locationName && (
+              <div className="flex items-start gap-2.5">
+                <MapPin className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
+                <span className="font-medium">{event.locationName}</span>
+              </div>
+            )}
             <div className="flex items-start gap-2.5">
               <MapPin className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
               <span>{event.venueAddress}{event.venueCity && event.venueCity !== event.venueAddress ? `, ${event.venueCity}` : ""}</span>
@@ -488,7 +506,7 @@ function EventRow({
           </span>
           <span className="flex items-center gap-1">
             <MapPin className="w-3 h-3" />
-            {event.venueCity}
+            {event.locationName || event.venueCity}
           </span>
           <Badge variant="outline" className="text-xs capitalize py-0 px-1.5">
             {CATEGORY_MAP[event.category] ?? event.category}
@@ -609,7 +627,7 @@ function EventCard({
             {isPast && <span className="text-destructive/60 ml-1">past</span>}
           </span>
           <span className="flex items-center gap-1">
-            <MapPin className="w-3 h-3" /> {event.venueCity}
+            <MapPin className="w-3 h-3" /> {event.locationName || event.venueCity}
           </span>
         </div>
         <Badge variant="outline" className="text-xs capitalize">
@@ -714,6 +732,7 @@ export default function AdminEventReview() {
       e.title.toLowerCase().includes(q) ||
       e.venueAddress.toLowerCase().includes(q) ||
       e.venueCity.toLowerCase().includes(q) ||
+      (e.locationName?.toLowerCase().includes(q)) ||   // search location name too
       e.description.toLowerCase().includes(q)
     );
     if (filter === "draft")     arr = arr.filter(e => !e.published);
