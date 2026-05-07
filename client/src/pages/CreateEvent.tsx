@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from "react";
-import { useForm, useFieldArray, Controller, useWatch } from "react-hook-form";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { useForm, useFieldArray, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQuery } from "@tanstack/react-query";
@@ -33,10 +33,50 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-// ── Yandex Maps API key (replace with your own) ──────────────────────────
-const YANDEX_API_KEY = "YOUR_YANDEX_MAPS_API_KEY"; // 👈 insert your actual key
+// ── Yandex Maps API key ───────────────────────────────────────────────────
+const YANDEX_API_KEY = import.meta.env.VITE_YANDEX_MAPS_API_KEY as string;
 
-// ── Default images (unchanged) ───────────────────────────────────────────
+// ── Shared Yandex Maps loader (singleton – prevents duplicate <script> tags) ──
+let _yandexScriptPromise: Promise<void> | null = null;
+
+function loadYandexMaps(apiKey: string): Promise<void> {
+  if (window.ymaps?.ready) return window.ymaps.ready();
+  if (_yandexScriptPromise) return _yandexScriptPromise;
+  _yandexScriptPromise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = `https://api-maps.yandex.ru/2.1/?apikey=${apiKey}&lang=en_US`;
+    script.async = true;
+    script.onload = () => window.ymaps.ready(resolve);
+    script.onerror = () => {
+      _yandexScriptPromise = null; // allow retry on next mount
+      reject(new Error("Failed to load Yandex Maps script"));
+    };
+    document.head.appendChild(script);
+  });
+  return _yandexScriptPromise;
+}
+
+// ── Reverse geocode helper: house-level precision with generic fallback ───
+async function reverseGeocode(coords: number[]): Promise<{ address: string; city: string }> {
+  try {
+    // Try building-level accuracy first
+    let result = await window.ymaps.geocode(coords, { kind: "house", results: 1 });
+    let geo = result.geoObjects.get(0);
+    if (!geo) {
+      // Fallback to generic search
+      result = await window.ymaps.geocode(coords);
+      geo = result.geoObjects.get(0);
+    }
+    return {
+      address: geo?.getAddressLine() ?? "",
+      city:    geo?.getLocalities()?.[0] ?? "",
+    };
+  } catch {
+    return { address: "", city: "" };
+  }
+}
+
+// ── Default images ────────────────────────────────────────────────────────
 const CATEGORY_DEFAULT_IMAGES: Record<string, string> = {
   networking:   "https://images.expatevents.org/defaults/category-networking.jpg",
   tech:         "https://images.expatevents.org/defaults/category-tech.jpg",
@@ -57,34 +97,32 @@ const CATEGORY_DEFAULT_IMAGES: Record<string, string> = {
 
 const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? "https://auth.expatevents.org";
 
-// ── Custom timezone conversion (Moscow → UTC) ───────────────────────────
-// Moscow is UTC+3 (no DST)
+// ── Moscow → UTC helper (UTC+3, no DST) ──────────────────────────────────
 function moscowToUtc(dateStr: string, timeStr: string): Date {
-  const [year, month, day] = dateStr.split("-").map(Number);
-  const [hours, minutes] = timeStr.split(":").map(Number);
+  const [year, month, day]   = dateStr.split("-").map(Number);
+  const [hours, minutes]     = timeStr.split(":").map(Number);
   const localDate = new Date(Date.UTC(year, month - 1, day, hours, minutes, 0));
-  const utcDate = new Date(localDate.getTime() - 3 * 60 * 60 * 1000);
-  return utcDate;
+  return new Date(localDate.getTime() - 3 * 60 * 60 * 1000);
 }
 
-// Schema with recurrence and location coordinates
+// ── Zod schema ────────────────────────────────────────────────────────────
 const createEventSchema = z.object({
-  title:       z.string().min(3, "Title must be at least 3 characters"),
-  description: z.string().min(10, "Description must be at least 10 characters"),
-  category:    z.enum(EVENT_CATEGORY_VALUES as [string, ...string[]], {
+  title:           z.string().min(3, "Title must be at least 3 characters"),
+  description:     z.string().min(10, "Description must be at least 10 characters"),
+  category:        z.enum(EVENT_CATEGORY_VALUES as [string, ...string[]], {
     required_error: "Please select a category",
   }),
-  category2:    z.string().optional().nullable(),
-  dateStr:      z.string().min(1, "Date is required"),
-  time:         z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Select a valid time"),
-  venueAddress: z.string().min(3, "Address is required"),
-  venueCity:    z.string().min(2, "City is required"),
-  imageUrl:     z.string().optional().nullable(),
-  recurrence:   z.enum(["none", "daily", "weekly", "monthly"]).default("none"),
+  category2:       z.string().optional().nullable(),
+  dateStr:         z.string().min(1, "Date is required"),
+  time:            z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Select a valid time"),
+  venueAddress:    z.string().min(3, "Address is required"),
+  venueCity:       z.string().min(2, "City is required"),
+  imageUrl:        z.string().optional().nullable(),
+  recurrence:      z.enum(["none", "daily", "weekly", "monthly"]).default("none"),
   recurrenceUntil: z.string().nullable().optional(),
-  lat:          z.number().optional().nullable(),
-  lng:          z.number().optional().nullable(),
-  ticketTypes:  z.array(z.object({
+  lat:             z.number().optional().nullable(),
+  lng:             z.number().optional().nullable(),
+  ticketTypes:     z.array(z.object({
     name:        z.string().min(1, "Name required"),
     price:       z.coerce.number().min(0, "Price must be 0 or more"),
     quantity:    z.coerce.number().min(1, "Quantity must be at least 1"),
@@ -105,11 +143,11 @@ const STEP_FIELDS: Record<number, (keyof FormValues)[]> = {
 };
 
 const STEPS = [
-  { label: "Details"    },
-  { label: "Date & Time"},
-  { label: "Location"   },
-  { label: "Tickets"    },
-  { label: "Preview"    },
+  { label: "Details"     },
+  { label: "Date & Time" },
+  { label: "Location"    },
+  { label: "Tickets"     },
+  { label: "Preview"     },
 ];
 
 const TIME_SLOTS = Array.from({ length: 96 }, (_, i) => {
@@ -118,7 +156,7 @@ const TIME_SLOTS = Array.from({ length: 96 }, (_, i) => {
   return `${h}:${m}`;
 });
 
-// Helper: upload event image to R2
+// ── Image upload helper ───────────────────────────────────────────────────
 async function uploadEventImage(file: File): Promise<string> {
   const formData = new FormData();
   formData.append("file", file);
@@ -136,7 +174,9 @@ async function uploadEventImage(file: File): Promise<string> {
   return data.url;
 }
 
-// ── Yandex Map component ──────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────
+// YandexMapPicker
+// ─────────────────────────────────────────────────────────────────────────
 interface YandexMapPickerProps {
   lat: number | null;
   lng: number | null;
@@ -144,124 +184,250 @@ interface YandexMapPickerProps {
 }
 
 function YandexMapPicker({ lat, lng, onLocationSelect }: YandexMapPickerProps) {
-  const mapRef = useRef<HTMLDivElement>(null);
-  const [map, setMap] = useState<any>(null);
-  const [marker, setMarker] = useState<any>(null);
+  const mapRef    = useRef<HTMLDivElement>(null);
+  const [map,     setMap]     = useState<any>(null);
+  const [marker,  setMarker]  = useState<any>(null);
   const [apiLoaded, setApiLoaded] = useState(false);
 
-  // Load Yandex Maps API
+  // Business search state
+  const [searchQuery,   setSearchQuery]   = useState("");
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searchOpen,    setSearchOpen]    = useState(false);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError,   setSearchError]   = useState<string | null>(null);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── Load API (singleton) ────────────────────────────────────────────────
   useEffect(() => {
-    if (window.ymaps) {
-      setApiLoaded(true);
-      return;
-    }
-    const script = document.createElement("script");
-    script.src = `https://api-maps.yandex.ru/2.1/?apikey=${YANDEX_API_KEY}&lang=en_RU`;
-    script.async = true;
-    script.onload = () => {
-      window.ymaps.ready(() => setApiLoaded(true));
-    };
-    document.head.appendChild(script);
-    return () => {
-      // cleanup not needed
-    };
+    loadYandexMaps(YANDEX_API_KEY)
+      .then(() => setApiLoaded(true))
+      .catch(err => console.error("Yandex Maps load error:", err));
   }, []);
 
-  // Initialize map when API is ready and container exists
+  // ── Init map (runs once after API is ready) ─────────────────────────────
   useEffect(() => {
     if (!apiLoaded || !mapRef.current || map) return;
-    const initMap = () => {
-      const center = [lat ?? 55.7558, lng ?? 37.6173];
-      const zoom = 12;
-      const newMap = new window.ymaps.Map(mapRef.current, {
-        center: center,
-        zoom: zoom,
-        controls: ["zoomControl", "typeSelector"],
-      });
-      setMap(newMap);
 
-      // Add marker
-      const newMarker = new window.ymaps.Placemark(center, {}, {
-        draggable: true,
-        preset: "islands#redIcon",
-      });
-      newMap.geoObjects.add(newMarker);
-      setMarker(newMarker);
+    const center = [lat ?? 55.7558, lng ?? 37.6173];
+    const zoom   = lat && lng ? 16 : 12;
 
-      // Click event
-      newMap.events.add("click", async (e: any) => {
-        const coords = e.get("coords");
-        newMarker.geometry.setCoordinates(coords);
-        // Reverse geocode
-        try {
-          const geocodeResult = await window.ymaps.geocode(coords);
-          const firstGeoObject = geocodeResult.geoObjects.get(0);
-          const address = firstGeoObject.getAddressLine();
-          const city = firstGeoObject.getLocalities().length
-            ? firstGeoObject.getLocalities()[0]
-            : "";
-          onLocationSelect(coords[0], coords[1], address, city);
-        } catch (err) {
-          console.error("Yandex reverse geocode error:", err);
-          onLocationSelect(coords[0], coords[1], "", "");
-        }
-      });
+    const newMap = new window.ymaps.Map(mapRef.current, {
+      center,
+      zoom,
+      controls: ["zoomControl", "typeSelector"],
+    });
+    setMap(newMap);
 
-      // Drag end event
-      newMarker.events.add("dragend", async () => {
-        const coords = newMarker.geometry.getCoordinates();
-        try {
-          const geocodeResult = await window.ymaps.geocode(coords);
-          const firstGeoObject = geocodeResult.geoObjects.get(0);
-          const address = firstGeoObject.getAddressLine();
-          const city = firstGeoObject.getLocalities().length
-            ? firstGeoObject.getLocalities()[0]
-            : "";
-          onLocationSelect(coords[0], coords[1], address, city);
-        } catch (err) {
-          console.error("Yandex reverse geocode error:", err);
-          onLocationSelect(coords[0], coords[1], "", "");
-        }
-      });
-    };
-    initMap();
-  }, [apiLoaded, lat, lng, onLocationSelect]);
+    // Draggable marker
+    const newMarker = new window.ymaps.Placemark(center, {}, {
+      draggable: true,
+      preset: "islands#redIcon",
+    });
+    newMap.geoObjects.add(newMarker);
+    setMarker(newMarker);
 
-  // Update marker position if lat/lng change externally
+    // Click → move marker + reverse geocode
+    newMap.events.add("click", async (e: any) => {
+      const coords = e.get("coords");
+      newMarker.geometry.setCoordinates(coords);
+      const { address, city } = await reverseGeocode(coords);
+      onLocationSelect(coords[0], coords[1], address, city);
+    });
+
+    // Drag end → reverse geocode new position
+    newMarker.events.add("dragend", async () => {
+      const coords = newMarker.geometry.getCoordinates();
+      const { address, city } = await reverseGeocode(coords);
+      onLocationSelect(coords[0], coords[1], address, city);
+    });
+
+  }, [apiLoaded]); // intentionally omit lat/lng – marker position is synced below
+
+  // ── Sync marker when lat/lng change externally ──────────────────────────
   useEffect(() => {
     if (marker && lat && lng) {
       marker.geometry.setCoordinates([lat, lng]);
-      if (map) map.setCenter([lat, lng], 12);
+      map?.setCenter([lat, lng], 16, { duration: 300 });
     }
   }, [lat, lng, marker, map]);
 
+  // ── Business search (Yandex Organization Search API) ────────────────────
+  const performSearch = useCallback(async (query: string) => {
+    if (!query.trim()) {
+      setSearchResults([]);
+      setSearchOpen(false);
+      return;
+    }
+    setSearchLoading(true);
+    setSearchError(null);
+    try {
+      // Bias search to current map viewport center
+      const center = map?.getCenter() ?? [55.7558, 37.6173];
+      const url = [
+        "https://search-maps.yandex.ru/v1/",
+        `?text=${encodeURIComponent(query)}`,
+        `&type=biz`,
+        `&ll=${center[1]},${center[0]}`,   // API expects lng,lat
+        `&spn=0.1,0.1`,
+        `&lang=en_RU`,
+        `&apikey=${YANDEX_API_KEY}`,
+        `&results=5`,
+      ].join("");
+
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(`Search failed: ${resp.status}`);
+      const data = await resp.json();
+
+      setSearchResults(
+        (data.features ?? []).map((f: any) => ({
+          name:    f.properties?.name
+                || f.properties?.CompanyMetaData?.name
+                || "Business",
+          address: f.properties?.description
+                || f.properties?.CompanyMetaData?.address
+                || "",
+          coords: f.geometry?.coordinates, // GeoJSON order: [lng, lat]
+        }))
+      );
+      setSearchOpen(true);
+    } catch (err: any) {
+      console.error("Yandex biz search error:", err);
+      setSearchError(err.message || "Search failed");
+      setSearchResults([]);
+      setSearchOpen(false);
+    } finally {
+      setSearchLoading(false);
+    }
+  }, [map]);
+
+  // Debounce search input
+  useEffect(() => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => performSearch(searchQuery), 400);
+    return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); };
+  }, [searchQuery, performSearch]);
+
+  // ── Select a search result ───────────────────────────────────────────────
+  const handleSelectResult = async (result: any) => {
+    // GeoJSON coords are [lng, lat] — swap for Yandex [lat, lng]
+    const [lngCoord, latCoord] = result.coords;
+
+    marker?.geometry.setCoordinates([latCoord, lngCoord]);
+    map?.setCenter([latCoord, lngCoord], 16, { duration: 300 });
+
+    // Try to extract city from business address string before falling back to
+    // reverse geocode (avoids an extra network round-trip when address is present)
+    let city = "";
+    if (result.address) {
+      const parts   = result.address.split(",");
+      // Pick first segment that has no digits and is reasonably long
+      const segment = parts.find((p: string) =>
+        p.trim().length > 2 && !/\d/.test(p.trim())
+      );
+      city = segment?.trim() ?? "";
+    }
+    if (!city) {
+      const geo = await reverseGeocode([latCoord, lngCoord]);
+      city = geo.city;
+    }
+
+    const fullAddress = result.name + (result.address ? `, ${result.address}` : "");
+    onLocationSelect(latCoord, lngCoord, fullAddress, city);
+
+    setSearchQuery("");
+    setSearchResults([]);
+    setSearchOpen(false);
+  };
+
   if (!apiLoaded) {
-    return <div className="w-full h-full flex items-center justify-center bg-muted rounded-xl">Loading map…</div>;
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-muted rounded-xl">
+        <div className="text-center">
+          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+          <p className="text-sm text-muted-foreground">Loading map…</p>
+        </div>
+      </div>
+    );
   }
 
-  return <div ref={mapRef} className="w-full h-full rounded-xl" />;
+  return (
+    <div className="relative w-full h-full rounded-xl overflow-hidden">
+      {/* Search bar */}
+      <div className="absolute top-3 left-3 right-14 z-10">
+        <div className="relative">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Search for a venue or business…"
+            className="w-full h-10 px-4 pr-10 bg-white/95 backdrop-blur border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 shadow"
+          />
+          {searchLoading && (
+            <div className="absolute right-3 top-1/2 -translate-y-1/2">
+              <div className="animate-spin w-4 h-4 border-2 border-primary border-t-transparent rounded-full" />
+            </div>
+          )}
+        </div>
+
+        {/* Results dropdown */}
+        {searchOpen && !searchLoading && searchResults.length > 0 && (
+          <div className="mt-1 bg-white border border-border rounded-xl shadow-lg overflow-hidden max-h-48 overflow-y-auto">
+            {searchResults.map((r, i) => (
+              <button
+                key={i}
+                onClick={() => handleSelectResult(r)}
+                className="w-full text-left px-4 py-2.5 hover:bg-muted/60 transition-colors border-b border-border/20 last:border-none"
+              >
+                <p className="text-sm font-medium">{r.name}</p>
+                {r.address && (
+                  <p className="text-xs text-muted-foreground truncate">{r.address}</p>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {searchOpen && !searchLoading && searchResults.length === 0 && searchQuery.trim() && (
+          <div className="mt-1 bg-white border border-border rounded-xl p-3 text-sm text-muted-foreground text-center shadow">
+            No businesses found
+          </div>
+        )}
+
+        {searchError && (
+          <div className="mt-1 bg-red-50 border border-red-200 rounded-xl p-2 text-xs text-red-700">
+            {searchError}
+          </div>
+        )}
+      </div>
+
+      {/* Map container */}
+      <div ref={mapRef} className="w-full h-full" />
+    </div>
+  );
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// CreateEvent (main component)
+// ─────────────────────────────────────────────────────────────────────────
 export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) {
   const [, setLocation] = useLocation();
-  const params = useParams<{ groupId?: string }>();
-  const createEvent = useCreateEvent();
+  const params          = useParams<{ groupId?: string }>();
+  const createEvent     = useCreateEvent();
   const { user, isLoading: authLoading } = useAuth();
 
-  const [step, setStep] = useState(0);
-  const [direction, setDirection] = useState(1);
-  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [step,           setStep]           = useState(0);
+  const [direction,      setDirection]      = useState(1);
+  const [submitError,    setSubmitError]    = useState<string | null>(null);
   const [publishSuccess, setPublishSuccess] = useState<{ id: number; title: string } | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const [mapModalOpen, setMapModalOpen] = useState(false);
+  const [uploading,      setUploading]      = useState(false);
+  const [uploadError,    setUploadError]    = useState<string | null>(null);
+  const [mapModalOpen,   setMapModalOpen]   = useState(false);
   const [tempMarkerCoords, setTempMarkerCoords] = useState<{ lat: number; lng: number } | null>(null);
-  const [geocoding, setGeocoding] = useState(false);
 
   const { data: myGroups } = useQuery<any[]>({
     queryKey: ["/api/groups/my"],
-    queryFn: getQueryFn({ on401: "returnNull" }),
-    enabled: !!user,
+    queryFn:  getQueryFn({ on401: "returnNull" }),
+    enabled:  !!user,
   });
   const eligibleGroups = (myGroups ?? []).filter(
     g => g.currentUserRole === "owner" || g.currentUserRole === "moderator"
@@ -274,9 +440,9 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
     resolver: zodResolver(createEventSchema),
     defaultValues: {
       ticketTypes: [{ name: "General Admission", price: 0, quantity: 100, maxPerOrder: 5 }],
-      isPrivate: false,
-      time: "18:00",
-      recurrence: "none",
+      isPrivate:   false,
+      time:        "18:00",
+      recurrence:  "none",
       recurrenceUntil: null,
       lat: null,
       lng: null,
@@ -284,17 +450,17 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
     mode: "onTouched",
   });
 
-  const watchedCategory = watch("category");
-  const watchedImageUrl = watch("imageUrl");
-  const watchedGroupId = watch("groupId");
+  const watchedCategory   = watch("category");
+  const watchedImageUrl   = watch("imageUrl");
+  const watchedGroupId    = watch("groupId");
   const watchedRecurrence = watch("recurrence");
-  const watchedDateStr = watch("dateStr");
-  const watchedTime = watch("time");
-  const watchedLat = watch("lat");
-  const watchedLng = watch("lng");
-  const allValues = watch();
+  const watchedDateStr    = watch("dateStr");
+  const watchedTime       = watch("time");
+  const watchedLat        = watch("lat");
+  const watchedLng        = watch("lng");
+  const allValues         = watch();
 
-  // Auto-fill cover image when category is chosen
+  // Auto-fill cover image on category select
   useEffect(() => {
     if (watchedCategory && !watchedImageUrl) {
       const def = CATEGORY_DEFAULT_IMAGES[watchedCategory];
@@ -302,7 +468,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
     }
   }, [watchedCategory]);
 
-  // Pre-select group from URL or slug
+  // Pre-select group from URL params or slug
   useEffect(() => {
     if (groupSlug && myGroups) {
       const g = myGroups.find((g: any) => g.slug === groupSlug);
@@ -315,14 +481,11 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
 
   const { fields, append, remove } = useFieldArray({ control, name: "ticketTypes" });
 
-  // Image upload handlers
+  // Image upload
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      setUploadError("Image must be under 5 MB");
-      return;
-    }
+    if (file.size > 5 * 1024 * 1024) { setUploadError("Image must be under 5 MB"); return; }
     setUploadError(null);
     setUploading(true);
     try {
@@ -336,21 +499,18 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
   };
   const removeImage = () => setValue("imageUrl", null);
 
-  // ── Yandex map handler ─────────────────────────────────────────────────
+  // Map location handler – called from YandexMapPicker on every interaction
   const handleLocationSelect = (lat: number, lng: number, address: string, city: string) => {
     setTempMarkerCoords({ lat, lng });
     setValue("venueAddress", address);
-    setValue("venueCity", city);
+    setValue("venueCity",    city);
     setValue("lat", lat);
     setValue("lng", lng);
   };
 
-  const handleConfirmLocation = () => {
-    setMapModalOpen(false);
-    // coordinates already saved in handleLocationSelect
-  };
+  const handleConfirmLocation = () => setMapModalOpen(false);
 
-  // Navigation
+  // Step navigation
   const navigate = async (target: number) => {
     if (target > step) {
       const valid = await trigger(STEP_FIELDS[step] as any);
@@ -363,18 +523,18 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
   const nextStep = () => navigate(step + 1);
   const prevStep = () => navigate(step - 1);
 
-  // Submit
+  // Form submit
   const onSubmit = async (data: FormValues) => {
     if (!user) return;
     setSubmitError(null);
     try {
       const utcDate = moscowToUtc(data.dateStr, data.time);
-      const result = await createEvent.mutateAsync({
+      const result  = await createEvent.mutateAsync({
         ...data,
-        date: utcDate,
-        published: true,
-        groupId: data.groupId ?? null,
-        recurrence: data.recurrence !== "none" ? data.recurrence : null,
+        date:            utcDate,
+        published:       true,
+        groupId:         data.groupId ?? null,
+        recurrence:      data.recurrence !== "none" ? data.recurrence : null,
         recurrenceUntil: data.recurrenceUntil ? new Date(data.recurrenceUntil) : null,
       } as any);
       setPublishSuccess({ id: result.id, title: result.title });
@@ -391,7 +551,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
     }
   };
 
-  // Loading / auth / success screens (unchanged)
+  // ── Loading / auth guards ────────────────────────────────────────────────
   if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -407,7 +567,9 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
         </div>
         <h1 className="text-3xl font-bold">Host an Event</h1>
         <p className="text-muted-foreground">You need to be signed in.</p>
-        <Button onClick={() => window.location.href = `${AUTH_URL}/login?returnTo=${encodeURIComponent(window.location.href)}`}>
+        <Button onClick={() =>
+          window.location.href = `${AUTH_URL}/login?returnTo=${encodeURIComponent(window.location.href)}`
+        }>
           Sign In
         </Button>
       </div>
@@ -433,16 +595,18 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
     );
   }
 
-  const progressPct = (step / (STEPS.length - 1)) * 100;
-  const slideVariants = {
-    enter:  (d: number) => ({ x: d > 0 ? 48 : -48, opacity: 0 }),
+  const progressPct    = (step / (STEPS.length - 1)) * 100;
+  const slideVariants  = {
+    enter:  (d: number) => ({ x: d > 0 ?  48 : -48, opacity: 0 }),
     center: { x: 0, opacity: 1 },
-    exit:   (d: number) => ({ x: d > 0 ? -48 : 48, opacity: 0 }),
+    exit:   (d: number) => ({ x: d > 0 ? -48 :  48, opacity: 0 }),
   };
 
   return (
     <div className="min-h-screen bg-muted/20 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-3xl mx-auto">
+
+        {/* Header */}
         <div className="mb-10 text-center">
           <div className="w-14 h-14 bg-primary/10 text-primary rounded-2xl flex items-center justify-center mx-auto mb-5 shadow-lg shadow-primary/10">
             <CalendarPlus className="w-7 h-7" />
@@ -451,7 +615,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
           <p className="text-muted-foreground">Fill in the details to publish your event to the community.</p>
         </div>
 
-        {/* Stepper (unchanged) */}
+        {/* Stepper */}
         <div className="mb-10 px-2">
           <div className="relative mb-2">
             <div className="absolute top-[18px] left-0 right-0 h-0.5 bg-border" />
@@ -462,7 +626,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
             />
             <div className="relative flex justify-between">
               {STEPS.map((s, i) => {
-                const done = i < step;
+                const done    = i < step;
                 const current = i === step;
                 return (
                   <button
@@ -470,12 +634,23 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                     type="button"
                     onClick={() => { if (done) navigate(i); }}
                     disabled={!done && !current}
-                    className={`flex flex-col items-center gap-1.5 ${done ? "cursor-pointer" : ""} ${current ? "cursor-default" : ""} ${!done && !current ? "cursor-not-allowed opacity-50" : ""}`}
+                    className={`flex flex-col items-center gap-1.5
+                      ${done    ? "cursor-pointer"       : ""}
+                      ${current ? "cursor-default"       : ""}
+                      ${!done && !current ? "cursor-not-allowed opacity-50" : ""}`}
                   >
-                    <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold border-2 transition-all duration-300 bg-background ${done ? "bg-primary border-primary text-white hover:bg-primary/90" : ""} ${current ? "border-primary text-primary shadow-md shadow-primary/20 scale-110" : ""} ${!done && !current ? "border-border text-muted-foreground" : ""}`}>
+                    <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold border-2 transition-all duration-300 bg-background
+                      ${done    ? "bg-primary border-primary text-white hover:bg-primary/90"              : ""}
+                      ${current ? "border-primary text-primary shadow-md shadow-primary/20 scale-110"    : ""}
+                      ${!done && !current ? "border-border text-muted-foreground"                        : ""}`}
+                    >
                       {done ? <Check className="w-4 h-4" /> : i + 1}
                     </div>
-                    <span className={`text-xs font-medium hidden sm:block ${current ? "text-primary" : ""} ${done ? "text-foreground" : ""} ${!done && !current ? "text-muted-foreground" : ""}`}>
+                    <span className={`text-xs font-medium hidden sm:block
+                      ${current         ? "text-primary"          : ""}
+                      ${done            ? "text-foreground"        : ""}
+                      ${!done && !current ? "text-muted-foreground" : ""}`}
+                    >
                       {s.label}
                     </span>
                   </button>
@@ -491,8 +666,17 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
         <form onSubmit={handleSubmit(onSubmit)}>
           <div className="overflow-hidden">
             <AnimatePresence mode="wait" custom={direction}>
-              <motion.div key={step} custom={direction} variants={slideVariants} initial="enter" animate="center" exit="exit" transition={{ duration: 0.22, ease: "easeInOut" }}>
-                {/* Step 0: Details (unchanged) */}
+              <motion.div
+                key={step}
+                custom={direction}
+                variants={slideVariants}
+                initial="enter"
+                animate="center"
+                exit="exit"
+                transition={{ duration: 0.22, ease: "easeInOut" }}
+              >
+
+                {/* ── Step 0: Details ── */}
                 {step === 0 && (
                   <Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
                     <div className="bg-primary/5 px-8 py-4 border-b border-border/50">
@@ -505,6 +689,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                         <Input {...register("title")} className="h-12 rounded-xl text-lg" placeholder="Moscow Summer Tech Mixer" />
                         {errors.title && <p className="text-destructive text-sm">{errors.title.message}</p>}
                       </div>
+
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="space-y-2">
                           <Label>Category</Label>
@@ -512,57 +697,87 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                             <Select onValueChange={field.onChange} value={field.value}>
                               <SelectTrigger className="h-12 rounded-xl"><SelectValue placeholder="Select a category…" /></SelectTrigger>
                               <SelectContent className="bg-white dark:bg-zinc-900">
-                                {EVENT_CATEGORIES.map(cat => <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>)}
+                                {EVENT_CATEGORIES.map(cat => (
+                                  <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>
+                                ))}
                               </SelectContent>
                             </Select>
                           )} />
                           {errors.category && <p className="text-destructive text-sm">{errors.category.message}</p>}
                         </div>
+
                         {watchedCategory && (
                           <div className="space-y-2">
                             <Label>Second Category <span className="font-normal text-muted-foreground">(optional)</span></Label>
                             <Controller control={control} name="category2" render={({ field }) => (
-                              <Select onValueChange={v => field.onChange(v === "__none__" ? null : v)} value={field.value ?? "__none__"}>
+                              <Select
+                                onValueChange={v => field.onChange(v === "__none__" ? null : v)}
+                                value={field.value ?? "__none__"}
+                              >
                                 <SelectTrigger className="h-12 rounded-xl"><SelectValue placeholder="None" /></SelectTrigger>
                                 <SelectContent className="bg-white dark:bg-zinc-900">
                                   <SelectItem value="__none__">— None —</SelectItem>
-                                  {EVENT_CATEGORIES.filter(c => c.value !== watchedCategory).map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
+                                  {EVENT_CATEGORIES.filter(c => c.value !== watchedCategory).map(c => (
+                                    <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                                  ))}
                                 </SelectContent>
                               </Select>
                             )} />
                           </div>
                         )}
                       </div>
+
                       <div className="space-y-2">
                         <Label>Description</Label>
-                        <Textarea {...register("description")} className="rounded-xl min-h-[130px]" placeholder="Tell people what to expect — format, agenda, vibe, what to bring…" />
+                        <Textarea
+                          {...register("description")}
+                          className="rounded-xl min-h-[130px]"
+                          placeholder="Tell people what to expect — format, agenda, vibe, what to bring…"
+                        />
                         {errors.description && <p className="text-destructive text-sm">{errors.description.message}</p>}
                       </div>
+
                       {eligibleGroups.length > 0 && (
                         <div className="pt-4 border-t space-y-2">
-                          <Label className="flex items-center gap-2"><UsersRound className="w-4 h-4 text-primary" /> Link to a Group <span className="font-normal text-muted-foreground">(optional)</span></Label>
+                          <Label className="flex items-center gap-2">
+                            <UsersRound className="w-4 h-4 text-primary" />
+                            Link to a Group <span className="font-normal text-muted-foreground">(optional)</span>
+                          </Label>
                           <Controller control={control} name="groupId" render={({ field }) => (
-                            <Select onValueChange={v => field.onChange(v === "__none__" ? null : parseInt(v))} value={field.value != null ? String(field.value) : "__none__"}>
+                            <Select
+                              onValueChange={v => field.onChange(v === "__none__" ? null : parseInt(v))}
+                              value={field.value != null ? String(field.value) : "__none__"}
+                            >
                               <SelectTrigger className="h-12 rounded-xl"><SelectValue placeholder="No group (public event)" /></SelectTrigger>
                               <SelectContent className="bg-white dark:bg-zinc-900">
                                 <SelectItem value="__none__">— No group (public event) —</SelectItem>
-                                {eligibleGroups.map(g => <SelectItem key={g.id} value={String(g.id)}>{g.name} {g.currentUserRole === "owner" ? "(owner)" : "(moderator)"}</SelectItem>)}
+                                {eligibleGroups.map(g => (
+                                  <SelectItem key={g.id} value={String(g.id)}>
+                                    {g.name} {g.currentUserRole === "owner" ? "(owner)" : "(moderator)"}
+                                  </SelectItem>
+                                ))}
                               </SelectContent>
                             </Select>
                           )} />
                         </div>
                       )}
+
                       {watchedGroupId && (
                         <div className="flex justify-between items-center pt-4 border-t">
-                          <div><p className="font-medium text-sm">Private event</p><p className="text-xs text-muted-foreground">Only group members can see this event</p></div>
-                          <Controller control={control} name="isPrivate" render={({ field }) => <Switch checked={!!field.value} onCheckedChange={field.onChange} />} />
+                          <div>
+                            <p className="font-medium text-sm">Private event</p>
+                            <p className="text-xs text-muted-foreground">Only group members can see this event</p>
+                          </div>
+                          <Controller control={control} name="isPrivate" render={({ field }) => (
+                            <Switch checked={!!field.value} onCheckedChange={field.onChange} />
+                          )} />
                         </div>
                       )}
                     </CardContent>
                   </Card>
                 )}
 
-                {/* Step 1: Date & Time (unchanged) */}
+                {/* ── Step 1: Date & Time ── */}
                 {step === 1 && (
                   <Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
                     <div className="bg-primary/5 px-8 py-4 border-b border-border/50">
@@ -589,6 +804,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                           {errors.time && <p className="text-destructive text-sm">{errors.time.message}</p>}
                         </div>
                       </div>
+
                       <div className="border-t border-border/50 pt-4 mt-2">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                           <div className="space-y-2">
@@ -614,6 +830,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                           )}
                         </div>
                       </div>
+
                       {watchedDateStr && watchedTime && (
                         <motion.div
                           initial={{ opacity: 0, y: 8 }}
@@ -628,7 +845,8 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                               })}
                             </p>
                             <p className="text-sm text-muted-foreground">
-                              Starts at {watchedTime}{watchedRecurrence !== "none" && ` · repeats ${watchedRecurrence}`}
+                              Starts at {watchedTime}
+                              {watchedRecurrence !== "none" && ` · repeats ${watchedRecurrence}`}
                             </p>
                           </div>
                         </motion.div>
@@ -637,7 +855,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                   </Card>
                 )}
 
-                {/* Step 2: Location & Media (with Yandex map picker) */}
+                {/* ── Step 2: Location & Media ── */}
                 {step === 2 && (
                   <Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
                     <div className="bg-primary/5 px-8 py-4 border-b border-border/50">
@@ -657,24 +875,38 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                           {errors.venueCity && <p className="text-destructive text-sm">{errors.venueCity.message}</p>}
                         </div>
                       </div>
+
                       {/* Map picker button */}
-                      <div className="flex justify-end">
-                        <Button type="button" variant="outline" onClick={() => setMapModalOpen(true)} className="gap-2">
-                          <MapPin className="w-4 h-4" /> Select on Map
+                      <div className="flex items-center justify-between">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => setMapModalOpen(true)}
+                          className="gap-2"
+                        >
+                          <MapPin className="w-4 h-4" />
+                          {tempMarkerCoords ? "Adjust on Map" : "Select on Map"}
                         </Button>
+                        {watchedLat && watchedLng && (
+                          <p className="text-xs text-muted-foreground">
+                            📍 {watchedLat.toFixed(5)}, {watchedLng.toFixed(5)}
+                          </p>
+                        )}
                       </div>
-                      {watchedLat && watchedLng && (
-                        <div className="text-xs text-muted-foreground bg-muted/30 rounded-xl p-2">
-                          📍 Coordinates: {watchedLat.toFixed(6)}, {watchedLng.toFixed(6)}
-                        </div>
-                      )}
-                      {/* Cover image upload (unchanged) */}
+
+                      {/* Cover image upload */}
                       <div className="space-y-3">
                         <Label>Cover Image</Label>
                         {watchedImageUrl ? (
                           <div className="relative rounded-xl overflow-hidden border border-border aspect-video w-full bg-muted">
                             <img src={watchedImageUrl} alt="Cover" className="w-full h-full object-cover" />
-                            <button type="button" onClick={removeImage} className="absolute top-3 right-3 bg-black/60 text-white p-1.5 rounded-full hover:bg-black/80 transition-colors"><X className="w-4 h-4" /></button>
+                            <button
+                              type="button"
+                              onClick={removeImage}
+                              className="absolute top-3 right-3 bg-black/60 text-white p-1.5 rounded-full hover:bg-black/80 transition-colors"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
                           </div>
                         ) : (
                           <label className="flex flex-col items-center justify-center w-full h-48 rounded-xl border-2 border-dashed border-border bg-muted/40 cursor-pointer hover:bg-muted/60 transition-colors group">
@@ -684,44 +916,92 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                               ) : (
                                 <>
                                   <Upload className="w-10 h-10 text-muted-foreground mb-3 group-hover:text-primary transition-colors" />
-                                  <p className="text-sm text-muted-foreground"><span className="font-semibold">Click to upload</span> or drag and drop</p>
-                                  <p className="text-xs text-muted-foreground mt-1">PNG, JPG, WEBP, GIF up to 5MB</p>
+                                  <p className="text-sm text-muted-foreground">
+                                    <span className="font-semibold">Click to upload</span> or drag and drop
+                                  </p>
+                                  <p className="text-xs text-muted-foreground mt-1">PNG, JPG, WEBP, GIF up to 5 MB</p>
                                 </>
                               )}
                             </div>
-                            <input type="file" className="hidden" accept="image/jpeg,image/png,image/webp,image/gif" onChange={handleImageUpload} disabled={uploading} />
+                            <input
+                              type="file"
+                              className="hidden"
+                              accept="image/jpeg,image/png,image/webp,image/gif"
+                              onChange={handleImageUpload}
+                              disabled={uploading}
+                            />
                           </label>
                         )}
                         {uploadError && <p className="text-destructive text-sm">{uploadError}</p>}
-                        <p className="text-xs text-muted-foreground">Upload a photo or use the default for your chosen category.</p>
+                        <p className="text-xs text-muted-foreground">
+                          Upload a photo or use the default for your chosen category.
+                        </p>
                       </div>
                     </CardContent>
                   </Card>
                 )}
 
-                {/* Step 3: Tickets */}
+                {/* ── Step 3: Tickets ── */}
                 {step === 3 && (
                   <Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
                     <div className="bg-primary/5 px-8 py-4 border-b border-border/50 flex justify-between items-center">
-                      <div><h2 className="text-xl font-bold">Tickets</h2><p className="text-sm text-muted-foreground mt-0.5">Set up ticket types and pricing</p></div>
-                      <Button type="button" variant="outline" size="sm" onClick={() => append({ name: "", price: 0, quantity: 50, maxPerOrder: 4 })}><Plus className="w-4 h-4 mr-1" /> Add Ticket</Button>
+                      <div>
+                        <h2 className="text-xl font-bold">Tickets</h2>
+                        <p className="text-sm text-muted-foreground mt-0.5">Set up ticket types and pricing</p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => append({ name: "", price: 0, quantity: 50, maxPerOrder: 4 })}
+                      >
+                        <Plus className="w-4 h-4 mr-1" /> Add Ticket
+                      </Button>
                     </div>
                     <CardContent className="p-8 space-y-4 bg-muted/10">
                       {fields.map((field, idx) => (
-                        <div key={field.id} className="relative bg-card p-6 rounded-2xl border border-border shadow-sm flex flex-col md:flex-row gap-4 items-start md:items-end">
-                          {fields.length > 1 && (<button type="button" onClick={() => remove(idx)} className="absolute top-4 right-4 text-muted-foreground hover:text-destructive"><Trash2 className="w-5 h-5" /></button>)}
-                          <div className="flex-1 w-full space-y-2"><Label>Ticket Name</Label><Input {...register(`ticketTypes.${idx}.name`)} placeholder="General Admission" className="h-11 rounded-xl" />{errors.ticketTypes?.[idx]?.name && <p className="text-destructive text-xs">{errors.ticketTypes[idx].name?.message}</p>}</div>
-                          <div className="w-full md:w-28 space-y-2"><Label>Price (₽)</Label><Input type="number" {...register(`ticketTypes.${idx}.price`)} className="h-11 rounded-xl" /></div>
-                          <div className="w-full md:w-28 space-y-2"><Label>Total Qty</Label><Input type="number" {...register(`ticketTypes.${idx}.quantity`)} className="h-11 rounded-xl" /></div>
-                          <div className="w-full md:w-28 space-y-2"><Label>Max / Order</Label><Input type="number" {...register(`ticketTypes.${idx}.maxPerOrder`)} className="h-11 rounded-xl" /></div>
+                        <div
+                          key={field.id}
+                          className="relative bg-card p-6 rounded-2xl border border-border shadow-sm flex flex-col md:flex-row gap-4 items-start md:items-end"
+                        >
+                          {fields.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => remove(idx)}
+                              className="absolute top-4 right-4 text-muted-foreground hover:text-destructive"
+                            >
+                              <Trash2 className="w-5 h-5" />
+                            </button>
+                          )}
+                          <div className="flex-1 w-full space-y-2">
+                            <Label>Ticket Name</Label>
+                            <Input {...register(`ticketTypes.${idx}.name`)} placeholder="General Admission" className="h-11 rounded-xl" />
+                            {errors.ticketTypes?.[idx]?.name && (
+                              <p className="text-destructive text-xs">{errors.ticketTypes[idx].name?.message}</p>
+                            )}
+                          </div>
+                          <div className="w-full md:w-28 space-y-2">
+                            <Label>Price (₽)</Label>
+                            <Input type="number" {...register(`ticketTypes.${idx}.price`)} className="h-11 rounded-xl" />
+                          </div>
+                          <div className="w-full md:w-28 space-y-2">
+                            <Label>Total Qty</Label>
+                            <Input type="number" {...register(`ticketTypes.${idx}.quantity`)} className="h-11 rounded-xl" />
+                          </div>
+                          <div className="w-full md:w-28 space-y-2">
+                            <Label>Max / Order</Label>
+                            <Input type="number" {...register(`ticketTypes.${idx}.maxPerOrder`)} className="h-11 rounded-xl" />
+                          </div>
                         </div>
                       ))}
-                      {errors.ticketTypes?.message && <p className="text-destructive text-sm">{errors.ticketTypes.message}</p>}
+                      {errors.ticketTypes?.message && (
+                        <p className="text-destructive text-sm">{errors.ticketTypes.message}</p>
+                      )}
                     </CardContent>
                   </Card>
                 )}
 
-                {/* Step 4: Preview */}
+                {/* ── Step 4: Preview & Publish ── */}
                 {step === 4 && (
                   <Card className="rounded-3xl border-border/60 shadow-lg overflow-hidden">
                     <div className="bg-primary/5 px-8 py-4 border-b border-border/50">
@@ -729,13 +1009,30 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                       <p className="text-sm text-muted-foreground mt-0.5">Check everything looks right before going live</p>
                     </div>
                     <CardContent className="p-8 space-y-6">
-                      {allValues.imageUrl && <div className="rounded-2xl overflow-hidden aspect-video w-full"><img src={allValues.imageUrl} alt="Cover" className="w-full h-full object-cover" /></div>}
+                      {allValues.imageUrl && (
+                        <div className="rounded-2xl overflow-hidden aspect-video w-full">
+                          <img src={allValues.imageUrl} alt="Cover" className="w-full h-full object-cover" />
+                        </div>
+                      )}
+
                       <div className="divide-y divide-border rounded-2xl border border-border overflow-hidden">
                         {[
-                          { icon: "📌", label: "Title", value: allValues.title },
-                          { icon: "🏷", label: "Category", value: EVENT_CATEGORIES.find(c => c.value === allValues.category)?.label },
-                          { icon: "📅", label: "Date & Time", value: allValues.dateStr && allValues.time ? `${new Date(allValues.dateStr).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })} at ${allValues.time}${allValues.recurrence !== "none" ? ` · repeats ${allValues.recurrence}` : ""}` : null },
-                          { icon: "📍", label: "Location", value: allValues.venueAddress && allValues.venueCity ? `${allValues.venueAddress}, ${allValues.venueCity}` : null },
+                          { icon: "📌", label: "Title",     value: allValues.title },
+                          { icon: "🏷",  label: "Category",  value: EVENT_CATEGORIES.find(c => c.value === allValues.category)?.label },
+                          {
+                            icon: "📅", label: "Date & Time",
+                            value: allValues.dateStr && allValues.time
+                              ? `${new Date(allValues.dateStr).toLocaleDateString("en-GB", {
+                                  weekday: "long", day: "numeric", month: "long", year: "numeric",
+                                })} at ${allValues.time}${allValues.recurrence !== "none" ? ` · repeats ${allValues.recurrence}` : ""}`
+                              : null,
+                          },
+                          {
+                            icon: "📍", label: "Location",
+                            value: allValues.venueAddress && allValues.venueCity
+                              ? `${allValues.venueAddress}, ${allValues.venueCity}`
+                              : null,
+                          },
                         ].filter(r => r.value).map(row => (
                           <div key={row.label} className="flex items-start gap-3 px-5 py-3.5 bg-card">
                             <span className="text-base mt-0.5">{row.icon}</span>
@@ -744,21 +1041,39 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                           </div>
                         ))}
                       </div>
+
                       {allValues.description && (
                         <div className="rounded-2xl bg-muted/40 p-5">
                           <p className="text-xs uppercase tracking-wide text-muted-foreground font-medium mb-2">Description</p>
                           <p className="text-sm leading-relaxed line-clamp-5">{allValues.description}</p>
                         </div>
                       )}
+
                       {(allValues.ticketTypes?.length ?? 0) > 0 && (
                         <div>
                           <p className="text-xs uppercase tracking-wide text-muted-foreground font-medium mb-2">Tickets</p>
-                          <div className="space-y-2">{allValues.ticketTypes.map((t, i) => (<div key={i} className="flex justify-between items-center bg-muted/30 rounded-xl px-4 py-3 text-sm"><span className="font-medium">{t.name || "Unnamed"}</span><span className="text-muted-foreground">{t.price === 0 ? "Free" : `${t.price} ₽`} · {t.quantity} available</span></div>))}</div>
+                          <div className="space-y-2">
+                            {allValues.ticketTypes.map((t, i) => (
+                              <div key={i} className="flex justify-between items-center bg-muted/30 rounded-xl px-4 py-3 text-sm">
+                                <span className="font-medium">{t.name || "Unnamed"}</span>
+                                <span className="text-muted-foreground">
+                                  {t.price === 0 ? "Free" : `${t.price} ₽`} · {t.quantity} available
+                                </span>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       )}
+
                       <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-2xl p-5 text-xs text-amber-900 dark:text-amber-200 leading-relaxed">
-                        ExpatEvents provides the infrastructure to organise activities. The voluntary organisers do not represent ExpatEvents as vicarious agents. In the case of gross negligence by the organisers, ExpatEvents therefore does not accept any legal responsibility for resulting damages. Neither ExpatEvents nor the event organisers assume liability for any loss of or damage to personal property, nor shall they be held responsible in the event of financial, physical, or emotional damage.
+                        ExpatEvents provides the infrastructure to organise activities. The voluntary organisers do not
+                        represent ExpatEvents as vicarious agents. In the case of gross negligence by the organisers,
+                        ExpatEvents therefore does not accept any legal responsibility for resulting damages. Neither
+                        ExpatEvents nor the event organisers assume liability for any loss of or damage to personal
+                        property, nor shall they be held responsible in the event of financial, physical, or emotional
+                        damage.
                       </div>
+
                       {submitError && (
                         <div className="flex items-start gap-3 p-4 rounded-2xl bg-destructive/10 border border-destructive/20">
                           <AlertCircle className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
@@ -768,25 +1083,39 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                     </CardContent>
                   </Card>
                 )}
+
               </motion.div>
             </AnimatePresence>
           </div>
 
+          {/* Navigation buttons */}
           <div className="flex gap-3 mt-8">
-            {step > 0 && <Button type="button" variant="outline" onClick={prevStep} className="flex-1 h-12 rounded-2xl"><ArrowLeft className="w-4 h-4 mr-2" /> Back</Button>}
+            {step > 0 && (
+              <Button type="button" variant="outline" onClick={prevStep} className="flex-1 h-12 rounded-2xl">
+                <ArrowLeft className="w-4 h-4 mr-2" /> Back
+              </Button>
+            )}
             {step < STEPS.length - 1 ? (
-              <Button type="button" onClick={nextStep} className="flex-1 h-12 rounded-2xl shadow-lg shadow-primary/20">Next <ArrowRight className="w-4 h-4 ml-2" /></Button>
+              <Button type="button" onClick={nextStep} className="flex-1 h-12 rounded-2xl shadow-lg shadow-primary/20">
+                Next <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
             ) : (
-              <Button type="submit" disabled={createEvent.isPending} className="flex-1 h-12 text-base rounded-2xl shadow-xl shadow-primary/20">
+              <Button
+                type="submit"
+                disabled={createEvent.isPending}
+                className="flex-1 h-12 text-base rounded-2xl shadow-xl shadow-primary/20"
+              >
                 {createEvent.isPending ? "Publishing…" : "Publish Event"}
               </Button>
             )}
           </div>
-          <p className="text-center text-xs text-muted-foreground mt-4">Step {step + 1} of {STEPS.length}</p>
+          <p className="text-center text-xs text-muted-foreground mt-4">
+            Step {step + 1} of {STEPS.length}
+          </p>
         </form>
       </div>
 
-      {/* Yandex Map Modal */}
+      {/* ── Yandex Map Modal ── */}
       <Dialog open={mapModalOpen} onOpenChange={setMapModalOpen}>
         <DialogContent className="max-w-3xl h-[80vh] flex flex-col">
           <DialogHeader>
@@ -794,8 +1123,8 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
           </DialogHeader>
           <div className="flex-1 relative min-h-[300px] rounded-lg overflow-hidden">
             <YandexMapPicker
-              lat={watchedLat}
-              lng={watchedLng}
+              lat={watchedLat ?? null}
+              lng={watchedLng ?? null}
               onLocationSelect={handleLocationSelect}
             />
           </div>
