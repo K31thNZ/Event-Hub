@@ -1,30 +1,27 @@
 // server/routes/bot-spark-routes.ts
 //
-// Internal API routes called exclusively by the meh-auth Telegram bot.
-// Protected by a shared secret (X-Bot-Secret header) — never exposed publicly.
+// Internal API routes called by the meh-auth Telegram bot (X-Bot-Secret auth).
+// The handleSparkRespond function is also exported for use by the main
+// session-authenticated frontend route at POST /api/sparks/:id/respond.
 //
-// Mount in your main router as:
+// Mount in your main router:
+//   import { botSparkRouter, handleSparkRespond } from "./routes/bot-spark-routes";
 //   app.use("/api/bot", botSparkRouter);
-//
-// Routes:
-//   GET  /api/bot/sparks/active          — list active, non-expired sparks
-//   POST /api/bot/sparks                 — create a spark (from Telegram wizard)
-//   POST /api/bot/sparks/:id/respond     — accept or decline a spark
+//   app.post("/api/sparks/:id/respond", requireAuth, handleSparkRespond);
 
 import { Router, Request, Response, NextFunction } from "express";
 import { db } from "../db";
-import { sparks, sparkResponses, users } from "@shared/schema";
-import { eq, and, inArray, gte, sql } from "drizzle-orm";
+import { sparks, sparkResponses } from "@shared/schema";
+import { eq, and, inArray, gte } from "drizzle-orm";
 
 export const botSparkRouter = Router();
 
-// ── Auth middleware — shared secret ──────────────────────────────────────────
+// ── Bot-secret auth ───────────────────────────────────────────────────────────
 
 const BOT_SECRET = process.env.EXPAT_API_SECRET ?? "";
 
 function requireBotSecret(req: Request, res: Response, next: NextFunction) {
-  const provided = req.headers["x-bot-secret"];
-  if (!BOT_SECRET || provided !== BOT_SECRET) {
+  if (!BOT_SECRET || req.headers["x-bot-secret"] !== BOT_SECRET) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
@@ -34,13 +31,10 @@ function requireBotSecret(req: Request, res: Response, next: NextFunction) {
 botSparkRouter.use(requireBotSecret);
 
 // ── GET /api/bot/sparks/active ────────────────────────────────────────────────
-// Returns all sparks that are pending/active, not yet expired, and meeting time
-// is still in the future. The bot filters by user interests client-side.
 
 botSparkRouter.get("/sparks/active", async (_req, res) => {
   try {
     const now = new Date();
-
     const activeSparks = await db
       .select()
       .from(sparks)
@@ -53,49 +47,41 @@ botSparkRouter.get("/sparks/active", async (_req, res) => {
       )
       .orderBy(sparks.meetTime);
 
-    // Attach basic response counts so the bot can show "X/Y going"
-    const withCounts = await Promise.all(
-      activeSparks.map(async spark => {
+    const withResponses = await Promise.all(
+      activeSparks.map(async s => {
         const responses = await db
           .select()
           .from(sparkResponses)
-          .where(eq(sparkResponses.sparkId, spark.id));
-        return { ...spark, responses };
+          .where(eq(sparkResponses.sparkId, s.id));
+        return { ...s, responses };
       })
     );
 
-    res.json(withCounts);
+    res.json(withResponses);
   } catch (err: any) {
-    console.error("[bot-routes] GET /sparks/active error:", err.message);
+    console.error("[bot-routes] GET /sparks/active:", err.message);
     res.status(500).json({ error: "Internal server error" });
   }
 });
 
 // ── POST /api/bot/sparks ──────────────────────────────────────────────────────
-// Creates a new spark from the Telegram wizard.
-// Body: { senderId, title, description?, activity, location, meetTime (ISO),
-//         expiresInMins, maxRespondents }
 
 botSparkRouter.post("/sparks", async (req, res) => {
   try {
     const {
-      senderId,
-      title,
-      description,
-      activity,
-      location,
-      meetTime,
-      expiresInMins,
-      maxRespondents,
+      senderId, title, description, activity, location,
+      meetTime, expiresInMins, maxRespondents, lat, lng,
     } = req.body as {
       senderId:       string;
       title:          string;
       description?:   string;
       activity:       string;
       location:       string;
-      meetTime:       string;   // ISO string from the bot
+      meetTime:       string;
       expiresInMins:  number;
       maxRespondents: number;
+      lat?:           number | null;
+      lng?:           number | null;
     };
 
     if (!senderId || !title || !activity || !location || !meetTime) {
@@ -103,14 +89,14 @@ botSparkRouter.post("/sparks", async (req, res) => {
       return;
     }
 
-    const now       = new Date();
-    const expiresAt = new Date(now.getTime() + (expiresInMins ?? 60) * 60_000);
-    const meetDate  = new Date(meetTime);
-
+    const meetDate = new Date(meetTime);
     if (isNaN(meetDate.getTime())) {
       res.status(400).json({ error: "Invalid meetTime" });
       return;
     }
+
+    const now       = new Date();
+    const expiresAt = new Date(now.getTime() + (expiresInMins ?? 60) * 60_000);
 
     const [inserted] = await db
       .insert(sparks)
@@ -120,45 +106,64 @@ botSparkRouter.post("/sparks", async (req, res) => {
         description:    description?.slice(0, 500) ?? "",
         activity,
         location:       location.slice(0, 200),
+        lat:            lat ?? null,
+        lng:            lng ?? null,
         meetTime:       meetDate,
         expiresAt,
         maxRespondents: Math.min(Math.max(maxRespondents ?? 5, 1), 20),
         status:         "pending",
-        // lat/lng not available from Telegram text wizard — null is fine
-        lat:            null,
-        lng:            null,
       })
       .returning();
 
     res.status(201).json(inserted);
   } catch (err: any) {
-    console.error("[bot-routes] POST /sparks error:", err.message);
+    console.error("[bot-routes] POST /sparks:", err.message);
     res.status(500).json({ error: "Internal server error" });
   }
 });
 
 // ── POST /api/bot/sparks/:id/respond ─────────────────────────────────────────
-// Accept or decline a spark on behalf of a user.
-// Body: { responderId: string, status: "accepted" | "declined" }
-// Returns: { ok, message?, spark?, creatorTelegramId? }
+// Bot route — responderId comes from body.
 
-botSparkRouter.post("/sparks/:id/respond", async (req, res) => {
+botSparkRouter.post("/sparks/:id/respond", handleSparkRespond);
+
+// ── Shared respond handler (bot + frontend) ───────────────────────────────────
+// For the frontend session route, the caller is responsible for extracting
+// the authenticated user's id and putting it in req.body.responderId before
+// calling this, OR you can override it from req.session in a wrapper.
+
+export async function handleSparkRespond(req: Request, res: Response): Promise<void> {
   try {
-    const sparkId    = parseInt(req.params.id, 10);
-    const { responderId, status } = req.body as {
-      responderId: string;
-      status:      "accepted" | "declined";
-    };
-
-    if (!responderId || !["accepted", "declined"].includes(status)) {
-      res.status(400).json({ error: "Missing or invalid fields" });
+    const sparkId = parseInt(req.params.id, 10);
+    if (isNaN(sparkId)) {
+      res.status(400).json({ error: "Invalid spark id" });
       return;
     }
 
-    // Load the spark
-    const [spark] = await db.select().from(sparks).where(eq(sparks.id, sparkId));
+    // For the session-auth frontend route, responderId may come from session
+    const responderId: string =
+      req.body.responderId ??
+      String((req as any).user?.id ?? (req as any).session?.userId ?? "");
+
+    const status: string = req.body.status ?? "";
+
+    if (!responderId) {
+      res.status(401).json({ error: "Not authenticated" });
+      return;
+    }
+    if (!["accepted", "declined"].includes(status)) {
+      res.status(400).json({ error: "status must be 'accepted' or 'declined'" });
+      return;
+    }
+
+    // ── Load spark ────────────────────────────────────────────────────────
+    const [spark] = await db
+      .select()
+      .from(sparks)
+      .where(eq(sparks.id, sparkId));
+
     if (!spark) {
-      res.json({ ok: false, message: "Spark not found." });
+      res.status(404).json({ ok: false, message: "Spark not found." });
       return;
     }
     if (!["pending", "active"].includes(spark.status)) {
@@ -174,9 +179,9 @@ botSparkRouter.post("/sparks/:id/respond", async (req, res) => {
       return;
     }
 
-    // Check capacity when accepting
+    // ── Capacity check ────────────────────────────────────────────────────
     if (status === "accepted") {
-      const accepted = await db
+      const currentAccepted = await db
         .select()
         .from(sparkResponses)
         .where(
@@ -185,30 +190,39 @@ botSparkRouter.post("/sparks/:id/respond", async (req, res) => {
             eq(sparkResponses.status, "accepted")
           )
         );
-      // Don't count the user's own existing accepted response against the cap
-      const othersAccepted = accepted.filter(r => r.responderId !== responderId);
+      // Don't count the responder's own existing row
+      const othersAccepted = currentAccepted.filter(r => r.responderId !== responderId);
       if (othersAccepted.length >= spark.maxRespondents) {
         res.json({ ok: false, message: "This Spark is full." });
         return;
       }
     }
 
-    // Upsert the response
-    await db
+    // ── Upsert ────────────────────────────────────────────────────────────
+    // Relies on the unique constraint:
+    //   unique("spark_responses_spark_id_responder_id_unique")
+    //   on (spark_id, responder_id)
+    // defined in schema.ts. Without that constraint onConflictDoUpdate fails.
+    const [upserted] = await db
       .insert(sparkResponses)
       .values({
         sparkId,
         responderId,
         status,
+        message:   null,
         createdAt: new Date(),
         updatedAt: new Date(),
       })
       .onConflictDoUpdate({
-        target:  [sparkResponses.sparkId, sparkResponses.responderId],
-        set:     { status, updatedAt: new Date() },
-      });
+        target: [sparkResponses.sparkId, sparkResponses.responderId],
+        set: {
+          status,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
 
-    // Promote to "active" when first accepted response arrives
+    // ── Promote spark to "active" on first accept ─────────────────────────
     if (status === "accepted" && spark.status === "pending") {
       await db
         .update(sparks)
@@ -216,27 +230,18 @@ botSparkRouter.post("/sparks/:id/respond", async (req, res) => {
         .where(eq(sparks.id, sparkId));
     }
 
-    // Resolve the creator's telegramId so the bot can DM them
-    let creatorTelegramId: string | null = null;
-    try {
-      const [creator] = await db
-        .select({ telegramId: users.telegramId })
-        .from(users)
-        .where(sql`${users.id}::text = ${spark.senderId}`);
-      creatorTelegramId = creator?.telegramId ?? null;
-    } catch { /* non-critical */ }
-
     res.json({
-      ok:   true,
+      ok:       true,
+      response: upserted,
       spark: {
         id:       spark.id,
         title:    spark.title,
         location: spark.location,
+        senderId: spark.senderId,
       },
-      creatorTelegramId,
     });
   } catch (err: any) {
-    console.error("[bot-routes] POST /sparks/:id/respond error:", err.message);
-    res.status(500).json({ error: "Internal server error" });
+    console.error("[spark-respond] error:", err.message);
+    res.status(500).json({ message: `Failed query: ${err.message}` });
   }
-});
+}
