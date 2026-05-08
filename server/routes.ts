@@ -1,4 +1,4 @@
-import { botSparkRouter } from "./routes/bot-spark-routes";
+import { botSparkRouter, handleSparkRespond } from "./routes/bot-spark-routes";
 import { registerAdminRoutes } from "./admin-routes";
 import { registerGroupRoutes } from "./group-routes";
 import { registerSparkRoutes } from "./spark-routes";
@@ -31,6 +31,7 @@ export async function registerRoutes(
 
   // ── Spark‑bot API ───────────────────────────────────────────────────
   app.use("/api/bot", botSparkRouter);
+  app.post("/api/sparks/:id/respond", requireAuth, handleSparkRespond);
   
   // ── Live Map: get today's events in Moscow timezone ─────────────────
   app.get("/api/live-map-events", async (req, res) => {
