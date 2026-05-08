@@ -1,104 +1,106 @@
 // client/src/pages/Spark.tsx
-import { useState } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { format, formatDistanceToNow, isPast } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Zap, X, MapPin, Clock, Users, Check, Flame, Send, Timer,
-  ChevronRight, Coffee, MessageCircle, Globe,
+  Zap, X, MapPin, Clock, Users, Check, Flame, Send, Timer, Trophy,
+  ArrowLeft, ArrowRight, Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel,
-  AlertDialogContent, AlertDialogDescription,
-  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import {
   useSparks, useMySparks, useCreateSpark, useCancelSpark,
   useRespondToSpark, useConfirmSpark, type Spark,
 } from "@/hooks/use-sparks";
+import { EVENT_CATEGORIES } from "@shared/categories";
+import { WordBankSelector } from "@/components/WordBankSelector";
+import { loadYandexMaps } from "@/utils/yandex-maps";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+declare global {
+  interface Window { ymaps: any; }
+}
 
-type ActivityKey =
-  | "coffee" | "food" | "drinks" | "walk" | "sport"
-  | "language" | "culture" | "study" | "networking" | "other";
+// ── Constants ─────────────────────────────────────────────────────────────────
 
-// ── Activity definitions ──────────────────────────────────────────────────────
-
-const ACTIVITIES: {
-  key: ActivityKey;
-  label: string;
-  emoji: string;
-  hint: string;
-  defaultTitle: string;
-}[] = [
-  { key: "coffee",      label: "Coffee & Chat",    emoji: "☕", hint: "A relaxed chat over coffee or tea",         defaultTitle: "Coffee & Chat"    },
-  { key: "food",        label: "Grab a Bite",       emoji: "🍔", hint: "Lunch, dinner, or a quick snack together",  defaultTitle: "Grab a Bite"      },
-  { key: "drinks",      label: "Evening Drinks",    emoji: "🍻", hint: "After-work drinks or a night out",          defaultTitle: "Evening Drinks"   },
-  { key: "walk",        label: "Park / Stroll",     emoji: "🌳", hint: "A walk in a park or around the city",       defaultTitle: "Park Stroll"      },
-  { key: "sport",       label: "Sport / Fitness",   emoji: "⚽", hint: "Workout, running, football, yoga…",         defaultTitle: "Let's Move"       },
-  { key: "language",    label: "Language Exchange", emoji: "🗣️", hint: "Practise speaking a language together",     defaultTitle: "Language Swap"    },
-  { key: "culture",     label: "Culture & Art",     emoji: "🎨", hint: "Museum, gallery, exhibition visit",         defaultTitle: "Culture Fix"      },
-  { key: "study",       label: "Study / Co-work",   emoji: "📚", hint: "Work or study together in a café",          defaultTitle: "Co-working Sesh"  },
-  { key: "networking",  label: "Networking",        emoji: "🤝", hint: "Professionals connecting over shared goals",defaultTitle: "Quick Catch-up"   },
-  { key: "other",       label: "Something Else",    emoji: "✨", hint: "Describe your idea in a few words",         defaultTitle: "Quick Meetup"     },
-];
-
-// Extra detail options per activity
-const LANGUAGE_OPTIONS = [
-  { value: "english",  label: "English",  flag: "🇬🇧" },
-  { value: "russian",  label: "Russian",  flag: "🇷🇺" },
-  { value: "spanish",  label: "Spanish",  flag: "🇪🇸" },
-  { value: "german",   label: "German",   flag: "🇩🇪" },
-  { value: "french",   label: "French",   flag: "🇫🇷" },
-  { value: "italian",  label: "Italian",  flag: "🇮🇹" },
-  { value: "chinese",  label: "Chinese",  flag: "🇨🇳" },
-  { value: "japanese", label: "Japanese", flag: "🇯🇵" },
-  { value: "korean",   label: "Korean",   flag: "🇰🇷" },
-  { value: "arabic",   label: "Arabic",   flag: "🇸🇦" },
-];
-
-const LEVEL_OPTIONS = [
-  { value: "native",       label: "Native / Fluent" },
-  { value: "advanced",     label: "Advanced (C1/C2)" },
-  { value: "intermediate", label: "Intermediate (B1/B2)" },
-  { value: "beginner",     label: "Beginner (A1/A2)" },
-];
-
-const NETWORKING_GOALS = [
-  { value: "cofounder",   label: "Find a co-founder",          emoji: "🚀" },
-  { value: "mentorship",  label: "Mentorship",                  emoji: "🎓" },
-  { value: "job",         label: "Job opportunities",           emoji: "💼" },
-  { value: "insights",    label: "Industry insights",           emoji: "💡" },
-  { value: "collaborate", label: "Collaborations",              emoji: "🔗" },
-];
-
-const VENUE_TYPES = [
-  { value: "cafe",    label: "Café",         emoji: "☕" },
-  { value: "bar",     label: "Bar / Pub",    emoji: "🍸" },
-  { value: "park",    label: "Park",         emoji: "🌳" },
-  { value: "museum",  label: "Museum",       emoji: "🖼️" },
-  { value: "cowork",  label: "Co-working",   emoji: "🏢" },
-  { value: "other",   label: "Other",        emoji: "📍" },
-];
+const YANDEX_API_KEY = import.meta.env.VITE_YANDEX_MAPS_API_KEY as string;
 
 const EXPIRE_OPTIONS = [
-  { value: 30,  label: "30 min" },
-  { value: 60,  label: "1 hr"   },
-  { value: 120, label: "2 hrs"  },
-  { value: 240, label: "4 hrs"  },
-  { value: 480, label: "8 hrs"  },
+  { value: 30,  label: "30 minutes" },
+  { value: 60,  label: "1 hour" },
+  { value: 120, label: "2 hours" },
+  { value: 240, label: "4 hours" },
+  { value: 480, label: "8 hours" },
 ];
 
-// ── Status config ─────────────────────────────────────────────────────────────
+const ACTIVITY_CATEGORIES = EVENT_CATEGORIES.filter(c =>
+  ["social", "food", "outdoor", "sports", "culture", "games", "wellness", "networking", "language"].includes(c.value)
+);
+
+const CATEGORY_ICONS: Record<string, string> = {
+  social: "🤝", food: "🍔", outdoor: "🏕️", sports: "⚽",
+  culture: "🎨", games: "🎮", wellness: "🧘", networking: "🔗", language: "🌍",
+};
+
+// ── Word banks ────────────────────────────────────────────────────────────────
+
+const ACTIVITIES = ACTIVITY_CATEGORIES.map(c => ({
+  value: c.value, label: c.label, icon: CATEGORY_ICONS[c.value] ?? "📌",
+}));
+
+const LANGUAGE_INTERESTS = [
+  { value: "english",  label: "English",  icon: "🇬🇧" },
+  { value: "russian",  label: "Russian",  icon: "🇷🇺" },
+  { value: "spanish",  label: "Spanish",  icon: "🇪🇸" },
+  { value: "german",   label: "German",   icon: "🇩🇪" },
+  { value: "french",   label: "French",   icon: "🇫🇷" },
+  { value: "chinese",  label: "Chinese",  icon: "🇨🇳" },
+  { value: "italian",  label: "Italian",  icon: "🇮🇹" },
+  { value: "japanese", label: "Japanese", icon: "🇯🇵" },
+  { value: "korean",   label: "Korean",   icon: "🇰🇷" },
+  { value: "arabic",   label: "Arabic",   icon: "🇸🇦" },
+];
+
+const BUSINESS_GOALS = [
+  { value: "cofounder",   label: "Find a co-founder" },
+  { value: "mentorship",  label: "Seek mentorship" },
+  { value: "job",         label: "Explore job opportunities" },
+  { value: "insights",    label: "Share industry insights" },
+  { value: "collaborate", label: "Build collaborations" },
+  { value: "pitch",       label: "Practice your pitch" },
+];
+
+const INTEREST_GROUPS = [
+  { value: "creative",     label: "Creative workshops" },
+  { value: "games",        label: "Board games & trivia" },
+  { value: "fitness",      label: "Fitness & outdoor" },
+  { value: "books",        label: "Book club" },
+  { value: "music",        label: "Live music" },
+  { value: "photography",  label: "Photography walks" },
+  { value: "culture",      label: "Cultural celebrations" },
+];
+
+const TITLES = [
+  { value: "coffee",     label: "Coffee & Chat",   icon: "☕" },
+  { value: "bite",       label: "Quick Bite",       icon: "🍔" },
+  { value: "stroll",     label: "Park Stroll",      icon: "🌳" },
+  { value: "swap",       label: "Language Swap",    icon: "🌍" },
+  { value: "brainstorm", label: "Brainstorm Walk",  icon: "💡" },
+  { value: "drinks",     label: "TGIF Drinks",      icon: "🍹" },
+  { value: "culture",    label: "Culture Fix",      icon: "🎨" },
+  { value: "game",       label: "Game On!",         icon: "🎮" },
+];
+
+// ── Status badge config ───────────────────────────────────────────────────────
 
 const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   pending:   { label: "Open",      className: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200" },
@@ -108,38 +110,39 @@ const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   cancelled: { label: "Cancelled", className: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-200" },
 };
 
-// ── Small helpers ─────────────────────────────────────────────────────────────
+// ── Reverse geocode helper (reused from CreateEvent pattern) ──────────────────
+
+async function reverseGeocode(coords: number[]): Promise<{ address: string; city: string }> {
+  try {
+    let result = await window.ymaps.geocode(coords, { kind: "house", results: 1 });
+    let geo = result.geoObjects.get(0);
+    if (!geo) {
+      result = await window.ymaps.geocode(coords);
+      geo = result.geoObjects.get(0);
+    }
+    return {
+      address: geo?.getAddressLine() ?? "",
+      city:    geo?.getLocalities()?.[0] ?? "",
+    };
+  } catch {
+    return { address: "", city: "" };
+  }
+}
+
+// ── Timer countdown ───────────────────────────────────────────────────────────
 
 function TimeLeft({ expiresAt }: { expiresAt: string }) {
-  if (isPast(new Date(expiresAt)))
-    return <span className="text-xs text-muted-foreground">Expired</span>;
+  const expired = isPast(new Date(expiresAt));
+  if (expired) return <span className="text-xs text-muted-foreground">Expired</span>;
   return (
     <span className="text-xs font-medium text-amber-600 dark:text-amber-400 flex items-center gap-1">
       <Timer className="w-3 h-3" />
-      {formatDistanceToNow(new Date(expiresAt))} left
+      {formatDistanceToNow(new Date(expiresAt), { addSuffix: false })} left
     </span>
   );
 }
 
-function ChipButton({
-  selected, onClick, children,
-}: { selected?: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium border transition-all ${
-        selected
-          ? "bg-primary text-primary-foreground border-primary shadow-sm"
-          : "bg-card border-border text-foreground hover:border-primary/40 hover:bg-muted/40"
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
-
-// ── Spark Card ────────────────────────────────────────────────────────────────
+// ── Spark card ────────────────────────────────────────────────────────────────
 
 function SparkCard({
   spark, currentUserId, onRespond, onCancel, onConfirm,
@@ -150,162 +153,184 @@ function SparkCard({
   onCancel:  (spark: Spark) => void;
   onConfirm: (spark: Spark) => void;
 }) {
-  const isMine   = spark.senderId === currentUserId;
-  const myRes    = spark.myResponse;
-  const accepted = spark.responses.filter(r => r.status === "accepted");
-  const isFull   = accepted.length >= spark.maxRespondents;
-  const isClosed = ["expired", "cancelled", "confirmed"].includes(spark.status);
+  const isMine    = spark.senderId === currentUserId;
+  const accepted  = spark.responses.filter(r => r.status === "accepted");
+  const isFull    = accepted.length >= spark.maxRespondents;
+  const isClosedStatus = ["expired", "cancelled", "confirmed"].includes(spark.status);
   const statusCfg = STATUS_CONFIG[spark.status] ?? STATUS_CONFIG.pending;
-
-  const activity = ACTIVITIES.find(a => a.key === (spark.activity as ActivityKey));
-  const emoji = activity?.emoji ?? "✨";
-
-  // Parse a brief "why" from filterInterests or description
-  const contextLines: string[] = [];
-  if (spark.filterInterests?.length) {
-    contextLines.push(spark.filterInterests.map(i => {
-      const lang = LANGUAGE_OPTIONS.find(l => l.value === i);
-      if (lang) return `${lang.flag} ${lang.label}`;
-      const goal = NETWORKING_GOALS.find(g => g.value === i);
-      if (goal) return `${goal.emoji} ${goal.label}`;
-      return i;
-    }).join(" · "));
-  }
-  if (spark.description && !contextLines.length) contextLines.push(spark.description);
+  const catIcon   = CATEGORY_ICONS[spark.activity] ?? "📌";
 
   return (
     <motion.div
       layout
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.97 }}
-      className={`bg-card border rounded-2xl p-4 shadow-sm transition-shadow ${
-        isClosed ? "opacity-55" : "hover:shadow-md"
-      } ${isMine ? "border-primary/30 ring-1 ring-primary/10" : "border-border"}`}
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1,  y: 0 }}
+      exit={{    opacity: 0,  scale: 0.96 }}
+      className={`bg-card border rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow
+        ${isClosedStatus ? "opacity-60" : ""}
+        ${isMine ? "border-primary/30 ring-1 ring-primary/10" : "border-border"}`}
     >
-      {/* Row 1 – avatar + title + status */}
-      <div className="flex items-start gap-3 mb-2">
-        <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-xl shrink-0">
-          {emoji}
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between gap-2">
-            <p className="font-semibold text-sm leading-tight truncate">{spark.title}</p>
-            <Badge className={`text-xs px-2 py-0.5 rounded-full border-0 font-medium shrink-0 ${statusCfg.className}`}>
-              {statusCfg.label}
-            </Badge>
-          </div>
-          <div className="flex items-center gap-2 mt-0.5">
-            <Avatar className="h-4 w-4">
-              <AvatarImage src={spark.senderAvatarUrl ?? ""} />
-              <AvatarFallback className="text-[8px]">
-                {(spark.senderDisplayName ?? "?").substring(0, 1).toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
-            <span className="text-xs text-muted-foreground">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <Avatar className="h-9 w-9 shrink-0">
+            <AvatarImage src={spark.senderAvatarUrl ?? ""} />
+            <AvatarFallback className="bg-primary/10 text-primary text-sm">
+              {(spark.senderDisplayName ?? "?").substring(0, 2).toUpperCase()}
+            </AvatarFallback>
+          </Avatar>
+          <div className="min-w-0">
+            <p className="font-semibold text-sm truncate">
               {isMine ? "You" : spark.senderDisplayName ?? "Someone"}
-            </span>
-            {isMine && !isClosed && (
-              <button
-                onClick={() => onCancel(spark)}
-                className="ml-auto text-muted-foreground hover:text-destructive transition-colors"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {format(new Date(spark.createdAt), "h:mm a")}
+            </p>
           </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <Badge className={`text-xs px-2 py-0.5 rounded-full border-0 font-medium ${statusCfg.className}`}>
+            {statusCfg.label}
+          </Badge>
+          {isMine && !isClosedStatus && (
+            <button
+              onClick={() => onCancel(spark)}
+              className="text-muted-foreground hover:text-destructive transition-colors"
+              title="Cancel spark"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Context (why / languages / goals) */}
-      {contextLines.length > 0 && (
-        <p className="text-xs text-muted-foreground mb-2 leading-relaxed pl-[52px]">
-          {contextLines[0]}
-        </p>
-      )}
-
-      {/* Row 2 – meta */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground mb-3 pl-[52px]">
-        <span className="flex items-center gap-1">
-          <MapPin className="w-3 h-3 shrink-0" /> {spark.location}
-        </span>
-        <span className="flex items-center gap-1">
-          <Clock className="w-3 h-3 shrink-0" /> {format(new Date(spark.meetTime), "EEE d MMM · HH:mm")}
-        </span>
-        <span className="flex items-center gap-1">
-          <Users className="w-3 h-3 shrink-0" /> {accepted.length}/{spark.maxRespondents} going
-        </span>
-        <TimeLeft expiresAt={spark.expiresAt} />
+      {/* Title + description */}
+      <div className="flex items-start gap-2 mb-3">
+        <span className="text-2xl leading-none mt-0.5">{catIcon}</span>
+        <div>
+          <h3 className="font-bold text-base leading-snug">{spark.title}</h3>
+          {spark.description && (
+            <p className="text-sm text-muted-foreground mt-0.5 line-clamp-3">{spark.description}</p>
+          )}
+        </div>
       </div>
 
-      {/* Row 3 – CTA */}
-      {!isClosed && !isMine && (
-        <div className="flex gap-2 pl-[52px]">
-          {myRes?.status === "accepted" ? (
-            <span className="flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400 font-semibold">
-              <Check className="w-3.5 h-3.5" /> You're in!
-            </span>
-          ) : myRes?.status === "declined" ? (
-            <span className="text-xs text-muted-foreground">You declined</span>
-          ) : (
-            <>
-              <Button
-                size="sm"
-                className="rounded-xl h-8 px-4 text-xs"
-                disabled={isFull}
-                onClick={() => onRespond(spark, "accepted")}
-              >
-                {isFull ? "Full" : "Join ⚡"}
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="rounded-xl h-8 px-3 text-xs text-muted-foreground"
-                onClick={() => onRespond(spark, "declined")}
-              >
-                Pass
-              </Button>
-            </>
+      {/* Meta */}
+      <div className="flex flex-wrap gap-3 text-sm text-muted-foreground mb-4">
+        <span className="flex items-center gap-1.5">
+          <MapPin className="w-3.5 h-3.5 shrink-0" />
+          {spark.location}
+        </span>
+        <span className="flex items-center gap-1.5">
+          <Clock className="w-3.5 h-3.5 shrink-0" />
+          {format(new Date(spark.meetTime), "MMM d · h:mm a")}
+        </span>
+        <span className="flex items-center gap-1.5">
+          <Users className="w-3.5 h-3.5 shrink-0" />
+          {accepted.length}/{spark.maxRespondents} going
+        </span>
+      </div>
+
+      {/* Respondent avatars */}
+      {accepted.length > 0 && (
+        <div className="flex items-center gap-1.5 mb-4">
+          <div className="flex -space-x-2">
+            {accepted.slice(0, 5).map(r => (
+              <Avatar key={r.id} className="h-6 w-6 ring-2 ring-background">
+                <AvatarImage src={""} />
+                <AvatarFallback className="text-[10px] bg-gray-300 text-gray-600">?</AvatarFallback>
+              </Avatar>
+            ))}
+          </div>
+          {accepted.length > 5 && (
+            <span className="text-xs text-muted-foreground">+{accepted.length - 5} more</span>
           )}
         </div>
       )}
 
-      {/* Sender confirm button */}
-      {!isClosed && isMine && accepted.length > 0 && (
-        <div className="flex items-center gap-3 pl-[52px]">
-          <Button
-            size="sm"
-            variant="outline"
-            className="rounded-xl h-8 px-4 text-xs"
-            onClick={() => onConfirm(spark)}
-          >
-            <Check className="w-3.5 h-3.5 mr-1" /> Confirm people ({accepted.length})
-          </Button>
+      {/* Footer */}
+      <div className="flex items-center justify-between gap-3">
+        <TimeLeft expiresAt={spark.expiresAt} />
+        <div className="flex items-center gap-2">
+          {isMine && spark.status === "active" && accepted.length > 0 && (
+            <Button
+              size="sm"
+              className="rounded-full h-8 px-3 text-xs gap-1.5"
+              onClick={() => onConfirm(spark)}
+            >
+              <Trophy className="w-3.5 h-3.5" /> Confirm group
+            </Button>
+          )}
+          {!isMine && !isClosedStatus && (
+            spark.myResponse?.status === "accepted" ? (
+              <div className="flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400 font-medium">
+                <Check className="w-3.5 h-3.5" /> You're in!
+                <button
+                  onClick={() => onRespond(spark, "declined")}
+                  className="text-muted-foreground hover:text-destructive text-xs underline ml-1"
+                >
+                  Undo
+                </button>
+              </div>
+            ) : spark.myResponse?.status === "declined" ? (
+              <button
+                onClick={() => onRespond(spark, "accepted")}
+                className="text-xs text-muted-foreground hover:text-primary underline"
+              >
+                Change to accept
+              </button>
+            ) : (
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={isFull}
+                  className="rounded-full h-8 px-3 text-xs gap-1.5 border-green-500 text-green-700 hover:bg-green-50 dark:text-green-400 dark:hover:bg-green-900/20"
+                  onClick={() => onRespond(spark, "accepted")}
+                >
+                  <Zap className="w-3.5 h-3.5" />
+                  {isFull ? "Full" : "I'm in"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="rounded-full h-8 px-3 text-xs text-muted-foreground"
+                  onClick={() => onRespond(spark, "declined")}
+                >
+                  Pass
+                </Button>
+              </div>
+            )
+          )}
+          {spark.status === "confirmed" && (
+            <span className="text-xs text-blue-600 dark:text-blue-400 font-medium flex items-center gap-1">
+              <Check className="w-3.5 h-3.5" /> Meet confirmed
+            </span>
+          )}
         </div>
-      )}
+      </div>
     </motion.div>
   );
 }
 
-// ── Confirm Dialog ────────────────────────────────────────────────────────────
+// ── Confirm respondents dialog ────────────────────────────────────────────────
 
 function ConfirmDialog({
   spark, open, onClose,
 }: { spark: Spark | null; open: boolean; onClose: () => void }) {
-  const [selected, setSelected] = useState<string[]>([]);
   const confirmSpark = useConfirmSpark();
-  const { toast } = useToast();
+  const { toast }    = useToast();
+  const [selected, setSelected] = useState<string[]>([]);
 
-  if (!spark) return null;
-  const accepted = spark.responses.filter(r => r.status === "accepted");
-
+  const accepted = spark?.responses.filter(r => r.status === "accepted") ?? [];
   const toggle = (id: string) =>
     setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
 
   const handleConfirm = async () => {
+    if (!spark || selected.length === 0) return;
     try {
       await confirmSpark.mutateAsync({ sparkId: spark.id, responderIds: selected });
-      toast({ title: "Meetup confirmed! 🎉" });
+      toast({ title: "Spark confirmed! 🎉", description: `${selected.length} people confirmed for your meetup.` });
       onClose();
     } catch (err: any) {
       toast({ title: "Failed", description: err.message, variant: "destructive" });
@@ -316,30 +341,31 @@ function ConfirmDialog({
     <AlertDialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Who's coming?</AlertDialogTitle>
+          <AlertDialogTitle>Confirm your group</AlertDialogTitle>
           <AlertDialogDescription>
-            Select the people you want to meet. They'll be notified.
+            Select who's joining you for "{spark?.title}". Others will be notified they missed out.
           </AlertDialogDescription>
         </AlertDialogHeader>
-        <div className="flex flex-col gap-2 max-h-60 overflow-y-auto py-1">
+        <div className="space-y-2 max-h-64 overflow-y-auto py-2">
+          {accepted.length === 0 && (
+            <p className="text-sm text-muted-foreground text-center py-4">No accepted responses yet.</p>
+          )}
           {accepted.map(r => (
             <button
-              key={r.responderId}
+              key={r.id}
               onClick={() => toggle(r.responderId)}
-              className={`flex items-center gap-3 p-2.5 rounded-xl border transition-all text-left ${
+              className={`w-full flex items-center gap-3 p-3 rounded-xl transition-colors text-left ${
                 selected.includes(r.responderId)
-                  ? "border-primary bg-primary/5"
-                  : "border-border hover:border-primary/30"
+                  ? "bg-primary/10 border border-primary/30"
+                  : "bg-muted/40 hover:bg-muted"
               }`}
             >
-              <Avatar className="h-8 w-8">
-                <AvatarFallback className="text-xs">?</AvatarFallback>
+              <Avatar className="h-8 w-8 shrink-0">
+                <AvatarFallback className="text-xs bg-gray-300 text-gray-600">?</AvatarFallback>
               </Avatar>
-              <span className="flex-1 text-sm font-medium">Member</span>
+              <span className="flex-1 font-medium text-sm">Member</span>
               {r.message && (
-                <span className="text-xs text-muted-foreground italic truncate max-w-[100px]">
-                  "{r.message}"
-                </span>
+                <span className="text-xs text-muted-foreground italic truncate max-w-[100px]">"{r.message}"</span>
               )}
               {selected.includes(r.responderId) && <Check className="w-4 h-4 text-primary shrink-0" />}
             </button>
@@ -351,9 +377,7 @@ function ConfirmDialog({
             disabled={selected.length === 0 || confirmSpark.isPending}
             onClick={handleConfirm}
           >
-            {confirmSpark.isPending
-              ? "Confirming…"
-              : `Confirm${selected.length > 0 ? ` (${selected.length})` : ""}`}
+            {confirmSpark.isPending ? "Confirming…" : `Confirm ${selected.length > 0 ? `(${selected.length})` : ""}`}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -361,420 +385,607 @@ function ConfirmDialog({
   );
 }
 
-// ── Create Spark Sheet — redesigned ──────────────────────────────────────────
+// ── Map location picker (inline, for the Sheet) ───────────────────────────────
 
-const TOTAL_STEPS = 4;
-
-function stepTitle(step: number, activity: ActivityKey | null): string {
-  switch (step) {
-    case 0: return "What's the vibe?";
-    case 1: return activity === "language"
-        ? "Language details"
-        : activity === "networking"
-        ? "Your goals"
-        : "A bit more detail";
-    case 2: return "Where & when?";
-    case 3: return "Almost done";
-    default: return "";
-  }
+interface SparkMapPickerProps {
+  lat: number | null;
+  lng: number | null;
+  onLocationSelect: (lat: number, lng: number, address: string) => void;
 }
 
-function stepDesc(step: number, activity: ActivityKey | null): string {
-  switch (step) {
-    case 0: return "Pick one activity — this tells people exactly what you're after.";
-    case 1: return activity === "language"
-        ? "Help others know whether this is for them."
-        : activity === "networking"
-        ? "What kind of connection are you looking for?"
-        : "Add any extra context (optional).";
-    case 2: return "Where do you want to meet and when?";
-    case 3: return "Finalise the details and send your spark.";
-    default: return "";
+function SparkMapPicker({ lat, lng, onLocationSelect }: SparkMapPickerProps) {
+  const mapRef = useRef<HTMLDivElement>(null);
+  const [mapInstance, setMapInstance] = useState<any>(null);
+  const [marker,      setMarker]      = useState<any>(null);
+  const [apiLoaded,   setApiLoaded]   = useState(false);
+
+  // Search state
+  const [query,          setQuery]          = useState("");
+  const [results,        setResults]        = useState<any[]>([]);
+  const [resultsOpen,    setResultsOpen]    = useState(false);
+  const [searchLoading,  setSearchLoading]  = useState(false);
+  const [searchError,    setSearchError]    = useState<string | null>(null);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Load shared Yandex script
+  useEffect(() => {
+    loadYandexMaps(YANDEX_API_KEY)
+      .then(() => setApiLoaded(true))
+      .catch(err => console.error("Yandex Maps load error:", err));
+  }, []);
+
+  // Init map
+  useEffect(() => {
+    if (!apiLoaded || !mapRef.current || mapInstance) return;
+    const center = [lat ?? 55.7558, lng ?? 37.6173];
+    const newMap = new window.ymaps.Map(mapRef.current, {
+      center,
+      zoom: lat && lng ? 16 : 13,
+      controls: ["zoomControl"],
+    });
+    setMapInstance(newMap);
+
+    const newMarker = new window.ymaps.Placemark(center, {}, {
+      draggable: true,
+      preset: "islands#violetIcon",
+    });
+    newMap.geoObjects.add(newMarker);
+    setMarker(newMarker);
+
+    newMap.events.add("click", async (e: any) => {
+      const coords = e.get("coords");
+      newMarker.geometry.setCoordinates(coords);
+      const { address } = await reverseGeocode(coords);
+      onLocationSelect(coords[0], coords[1], address);
+    });
+
+    newMarker.events.add("dragend", async () => {
+      const coords = newMarker.geometry.getCoordinates();
+      const { address } = await reverseGeocode(coords);
+      onLocationSelect(coords[0], coords[1], address);
+    });
+  }, [apiLoaded]); // eslint-disable-line
+
+  // Sync marker to external lat/lng
+  useEffect(() => {
+    if (marker && lat && lng) {
+      marker.geometry.setCoordinates([lat, lng]);
+      mapInstance?.setCenter([lat, lng], 16, { duration: 300 });
+    }
+  }, [lat, lng, marker, mapInstance]);
+
+  // Business search
+  const performSearch = useCallback(async (q: string) => {
+    if (!q.trim()) { setResults([]); setResultsOpen(false); return; }
+    setSearchLoading(true);
+    setSearchError(null);
+    try {
+      const center = mapInstance?.getCenter() ?? [55.7558, 37.6173];
+      const url = `https://search-maps.yandex.ru/v1/?text=${encodeURIComponent(q)}&type=biz&ll=${center[1]},${center[0]}&spn=0.1,0.1&lang=en_RU&apikey=${YANDEX_API_KEY}&results=5`;
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(`${resp.status}`);
+      const data = await resp.json();
+      setResults(
+        (data.features ?? []).map((f: any) => ({
+          name:    f.properties?.name || f.properties?.CompanyMetaData?.name || "Place",
+          address: f.properties?.description || f.properties?.CompanyMetaData?.address || "",
+          coords:  f.geometry?.coordinates, // [lng, lat]
+        }))
+      );
+      setResultsOpen(true);
+    } catch (err: any) {
+      setSearchError("Search failed");
+      setResults([]);
+    } finally {
+      setSearchLoading(false);
+    }
+  }, [mapInstance]);
+
+  useEffect(() => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => performSearch(query), 400);
+    return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
+  }, [query, performSearch]);
+
+  const handleSelectResult = async (r: any) => {
+    const [lngC, latC] = r.coords;
+    marker?.geometry.setCoordinates([latC, lngC]);
+    mapInstance?.setCenter([latC, lngC], 16, { duration: 300 });
+    const fullAddress = r.name + (r.address ? `, ${r.address}` : "");
+    onLocationSelect(latC, lngC, fullAddress);
+    setQuery("");
+    setResults([]);
+    setResultsOpen(false);
+  };
+
+  if (!apiLoaded) {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-muted rounded-2xl">
+        <div className="text-center">
+          <div className="w-7 h-7 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+          <p className="text-xs text-muted-foreground">Loading map…</p>
+        </div>
+      </div>
+    );
   }
+
+  return (
+    <div className="relative w-full h-full rounded-2xl overflow-hidden">
+      {/* Search */}
+      <div className="absolute top-2 left-2 right-2 z-10">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+          <input
+            type="text"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="Search café, bar, park…"
+            className="w-full h-9 pl-8 pr-9 bg-white/95 backdrop-blur border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 shadow"
+          />
+          {searchLoading && (
+            <div className="absolute right-3 top-1/2 -translate-y-1/2">
+              <div className="animate-spin w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full" />
+            </div>
+          )}
+        </div>
+
+        {resultsOpen && results.length > 0 && (
+          <div className="mt-1 bg-white border border-border rounded-xl shadow-lg overflow-hidden max-h-40 overflow-y-auto">
+            {results.map((r, i) => (
+              <button
+                key={i}
+                onClick={() => handleSelectResult(r)}
+                className="w-full text-left px-3 py-2 hover:bg-muted/60 transition-colors border-b border-border/20 last:border-none"
+              >
+                <p className="text-xs font-medium">{r.name}</p>
+                {r.address && <p className="text-[10px] text-muted-foreground truncate">{r.address}</p>}
+              </button>
+            ))}
+          </div>
+        )}
+        {resultsOpen && results.length === 0 && query.trim() && !searchLoading && (
+          <div className="mt-1 bg-white border border-border rounded-xl p-2 text-xs text-muted-foreground text-center shadow">
+            No places found
+          </div>
+        )}
+        {searchError && (
+          <div className="mt-1 bg-red-50 border border-red-200 rounded-xl p-2 text-[10px] text-red-700">{searchError}</div>
+        )}
+      </div>
+
+      <div ref={mapRef} className="w-full h-full" />
+    </div>
+  );
 }
+
+// ── Steps definition ──────────────────────────────────────────────────────────
+// 0  Activity
+// 1  Details (language/biz only) OR skip
+// 2  Description (free text noticeboard)
+// 3  Location (map)
+// 4  Plan (title / time / expiry / capacity)
+
+// ── CreateSparkSheet ──────────────────────────────────────────────────────────
 
 function CreateSparkSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const createSpark = useCreateSpark();
-  const { toast } = useToast();
-
+  const { toast }   = useToast();
   const [step, setStep] = useState(0);
-  const [activity,     setActivity]     = useState<ActivityKey | null>(null);
-  const [languages,    setLanguages]    = useState<string[]>([]);
-  const [myLevel,      setMyLevel]      = useState<string>("");
-  const [networkGoals, setNetworkGoals] = useState<string[]>([]);
-  const [freeNote,     setFreeNote]     = useState("");    // for "other" step-1
-  const [venueType,    setVenueType]    = useState<string>("");
-  const [locationText, setLocationText] = useState("");
-  const [dateStr,      setDateStr]      = useState(format(new Date(), "yyyy-MM-dd"));
-  const [timeStr,      setTimeStr]      = useState(format(new Date(Date.now() + 3_600_000), "HH:00"));
-  const [expiresInMins,setExpires]      = useState(60);
-  const [maxPeople,    setMaxPeople]    = useState(5);
 
-  const resetAll = () => {
+  // Step 0 – activity
+  const [activityChip,  setActivityChip]  = useState<string[]>([]);
+
+  // Step 1 – language/biz details
+  const [languageRoles, setLanguageRoles] = useState<string[]>([]);
+  const [selectedLangs, setSelectedLangs] = useState<string[]>([]);
+  const [proficiency,   setProficiency]   = useState<string[]>([]);
+  const [businessGoals, setBusinessGoals] = useState<string[]>([]);
+  const [interestChips, setInterestChips] = useState<string[]>([]);
+
+  // Step 2 – description
+  const [description, setDescription] = useState("");
+
+  // Step 3 – location
+  const [lat,           setLat]           = useState<number | null>(null);
+  const [lng,           setLng]           = useState<number | null>(null);
+  const [locationLabel, setLocationLabel] = useState(""); // display string
+
+  // Step 4 – plan
+  const [titleChip,      setTitleChip]      = useState<string[]>([]);
+  const [meetTimeDate,   setMeetTimeDate]   = useState(format(new Date(), "yyyy-MM-dd"));
+  const [meetTimeHour,   setMeetTimeHour]   = useState(format(new Date(Date.now() + 3_600_000), "HH:00"));
+  const [expiresInMins,  setExpiresInMins]  = useState(60);
+  const [maxRespondents, setMaxRespondents] = useState(5);
+
+  const isLang = activityChip[0] === "language";
+  const isBiz  = activityChip[0] === "networking";
+  const needsDetailsStep = isLang || isBiz;
+  // Total steps: 0=activity, 1=details(conditional), 2=description, 3=location, 4=plan
+  // When no details step we just skip index 1 → still show steps 0,2,3,4 but re-label as 1-4
+  const TOTAL_STEPS = needsDetailsStep ? 5 : 4;
+
+  // Map step index (visual) to logical step content
+  // logical: 0=activity, 1=details, 2=description, 3=location, 4=plan
+  const logicalStep = needsDetailsStep ? step : step === 0 ? 0 : step + 1;
+
+  const resetForm = () => {
     setStep(0);
-    setActivity(null);
-    setLanguages([]);
-    setMyLevel("");
-    setNetworkGoals([]);
-    setFreeNote("");
-    setVenueType("");
-    setLocationText("");
-    setDateStr(format(new Date(), "yyyy-MM-dd"));
-    setTimeStr(format(new Date(Date.now() + 3_600_000), "HH:00"));
-    setExpires(60);
-    setMaxPeople(5);
+    setActivityChip([]);
+    setLanguageRoles([]); setSelectedLangs([]); setProficiency([]);
+    setBusinessGoals([]); setInterestChips([]);
+    setDescription("");
+    setLat(null); setLng(null); setLocationLabel("");
+    setTitleChip([]);
+    setMeetTimeDate(format(new Date(), "yyyy-MM-dd"));
+    setMeetTimeHour(format(new Date(Date.now() + 3_600_000), "HH:00"));
+    setExpiresInMins(60);
+    setMaxRespondents(5);
   };
 
-  const handleClose = () => { resetAll(); onClose(); };
+  const handleClose = () => { resetForm(); onClose(); };
+  const nextStep = () => setStep(p => Math.min(p + 1, TOTAL_STEPS - 1));
+  const prevStep = () => setStep(p => Math.max(p - 1, 0));
 
-  // Step 1 is skipped for activities that don't need extra context
-  const needsDetailStep = activity === "language" || activity === "networking";
-  const skip1 = !needsDetailStep;
+  // ── Can proceed? ──────────────────────────────────────────────────────────
+  const canNext = useMemo(() => {
+    if (logicalStep === 0) return activityChip.length > 0;
+    if (logicalStep === 2) return description.trim().length >= 10;
+    if (logicalStep === 3) return lat !== null && lng !== null;
+    return true;
+  }, [logicalStep, activityChip, description, lat, lng]);
 
-  const goNext = () => {
-    if (step === 0 && skip1) { setStep(2); return; }
-    setStep(s => s + 1);
-  };
-  const goBack = () => {
-    if (step === 2 && skip1) { setStep(0); return; }
-    setStep(s => s - 1);
-  };
-
-  // Derived values
-  const actDef = ACTIVITIES.find(a => a.key === activity);
-
-  const buildTitle = () => actDef?.defaultTitle ?? "Quick Meetup";
-
-  const buildDescription = () => {
-    if (activity === "language") {
-      const langNames = languages.map(l => LANGUAGE_OPTIONS.find(o => o.value === l)?.label ?? l);
-      const levelName = LEVEL_OPTIONS.find(o => o.value === myLevel)?.label ?? myLevel;
-      return `Language exchange: ${langNames.join(" + ")}. Level: ${levelName}.`;
-    }
-    if (activity === "networking") {
-      const goalNames = networkGoals.map(g => NETWORKING_GOALS.find(o => o.value === g)?.label ?? g);
-      return `Networking: ${goalNames.join(", ")}.`;
-    }
-    return freeNote.trim() || undefined;
+  // ── Build payload ─────────────────────────────────────────────────────────
+  const buildTitle = () => {
+    if (titleChip.length > 0) return TITLES.find(t => t.value === titleChip[0])?.label ?? "Quick Meetup";
+    return "Quick Meetup";
   };
 
   const buildInterests = () => {
-    if (activity === "language") return languages;
-    if (activity === "networking") return networkGoals;
-    return [];
-  };
-
-  const buildLocation = () => {
-    if (locationText.trim()) return locationText.trim();
-    const vt = VENUE_TYPES.find(v => v.value === venueType);
-    return vt ? `${vt.emoji} ${vt.label} in Moscow` : "Moscow";
-  };
-
-  const canProceed = (): boolean => {
-    if (step === 0) return !!activity;
-    if (step === 1) {
-      if (activity === "language") return languages.length > 0;
-      if (activity === "networking") return networkGoals.length > 0;
-    }
-    if (step === 2) return !!locationText.trim() || !!venueType;
-    return true;
+    if (isLang)  return [...selectedLangs, ...languageRoles];
+    if (isBiz)   return businessGoals;
+    return interestChips;
   };
 
   const handleSubmit = async () => {
     try {
-      const meetTime = new Date(`${dateStr}T${timeStr}`).toISOString();
+      const meetTime = new Date(`${meetTimeDate}T${meetTimeHour}`).toISOString();
       await createSpark.mutateAsync({
         title:           buildTitle(),
-        description:     buildDescription(),
-        activity:        activity ?? "social",
-        location:        buildLocation(),
+        description:     description.trim() || undefined,
+        activity:        activityChip[0] || "social",
+        location:        locationLabel || "Moscow",
+        lat:             lat ?? undefined,
+        lng:             lng ?? undefined,
         meetTime,
         expiresInMins,
-        maxRespondents:  maxPeople,
+        maxRespondents,
         filterInterests: buildInterests().length ? buildInterests() : undefined,
       });
-      toast({ title: "Spark sent! ⚡", description: "Nearby members will see your ping." });
-      handleClose();
+      toast({ title: "Spark sent! ⚡", description: "People nearby will see your ping." });
+      resetForm();
+      onClose();
     } catch (err: any) {
       toast({ title: "Failed to send spark", description: err.message, variant: "destructive" });
     }
   };
 
-  const effectiveStep = step; // visual step indicator
-  const visibleSteps  = skip1 ? [0, 2, 3] : [0, 1, 2, 3];
-  const visualIndex   = visibleSteps.indexOf(step);
-  const visualTotal   = visibleSteps.length;
+  // ── Step labels for header ────────────────────────────────────────────────
+  const STEP_LABELS = needsDetailsStep
+    ? ["Activity", "Details", "About", "Location", "Plan"]
+    : ["Activity", "About", "Location", "Plan"];
 
   return (
     <Sheet open={open} onOpenChange={v => { if (!v) handleClose(); }}>
-      <SheetContent side="bottom" className="rounded-t-3xl max-h-[92vh] overflow-y-auto pb-safe">
-        <SheetHeader className="mb-1 pt-2">
-          {/* Dot progress */}
-          <div className="flex justify-center gap-1.5 mb-4">
-            {visibleSteps.map((_, i) => (
-              <div
-                key={i}
-                className={`h-1.5 rounded-full transition-all duration-300 ${
-                  i === visualIndex
-                    ? "w-6 bg-primary"
-                    : i < visualIndex
-                    ? "w-3 bg-primary/40"
-                    : "w-3 bg-muted-foreground/20"
-                }`}
-              />
+      <SheetContent side="right" className="w-full sm:max-w-lg flex flex-col overflow-hidden p-0">
+        {/* Header */}
+        <div className="px-6 pt-6 pb-4 border-b border-border/60 shrink-0">
+          <SheetTitle className="text-2xl font-display flex items-center gap-2 mb-1">
+            <Zap className="w-6 h-6 text-primary" /> New Spark
+          </SheetTitle>
+
+          {/* Step progress bar */}
+          <div className="flex items-center gap-2 mt-3">
+            {STEP_LABELS.map((label, i) => (
+              <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                <div className={`h-1 w-full rounded-full transition-all duration-300 ${
+                  i < step ? "bg-primary" : i === step ? "bg-primary/60" : "bg-border"
+                }`} />
+                <span className={`text-[10px] font-medium transition-colors ${
+                  i === step ? "text-primary" : "text-muted-foreground"
+                }`}>
+                  {label}
+                </span>
+              </div>
             ))}
           </div>
-          <SheetTitle className="text-xl font-display text-center">
-            {stepTitle(step, activity)}
-          </SheetTitle>
-          <p className="text-sm text-muted-foreground text-center mt-0.5">
-            {stepDesc(step, activity)}
-          </p>
-        </SheetHeader>
+        </div>
 
-        <div className="mt-5 space-y-4 px-1">
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto px-6 py-5">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={step}
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{    opacity: 0, x: -20 }}
+              transition={{ duration: 0.18 }}
+            >
 
-          {/* ── Step 0: Activity ── */}
-          {step === 0 && (
-            <div className="grid grid-cols-2 gap-2.5">
-              {ACTIVITIES.map(a => (
-                <button
-                  key={a.key}
-                  type="button"
-                  onClick={() => setActivity(a.key)}
-                  className={`flex flex-col items-start gap-1 p-3.5 rounded-2xl border text-left transition-all ${
-                    activity === a.key
-                      ? "border-primary bg-primary/5 ring-1 ring-primary/20"
-                      : "border-border hover:border-primary/30 hover:bg-muted/30"
-                  }`}
-                >
-                  <span className="text-2xl">{a.emoji}</span>
-                  <span className="font-semibold text-sm leading-tight">{a.label}</span>
-                  <span className="text-xs text-muted-foreground leading-snug">{a.hint}</span>
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* ── Step 1: Language details ── */}
-          {step === 1 && activity === "language" && (
-            <div className="space-y-5">
-              <div>
-                <Label className="text-sm font-semibold mb-2 block">Languages involved</Label>
-                <div className="flex flex-wrap gap-2">
-                  {LANGUAGE_OPTIONS.map(l => (
-                    <ChipButton
-                      key={l.value}
-                      selected={languages.includes(l.value)}
-                      onClick={() =>
-                        setLanguages(prev =>
-                          prev.includes(l.value)
-                            ? prev.filter(x => x !== l.value)
-                            : [...prev, l.value]
-                        )
-                      }
-                    >
-                      {l.flag} {l.label}
-                    </ChipButton>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <Label className="text-sm font-semibold mb-2 block">My level</Label>
-                <div className="flex flex-wrap gap-2">
-                  {LEVEL_OPTIONS.map(l => (
-                    <ChipButton
-                      key={l.value}
-                      selected={myLevel === l.value}
-                      onClick={() => setMyLevel(l.value)}
-                    >
-                      {l.label}
-                    </ChipButton>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ── Step 1: Networking goals ── */}
-          {step === 1 && activity === "networking" && (
-            <div>
-              <Label className="text-sm font-semibold mb-2 block">What are you looking for?</Label>
-              <div className="flex flex-wrap gap-2">
-                {NETWORKING_GOALS.map(g => (
-                  <ChipButton
-                    key={g.value}
-                    selected={networkGoals.includes(g.value)}
-                    onClick={() =>
-                      setNetworkGoals(prev =>
-                        prev.includes(g.value)
-                          ? prev.filter(x => x !== g.value)
-                          : [...prev, g.value]
-                      )
-                    }
-                  >
-                    {g.emoji} {g.label}
-                  </ChipButton>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* ── Step 1: Other activity free note ── */}
-          {step === 1 && activity && !["language", "networking"].includes(activity) && (
-            <div>
-              <Label className="text-sm font-semibold mb-2 block">Add a short note (optional)</Label>
-              <textarea
-                placeholder={`What specifically are you looking for? e.g. "${actDef?.hint}"`}
-                value={freeNote}
-                onChange={e => setFreeNote(e.target.value)}
-                rows={3}
-                maxLength={200}
-                className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none"
-              />
-            </div>
-          )}
-
-          {/* ── Step 2: Where & when ── */}
-          {step === 2 && (
-            <div className="space-y-5">
-              {/* Venue type */}
-              <div>
-                <Label className="text-sm font-semibold mb-2 block">Type of venue</Label>
-                <div className="flex flex-wrap gap-2">
-                  {VENUE_TYPES.map(v => (
-                    <ChipButton
-                      key={v.value}
-                      selected={venueType === v.value}
-                      onClick={() => setVenueType(venueType === v.value ? "" : v.value)}
-                    >
-                      {v.emoji} {v.label}
-                    </ChipButton>
-                  ))}
-                </div>
-              </div>
-
-              {/* Location text */}
-              <div>
-                <Label className="text-sm font-semibold mb-1.5 block">
-                  Specific location <span className="text-muted-foreground font-normal">(area, café, park…)</span>
-                </Label>
-                <Input
-                  placeholder="e.g. Gorky Park, Surf Coffee Tverskaya, Flacon…"
-                  value={locationText}
-                  onChange={e => setLocationText(e.target.value)}
-                  className="h-11 rounded-xl"
-                />
-              </div>
-
-              {/* Date & time */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label className="text-sm font-semibold mb-1.5 block">Date</Label>
-                  <Input
-                    type="date"
-                    value={dateStr}
-                    onChange={e => setDateStr(e.target.value)}
-                    className="h-11 rounded-xl"
+              {/* ── Step 0: Activity ── */}
+              {logicalStep === 0 && (
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="font-semibold text-lg mb-1">What are you up for?</h3>
+                    <p className="text-sm text-muted-foreground mb-4">Pick the vibe for your meetup.</p>
+                  </div>
+                  <WordBankSelector
+                    options={ACTIVITIES}
+                    selected={activityChip}
+                    onToggle={setActivityChip}
+                    multiSelect={false}
                   />
                 </div>
-                <div>
-                  <Label className="text-sm font-semibold mb-1.5 block">Time</Label>
-                  <Input
-                    type="time"
-                    value={timeStr}
-                    onChange={e => setTimeStr(e.target.value)}
-                    className="h-11 rounded-xl"
+              )}
+
+              {/* ── Step 1: Details (language/biz only) ── */}
+              {logicalStep === 1 && isLang && (
+                <div className="space-y-6">
+                  <div>
+                    <h3 className="font-semibold text-lg mb-1">Language details</h3>
+                    <p className="text-sm text-muted-foreground mb-4">Help people find the right match.</p>
+                  </div>
+                  <div>
+                    <Label className="mb-2 block">I am a…</Label>
+                    <WordBankSelector
+                      options={[
+                        { value: "native",  label: "Native Speaker" },
+                        { value: "learner", label: "Learner (B1/B2)" },
+                        { value: "beginner",label: "Beginner (A1/A2)" },
+                      ]}
+                      selected={languageRoles}
+                      onToggle={setLanguageRoles}
+                      multiSelect
+                    />
+                  </div>
+                  <div>
+                    <Label className="mb-2 block">Speaking / learning</Label>
+                    <WordBankSelector
+                      options={LANGUAGE_INTERESTS}
+                      selected={selectedLangs}
+                      onToggle={setSelectedLangs}
+                      multiSelect
+                    />
+                  </div>
+                  <div>
+                    <Label className="mb-2 block">Proficiency level</Label>
+                    <WordBankSelector
+                      options={[
+                        { value: "beginner",     label: "Beginner" },
+                        { value: "intermediate", label: "Intermediate" },
+                        { value: "advanced",     label: "Advanced" },
+                      ]}
+                      selected={proficiency}
+                      onToggle={setProficiency}
+                      multiSelect={false}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {logicalStep === 1 && isBiz && (
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="font-semibold text-lg mb-1">Networking goals</h3>
+                    <p className="text-sm text-muted-foreground mb-4">What do you want to get out of this?</p>
+                  </div>
+                  <WordBankSelector
+                    options={BUSINESS_GOALS}
+                    selected={businessGoals}
+                    onToggle={setBusinessGoals}
+                    multiSelect
                   />
                 </div>
-              </div>
-            </div>
-          )}
+              )}
 
-          {/* ── Step 3: Finalise ── */}
-          {step === 3 && (
-            <div className="space-y-5">
+              {/* ── Step 2: Description (noticeboard) ── */}
+              {logicalStep === 2 && (
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="font-semibold text-lg mb-1">Tell people about it</h3>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      Write a short noticeboard message. What's the purpose, the vibe, who should join?
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Textarea
+                      placeholder="e.g. Looking for someone to grab coffee and practice Russian conversation. Native speakers welcome! I'm B2 level, friendly and punctual. Let's meet at a place nearby for 45–60 min."
+                      value={description}
+                      onChange={e => setDescription(e.target.value)}
+                      className="rounded-xl min-h-[160px] text-sm resize-none"
+                      maxLength={500}
+                    />
+                    <div className="flex justify-between items-center">
+                      <p className={`text-xs ${description.trim().length < 10 ? "text-destructive" : "text-muted-foreground"}`}>
+                        {description.trim().length < 10
+                          ? `${10 - description.trim().length} more characters needed`
+                          : "Looks good ✓"}
+                      </p>
+                      <p className="text-xs text-muted-foreground">{description.length}/500</p>
+                    </div>
+                  </div>
 
-              {/* Summary card */}
-              <div className="bg-muted/40 border border-border rounded-2xl p-4 space-y-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-2xl">{actDef?.emoji}</span>
-                  <span className="font-bold text-base">{buildTitle()}</span>
+                  {/* Interest chips for non-lang/biz activities */}
+                  {!isLang && !isBiz && (
+                    <div className="pt-2">
+                      <Label className="mb-2 block text-sm">Tags <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                      <WordBankSelector
+                        options={INTEREST_GROUPS}
+                        selected={interestChips}
+                        onToggle={setInterestChips}
+                        multiSelect
+                      />
+                    </div>
+                  )}
                 </div>
-                {buildDescription() && (
-                  <p className="text-xs text-muted-foreground">{buildDescription()}</p>
-                )}
-                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground mt-1">
-                  <span className="flex items-center gap-1">
-                    <MapPin className="w-3 h-3" /> {buildLocation()}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Clock className="w-3 h-3" /> {dateStr} at {timeStr}
-                  </span>
-                </div>
-              </div>
+              )}
 
-              {/* Expires & max people */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label className="text-sm font-semibold mb-2 block">Spark expires in</Label>
-                  <div className="flex flex-wrap gap-2">
-                    {EXPIRE_OPTIONS.map(o => (
-                      <ChipButton
-                        key={o.value}
-                        selected={expiresInMins === o.value}
-                        onClick={() => setExpires(o.value)}
+              {/* ── Step 3: Location (map) ── */}
+              {logicalStep === 3 && (
+                <div className="space-y-3">
+                  <div>
+                    <h3 className="font-semibold text-lg mb-1">Where's the meetup?</h3>
+                    <p className="text-sm text-muted-foreground mb-3">
+                      Search for a venue or tap the map to pin your spot.
+                    </p>
+                  </div>
+                  {/* Map — taller in the sheet */}
+                  <div className="h-72 rounded-2xl overflow-hidden border border-border">
+                    <SparkMapPicker
+                      lat={lat}
+                      lng={lng}
+                      onLocationSelect={(la, ln, addr) => {
+                        setLat(la);
+                        setLng(ln);
+                        setLocationLabel(addr);
+                      }}
+                    />
+                  </div>
+                  {locationLabel ? (
+                    <div className="flex items-start gap-2 bg-primary/5 border border-primary/20 rounded-xl px-3 py-2.5">
+                      <MapPin className="w-4 h-4 text-primary mt-0.5 shrink-0" />
+                      <div>
+                        <p className="text-sm font-medium text-foreground leading-snug">{locationLabel}</p>
+                        {lat && lng && (
+                          <p className="text-[10px] text-muted-foreground mt-0.5">
+                            {lat.toFixed(5)}, {lng.toFixed(5)}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground text-center">
+                      Tap anywhere on the map or search above to set a location.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* ── Step 4: Plan ── */}
+              {logicalStep === 4 && (
+                <div className="space-y-5">
+                  <div>
+                    <h3 className="font-semibold text-lg mb-1">Final details</h3>
+                    <p className="text-sm text-muted-foreground mb-4">When, how long, how many?</p>
+                  </div>
+
+                  <div>
+                    <Label className="mb-2 block">Quick title</Label>
+                    <WordBankSelector
+                      options={TITLES}
+                      selected={titleChip}
+                      onToggle={setTitleChip}
+                      multiSelect={false}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label>Date</Label>
+                      <Input
+                        type="date"
+                        value={meetTimeDate}
+                        onChange={e => setMeetTimeDate(e.target.value)}
+                        className="h-11 rounded-xl"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Time</Label>
+                      <Input
+                        type="time"
+                        value={meetTimeHour}
+                        onChange={e => setMeetTimeHour(e.target.value)}
+                        className="h-11 rounded-xl"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label>Ping expires in</Label>
+                      <Select
+                        onValueChange={v => setExpiresInMins(parseInt(v))}
+                        value={String(expiresInMins)}
                       >
-                        {o.label}
-                      </ChipButton>
-                    ))}
+                        <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {EXPIRE_OPTIONS.map(o => (
+                            <SelectItem key={o.value} value={String(o.value)}>{o.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Max people</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={20}
+                        value={maxRespondents}
+                        onChange={e => setMaxRespondents(parseInt(e.target.value) || 5)}
+                        className="h-11 rounded-xl"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Summary card */}
+                  <div className="bg-muted/40 rounded-2xl p-4 space-y-2 text-sm border border-border/60">
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg">{CATEGORY_ICONS[activityChip[0]] ?? "📌"}</span>
+                      <span className="font-semibold">{buildTitle()}</span>
+                    </div>
+                    <p className="text-muted-foreground text-xs line-clamp-2">{description}</p>
+                    {locationLabel && (
+                      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <MapPin className="w-3 h-3 shrink-0" /> {locationLabel}
+                      </p>
+                    )}
+                    <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <Clock className="w-3 h-3 shrink-0" /> {meetTimeDate} at {meetTimeHour}
+                    </p>
+                    <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <Users className="w-3 h-3 shrink-0" /> Up to {maxRespondents} people
+                    </p>
                   </div>
                 </div>
-                <div>
-                  <Label className="text-sm font-semibold mb-2 block">Max people</Label>
-                  <div className="flex flex-wrap gap-2">
-                    {[2, 3, 5, 8].map(n => (
-                      <ChipButton
-                        key={n}
-                        selected={maxPeople === n}
-                        onClick={() => setMaxPeople(n)}
-                      >
-                        {n}
-                      </ChipButton>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+              )}
+
+            </motion.div>
+          </AnimatePresence>
         </div>
 
         {/* Footer nav */}
-        <div className="flex gap-3 mt-8 pb-4">
+        <div className="px-6 py-4 border-t border-border/60 shrink-0 flex gap-3">
           {step > 0 && (
-            <Button
-              variant="outline"
-              className="flex-1 h-12 rounded-2xl"
-              onClick={goBack}
-            >
-              Back
+            <Button variant="outline" className="flex-1 rounded-xl h-11" onClick={prevStep}>
+              <ArrowLeft className="w-4 h-4 mr-2" /> Back
             </Button>
           )}
-          {step < 3 ? (
+          {step < TOTAL_STEPS - 1 ? (
             <Button
-              className="flex-1 h-12 rounded-2xl gap-2"
-              disabled={!canProceed()}
-              onClick={goNext}
+              className="flex-1 rounded-xl h-11 gap-2"
+              disabled={!canNext}
+              onClick={nextStep}
             >
-              Continue <ChevronRight className="w-4 h-4" />
+              Next <ArrowRight className="w-4 h-4" />
             </Button>
           ) : (
             <Button
-              className="flex-1 h-12 rounded-2xl gap-2 shadow-lg shadow-primary/20"
-              disabled={createSpark.isPending}
+              className="flex-1 rounded-xl h-11 gap-2"
+              disabled={createSpark.isPending || !canNext}
               onClick={handleSubmit}
             >
-              {createSpark.isPending ? "Sending…" : "Send Spark ⚡"}
+              {createSpark.isPending ? "Sending…" : "Send Spark"}
+              <Zap className="w-4 h-4" />
             </Button>
           )}
         </div>
@@ -783,26 +994,28 @@ function CreateSparkSheet({ open, onClose }: { open: boolean; onClose: () => voi
   );
 }
 
-// ── Main page ─────────────────────────────────────────────────────────────────
+// ── Main SparkPage ────────────────────────────────────────────────────────────
 
 export default function SparkPage() {
-  const { user, isLoading: authLoading } = useAuth();
-  const currentUserId = user ? String((user as any).id) : "";
-
-  const { data: sparks, isLoading }        = useSparks();
-  const { data: mySparks }                 = useMySparks();
-  const respondToSpark                     = useRespondToSpark();
-  const cancelSpark                        = useCancelSpark();
-  const { toast }                          = useToast();
+  const { user }                      = useAuth();
+  const { data: sparks,  isLoading }  = useSparks();
+  const { data: mySparks }            = useMySparks();
+  const cancelSpark                   = useCancelSpark();
+  const respondToSpark                = useRespondToSpark();
+  const { toast }                     = useToast();
 
   const [createOpen,    setCreateOpen]    = useState(false);
   const [cancelTarget,  setCancelTarget]  = useState<Spark | null>(null);
   const [confirmTarget, setConfirmTarget] = useState<Spark | null>(null);
-  const [activeFilter,  setActiveFilter]  = useState<ActivityKey | "all">("all");
+  const [activeFilter,  setActiveFilter]  = useState<string>("all");
 
-  const filteredSparks = (sparks ?? []).filter(
-    s => activeFilter === "all" || s.activity === activeFilter
-  );
+  const currentUserId = String(user?.id ?? "");
+
+  const filteredSparks = useMemo(() => {
+    if (!sparks) return [];
+    if (activeFilter === "all") return sparks;
+    return sparks.filter(s => s.activity === activeFilter);
+  }, [sparks, activeFilter]);
 
   const handleRespond = async (spark: Spark, status: "accepted" | "declined") => {
     try {
@@ -831,98 +1044,65 @@ export default function SparkPage() {
     ["pending", "active"].includes(s.status)
   ).length ?? 0;
 
-  // Group by activity for filter bar — only show activities with live sparks
-  const activeActivities = [
-    ...new Set((sparks ?? []).map(s => s.activity as ActivityKey)),
-  ];
-
   return (
     <div className="min-h-screen bg-background">
-      <div className="max-w-2xl mx-auto px-4 sm:px-6 py-6">
+      <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8">
 
         {/* Hero */}
-        <div className="mb-6">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-11 h-11 bg-primary/10 rounded-2xl flex items-center justify-center">
-                  <Zap className="w-6 h-6 text-primary" />
-                </div>
-                <div>
-                  <h1 className="font-display text-3xl font-bold leading-tight">Spark</h1>
-                  <p className="text-sm text-muted-foreground">Spontaneous meetups, right now</p>
-                </div>
+        <div className="mb-8 flex items-start justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-11 h-11 bg-primary/10 rounded-2xl flex items-center justify-center">
+                <Zap className="w-6 h-6 text-primary" />
               </div>
-              <p className="text-sm text-muted-foreground max-w-sm leading-relaxed">
-                Send a ping — tell people what you're up for, where, and when.
-                They join, you confirm. No planning needed.
-              </p>
+              <div>
+                <h1 className="font-display text-3xl font-bold">Spark</h1>
+                <p className="text-sm text-muted-foreground">Impromptu meetups, right now</p>
+              </div>
             </div>
-            <Button
-              onClick={() => setCreateOpen(true)}
-              className="rounded-full shadow-lg shadow-primary/20 gap-2 shrink-0 h-10"
-            >
-              <Zap className="w-4 h-4" /> New Spark
-            </Button>
+            <p className="text-muted-foreground text-sm max-w-sm">
+              Post a noticeboard ping — tell people why and where.
+              They accept, you confirm — no planning needed.
+            </p>
           </div>
+          <Button
+            onClick={() => setCreateOpen(true)}
+            className="rounded-full shadow-lg shadow-primary/20 gap-2 shrink-0"
+          >
+            <Zap className="w-4 h-4" /> Spark
+          </Button>
         </div>
 
-        {/* How it works — only if no sparks yet */}
-        {!isLoading && (sparks ?? []).length === 0 && (
-          <div className="grid grid-cols-3 gap-3 mb-6">
-            {[
-              { icon: <Zap className="w-5 h-5 text-primary" />, label: "Send a spark", sub: "Pick activity, place & time" },
-              { icon: <MessageCircle className="w-5 h-5 text-primary" />, label: "Others respond", sub: "Nearby members can join" },
-              { icon: <Check className="w-5 h-5 text-primary" />, label: "You confirm", sub: "Pick who you want to meet" },
-            ].map((s, i) => (
-              <div key={i} className="bg-card border border-border rounded-2xl p-3 text-center">
-                <div className="w-9 h-9 bg-primary/10 rounded-xl flex items-center justify-center mx-auto mb-2">
-                  {s.icon}
-                </div>
-                <p className="font-semibold text-xs">{s.label}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">{s.sub}</p>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Activity filter */}
-        {activeActivities.length > 1 && (
-          <div className="flex gap-2 overflow-x-auto pb-2 mb-5 scrollbar-none">
+        {/* Activity filter chips */}
+        <div className="flex gap-2 overflow-x-auto pb-2 mb-6 scrollbar-none">
+          <button
+            onClick={() => setActiveFilter("all")}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium border whitespace-nowrap transition-all shrink-0 ${
+              activeFilter === "all"
+                ? "bg-primary text-primary-foreground border-primary"
+                : "border-border text-muted-foreground hover:border-primary/40"
+            }`}
+          >
+            <Flame className="w-3.5 h-3.5" /> All
+          </button>
+          {ACTIVITY_CATEGORIES.map(cat => (
             <button
-              onClick={() => setActiveFilter("all")}
+              key={cat.value}
+              onClick={() => setActiveFilter(activeFilter === cat.value ? "all" : cat.value)}
               className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium border whitespace-nowrap transition-all shrink-0 ${
-                activeFilter === "all"
+                activeFilter === cat.value
                   ? "bg-primary text-primary-foreground border-primary"
                   : "border-border text-muted-foreground hover:border-primary/40"
               }`}
             >
-              <Flame className="w-3.5 h-3.5" /> All
+              <span>{CATEGORY_ICONS[cat.value]}</span> {cat.label}
             </button>
-            {activeActivities.map(key => {
-              const a = ACTIVITIES.find(x => x.key === key);
-              if (!a) return null;
-              return (
-                <button
-                  key={key}
-                  onClick={() => setActiveFilter(activeFilter === key ? "all" : key)}
-                  className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium border whitespace-nowrap transition-all shrink-0 ${
-                    activeFilter === key
-                      ? "bg-primary text-primary-foreground border-primary"
-                      : "border-border text-muted-foreground hover:border-primary/40"
-                  }`}
-                >
-                  <span>{a.emoji}</span> {a.label}
-                </button>
-              );
-            })}
-          </div>
-        )}
+          ))}
+        </div>
 
-        {/* Tabs */}
         <Tabs defaultValue="feed">
-          <TabsList className="mb-5 p-1 bg-muted/50 rounded-xl w-full">
-            <TabsTrigger value="feed" className="flex-1 rounded-lg py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">
+          <TabsList className="mb-6 p-1 bg-muted/50 rounded-xl">
+            <TabsTrigger value="feed" className="rounded-lg px-4 py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">
               <Flame className="w-4 h-4 mr-2" /> Live Feed
               {filteredSparks.length > 0 && (
                 <span className="ml-2 bg-primary/15 text-primary text-xs rounded-full px-1.5 py-0.5 font-semibold">
@@ -930,7 +1110,7 @@ export default function SparkPage() {
                 </span>
               )}
             </TabsTrigger>
-            <TabsTrigger value="mine" className="flex-1 rounded-lg py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">
+            <TabsTrigger value="mine" className="rounded-lg px-4 py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">
               <Send className="w-4 h-4 mr-2" /> My Sparks
               {activeSentCount > 0 && (
                 <span className="ml-2 bg-amber-100 text-amber-700 text-xs rounded-full px-1.5 py-0.5 font-semibold">
@@ -946,11 +1126,11 @@ export default function SparkPage() {
                 <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full mx-auto" />
               </div>
             ) : filteredSparks.length === 0 ? (
-              <div className="text-center py-20 bg-card border border-dashed border-border rounded-3xl">
+              <div className="text-center py-24 bg-card border border-dashed border-border rounded-3xl">
                 <Zap className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
                 <h3 className="font-semibold text-lg mb-2">No sparks right now</h3>
                 <p className="text-muted-foreground text-sm mb-6 max-w-xs mx-auto">
-                  Be the first — send a ping and see who's free.
+                  Be the first — post a noticeboard ping and see who's free.
                 </p>
                 <Button onClick={() => setCreateOpen(true)} className="rounded-full gap-2">
                   <Zap className="w-4 h-4" /> Send the first Spark
@@ -976,10 +1156,12 @@ export default function SparkPage() {
 
           <TabsContent value="mine">
             {!mySparks || mySparks.length === 0 ? (
-              <div className="text-center py-20 bg-card border border-dashed border-border rounded-3xl">
+              <div className="text-center py-24 bg-card border border-dashed border-border rounded-3xl">
                 <Send className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
                 <h3 className="font-semibold text-lg mb-2">No sparks sent yet</h3>
-                <p className="text-muted-foreground text-sm mb-6">Create your first meetup ping.</p>
+                <p className="text-muted-foreground text-sm mb-6">
+                  Create your first impromptu meetup ping.
+                </p>
                 <Button onClick={() => setCreateOpen(true)} className="rounded-full gap-2">
                   <Zap className="w-4 h-4" /> Send a Spark
                 </Button>
@@ -1004,7 +1186,6 @@ export default function SparkPage() {
         </Tabs>
       </div>
 
-      {/* Sheets & Dialogs */}
       <CreateSparkSheet open={createOpen} onClose={() => setCreateOpen(false)} />
 
       <ConfirmDialog
