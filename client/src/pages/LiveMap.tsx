@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useEvents } from "@/hooks/use-events";
 import { useSparks, type Spark } from "@/hooks/use-sparks";
 import { type EventWithTickets } from "@shared/schema";
@@ -91,8 +91,10 @@ export default function LiveMap() {
 
   // Time filter (default = this whole week)
   const [timeFilter, setTimeFilter] = useState<TimeFilter>("week");
+  // Week offset for manual shift when timeFilter === "week" (0 = current week)
+  const [weekOffset, setWeekOffset] = useState(0);
 
-  // Compute start/end based on selected filter
+  // Compute start/end based on selected filter and optional week offset
   const now = new Date();
   const { windowStart, windowEnd } = useMemo(() => {
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -101,12 +103,14 @@ export default function LiveMap() {
         return { windowStart: new Date(now.getTime() - 120 * 60_000), windowEnd: new Date(now.getTime() + 90 * 60_000) };
       case "today":
         return { windowStart: startOfToday, windowEnd: addDays(startOfToday, 1) };
-      case "week":
-        return { windowStart: now, windowEnd: addDays(now, 7) };
+      case "week": {
+        const baseStart = addDays(now, weekOffset * 7);
+        return { windowStart: baseStart, windowEnd: addDays(baseStart, 7) };
+      }
       default:
         return { windowStart: now, windowEnd: addDays(now, 7) };
     }
-  }, [timeFilter]);
+  }, [timeFilter, weekOffset, now]);
 
   const { data: allEvents, isLoading: eventsLoading } = useEvents({ published: true });
   const { data: allSparks, isLoading: sparksLoading  } = useSparks();
@@ -310,7 +314,7 @@ export default function LiveMap() {
   const timeFilterLabel = {
     now: "Happening now",
     today: "Today",
-    week: "This week",
+    week: weekOffset === 0 ? "This week" : `Week from ${format(addDays(now, weekOffset * 7), "d MMM")}`,
   }[timeFilter];
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -401,7 +405,7 @@ export default function LiveMap() {
               ].map(cat => (
                 <button
                   key={cat.value}
-                  onClick={() => { setCategory(cat.value); /* don't close yet, user might want to change time too */ }}
+                  onClick={() => { setCategory(cat.value); /* don't close yet */ }}
                   className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
                     category === cat.value
                       ? "bg-primary text-primary-foreground border-primary"
@@ -419,7 +423,7 @@ export default function LiveMap() {
 
               {/* "Now" chip */}
               <button
-                onClick={() => setTimeFilter("now")}
+                onClick={() => { setTimeFilter("now"); setWeekOffset(0); }}
                 className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
                   timeFilter === "now"
                     ? "bg-green-100 text-green-700 border-green-300 dark:bg-green-900/30 dark:text-green-300 dark:border-green-700"
@@ -432,7 +436,7 @@ export default function LiveMap() {
 
               {/* "Today" chip */}
               <button
-                onClick={() => setTimeFilter("today")}
+                onClick={() => { setTimeFilter("today"); setWeekOffset(0); }}
                 className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
                   timeFilter === "today"
                     ? "bg-primary text-primary-foreground border-primary"
@@ -444,9 +448,9 @@ export default function LiveMap() {
 
               {/* "This week" chip */}
               <button
-                onClick={() => setTimeFilter("week")}
+                onClick={() => { setTimeFilter("week"); setWeekOffset(0); }}
                 className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
-                  timeFilter === "week"
+                  timeFilter === "week" && weekOffset === 0
                     ? "bg-primary text-primary-foreground border-primary"
                     : "bg-background border-border text-muted-foreground hover:border-primary/40"
                 }`}
@@ -454,28 +458,33 @@ export default function LiveMap() {
                 This week
               </button>
 
-              {/* Optional manual week shift arrows (kept slim) */}
-              <div className="flex items-center ml-auto gap-0.5">
-                <button
-                  onClick={() => {
-                    // Move the whole week window one week back (but never before now)
-                    setWindowStart(prev => addDays(prev, -7) < now ? now : addDays(prev, -7));
-                  }}
-                  className="w-7 h-7 rounded-full border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-primary/30 transition-colors"
-                  title="Previous week"
-                >
-                  <ChevronLeft className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={() => {
-                    setWindowStart(prev => addDays(prev, 7));
-                  }}
-                  className="w-7 h-7 rounded-full border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-primary/30 transition-colors"
-                  title="Next week"
-                >
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
+              {/* Week shift arrows (only applicable when timeFilter === "week") */}
+              {timeFilter === "week" && (
+                <div className="flex items-center ml-auto gap-0.5">
+                  <button
+                    onClick={() => setWeekOffset(prev => prev - 1)}
+                    className="w-7 h-7 rounded-full border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-primary/30 transition-colors"
+                    title="Previous week"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => setWeekOffset(prev => prev + 1)}
+                    className="w-7 h-7 rounded-full border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-primary/30 transition-colors"
+                    title="Next week"
+                  >
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                  {weekOffset !== 0 && (
+                    <button
+                      onClick={() => setWeekOffset(0)}
+                      className="text-xs text-primary underline ml-1"
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </motion.div>
         )}
@@ -519,7 +528,7 @@ export default function LiveMap() {
                   exit={{ opacity: 0, y: 6, scale: 0.97 }}
                   className="mb-2 bg-white dark:bg-zinc-900 border border-border/60 rounded-2xl px-3 py-2.5 shadow-xl min-w-[170px]"
                 >
-                  {/* Event categories */}
+                  {/* (legend content unchanged) */}
                   {usedCategories.length > 0 && (
                     <>
                       <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-1">
@@ -538,8 +547,6 @@ export default function LiveMap() {
                       </div>
                     </>
                   )}
-
-                  {/* Spark layer */}
                   {showSparks && mappableSparks.length > 0 && (
                     <>
                       <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-1 border-t border-border/40 pt-2">
@@ -551,8 +558,6 @@ export default function LiveMap() {
                       </div>
                     </>
                   )}
-
-                  {/* Status key */}
                   <div className="border-t border-border/40 mt-1 pt-2 flex flex-col gap-1.5 px-1">
                     <div className="flex items-center gap-2">
                       <span className="w-2.5 h-2.5 rounded-full bg-green-500 shrink-0 animate-pulse" />
@@ -611,7 +616,7 @@ export default function LiveMap() {
                 <div className="w-10 h-1 rounded-full bg-border" />
               </div>
 
-              {/* ── Event panel ── */}
+              {/* ── Event panel ── (unchanged) */}
               {selected.kind === "event" && (() => {
                 const event = selected.data;
                 return (
@@ -681,7 +686,7 @@ export default function LiveMap() {
                 );
               })()}
 
-              {/* ── Spark panel ── */}
+              {/* ── Spark panel ── (unchanged) */}
               {selected.kind === "spark" && (() => {
                 const spark = selected.data;
                 const accepted = spark.responses.filter(r => r.status === "accepted");
@@ -693,8 +698,6 @@ export default function LiveMap() {
                     >
                       <X className="w-4 h-4" />
                     </button>
-
-                    {/* Spark badge */}
                     <div className="flex items-center gap-2 mb-3">
                       <span
                         className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-0.5 rounded-full border"
@@ -710,17 +713,14 @@ export default function LiveMap() {
                         by {spark.senderDisplayName ?? "Someone"}
                       </span>
                     </div>
-
                     <h2 className="text-xl font-display font-bold text-foreground leading-tight mb-1 pr-8">
                       {spark.title}
                     </h2>
-
                     {spark.description && (
                       <p className="text-sm text-muted-foreground leading-relaxed mb-3 line-clamp-3">
                         {spark.description}
                       </p>
                     )}
-
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground mb-4">
                       <span className="flex items-center gap-1">
                         <MapPin className="w-3.5 h-3.5 shrink-0" />
@@ -735,7 +735,6 @@ export default function LiveMap() {
                         {accepted.length}/{spark.maxRespondents} going
                       </span>
                     </div>
-
                     <div className="flex gap-3 items-center mt-1">
                       <Button
                         asChild
