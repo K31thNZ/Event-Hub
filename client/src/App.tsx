@@ -22,6 +22,7 @@ import Profile from "@/pages/Profile";
 import { useAuth } from "@/hooks/use-auth";
 import Picks from "@/pages/Picks";
 import PitchDeck from "./pages/PitchDeck";
+import DeepTalk from "@/pages/DeepTalk";
 import { useTelegramMiniAppAuth } from "@/hooks/use-telegram-miniapp-auth";
 import LanguageExchange from "@/pages/LanguageExchange";
 
@@ -50,6 +51,9 @@ function Router() {
     return <PitchDeck />;
   }
 
+  if (location === "/deeptalk") {
+    return <DeepTalk />;
+  }
   // Admin routes — full-screen, no Navbar
   if (location.startsWith("/admin")) {
     return (
