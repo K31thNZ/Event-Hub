@@ -1907,5 +1907,3 @@ const DeepTalkDeck: React.FC = () => {
     </div>
   );
 };
-
-export default DeepTalkDeck;
