@@ -1646,6 +1646,45 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#fbe9e7",
     fontWeight: 600,
   },
+  introCard: {
+    background: "rgba(255,255,255,0.06)",
+    border: "1px solid rgba(255,255,255,0.18)",
+    borderRadius: "1.5rem",
+    padding: "1.6rem 1.8rem",
+    width: "100%",
+    color: "#e8d9cc",
+    fontSize: "0.88rem",
+    lineHeight: 1.65,
+    backdropFilter: "blur(12px)",
+    WebkitBackdropFilter: "blur(12px)",
+    boxShadow: "0 8px 24px rgba(0,0,0,0.3)",
+    position: "relative" as const,
+  },
+  introTitle: {
+    fontSize: "1.1rem",
+    fontWeight: 600,
+    color: "#fadfcf",
+    marginBottom: "0.8rem",
+    letterSpacing: "-0.2px",
+  },
+  introPara: {
+    marginBottom: "0.85rem",
+    color: "#d4c4b5",
+  },
+  dismissBtn: {
+    marginTop: "1rem",
+    background: "rgba(255,255,255,0.1)",
+    border: "1px solid rgba(255,255,255,0.25)",
+    borderRadius: "2rem",
+    color: "#f1e3d7",
+    padding: "0.55rem 1.4rem",
+    fontSize: "0.85rem",
+    fontWeight: 500,
+    cursor: "pointer",
+    display: "block",
+    width: "100%",
+    transition: "background 0.2s",
+  },
   footerNote: {
     textAlign: "center",
     fontSize: "0.75rem",
@@ -1664,6 +1703,9 @@ const DeepTalkDeck: React.FC = () => {
   const [passesRemaining, setPassesRemaining] = useState(2);
   const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
   const [isDeckEmpty, setIsDeckEmpty] = useState(false);
+
+  // Intro card
+  const [introVisible, setIntroVisible] = useState(true);
 
   // Spice state
   const [spiceQuestions, setSpiceQuestions] = useState<Question[]>([]);
@@ -1723,187 +1765,3 @@ const DeepTalkDeck: React.FC = () => {
       alert("No more spice questions available.");
       return;
     }
-    const shuffled = [...sexPool].sort(() => Math.random() - 0.5);
-    const selected = shuffled.slice(0, 5);
-    const newSpiceUsed = new Set(spiceUsed);
-    selected.forEach((q) => newSpiceUsed.add(q.question));
-    setSpiceUsed(newSpiceUsed);
-    setSpiceQuestions(selected);
-    setSpiceIndex(0);
-    setScreen("spice");
-  }, [spiceUsed]);
-
-  const handleSpiceDraw = useCallback(() => {
-    setSpiceIndex((i) => i + 1);
-  }, []);
-
-  const handleSpicePass = useCallback(() => {
-    setSpiceIndex((i) => i + 1);
-  }, []);
-
-  const closeSpicePack = useCallback(() => {
-    setScreen("game");
-  }, []);
-
-  const goBackToStart = useCallback(() => {
-    setScreen("start");
-  }, []);
-
-  const spiceDone = spiceIndex >= spiceQuestions.length;
-  const currentSpice = !spiceDone ? spiceQuestions[spiceIndex] : null;
-
-  return (
-    <div style={styles.body}>
-      <div style={styles.appContainer}>
-
-        {/* ── Start Screen ── */}
-        {screen === "start" && (
-          <div style={styles.screen}>
-            <h1 style={styles.h1}>Deep Talk Deck</h1>
-            <div style={styles.subtitle}>pick your level of connection</div>
-            <div style={styles.levelGrid}>
-              {[1, 2, 3, 4].map((lvl) => (
-                <button
-                  key={lvl}
-                  style={styles.levelBtn}
-                  onClick={() => startLevel(lvl)}
-                >
-                  <span style={styles.levelIcon}>{LEVEL_ICONS[lvl]}</span>
-                  <span>{LEVEL_CONFIG[lvl].name}</span>
-                </button>
-              ))}
-            </div>
-            <div style={{ fontSize: "0.8rem", color: "#cbb7a7" }}>
-              2 passes per game • respectful curiosity
-            </div>
-          </div>
-        )}
-
-        {/* ── Game Screen ── */}
-        {screen === "game" && (
-          <div style={styles.screen}>
-            <div
-              style={{
-                width: "100%",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-              }}
-            >
-              <button
-                style={{ ...styles.btn, minWidth: "auto", padding: "0.6rem 1rem" }}
-                onClick={goBackToStart}
-              >
-                ← back
-              </button>
-              <div style={{ fontWeight: 300, fontSize: "0.9rem" }}>
-                ✨ {LEVEL_CONFIG[level].name}
-              </div>
-              <div style={{ width: 60 }} />
-            </div>
-
-            <div style={styles.stats}>
-              <span>question {totalDrawn}</span>
-              <span>passes: {passesRemaining}</span>
-            </div>
-
-            <div style={styles.card}>
-              {currentQuestion && (
-                <span style={styles.cardCategory}>{currentQuestion.category}</span>
-              )}
-              <div style={styles.questionText}>
-                {currentQuestion?.question ?? "draw your first question"}
-              </div>
-            </div>
-
-            <div style={styles.buttonGroup}>
-              <button
-                style={{ ...styles.btn, ...styles.primaryBtn }}
-                onClick={handleDraw}
-                disabled={isDeckEmpty}
-              >
-                ✨ draw
-              </button>
-              <button
-                style={{ ...styles.btn, ...(passesRemaining <= 0 ? { opacity: 0.4, cursor: "not-allowed" } : {}) }}
-                onClick={handlePass}
-                disabled={passesRemaining <= 0}
-              >
-                ⏭️ pass
-              </button>
-            </div>
-
-            {level === 3 && (
-              <button
-                style={{ ...styles.btn, ...styles.spiceBtn }}
-                onClick={openSpicePack}
-              >
-                🌶️ spice pack (5 questions)
-              </button>
-            )}
-            {level === 3 && (
-              <div style={styles.footerNote}>optional intimate deck</div>
-            )}
-          </div>
-        )}
-
-        {/* ── Spice Screen ── */}
-        {screen === "spice" && (
-          <div style={styles.screen}>
-            <h2 style={{ fontSize: "1.8rem" }}>🌶️ Spice Pack</h2>
-            <div style={{ fontSize: "0.9rem", marginBottom: "0.5rem" }}>
-              unlimited passes • intimate &amp; playful
-            </div>
-
-            <div style={styles.stats}>
-              <span>
-                {spiceDone ? "done" : `question ${spiceIndex + 1}/${spiceQuestions.length}`}
-              </span>
-            </div>
-
-            <div style={styles.card}>
-              <span style={styles.cardCategory}>sex</span>
-              <div style={styles.questionText}>
-                {spiceDone
-                  ? "Spice pack complete. Hope it brought you closer. 🔥"
-                  : currentSpice?.question}
-              </div>
-            </div>
-
-            <div style={styles.buttonGroup}>
-              <button
-                style={{
-                  ...styles.btn,
-                  ...styles.primaryBtn,
-                  ...(spiceDone ? { opacity: 0.4, cursor: "not-allowed" } : {}),
-                }}
-                onClick={handleSpiceDraw}
-                disabled={spiceDone}
-              >
-                draw spice
-              </button>
-              <button
-                style={{
-                  ...styles.btn,
-                  ...(spiceDone ? { opacity: 0.4, cursor: "not-allowed" } : {}),
-                }}
-                onClick={handleSpicePass}
-                disabled={spiceDone}
-              >
-                ⏭️ pass
-              </button>
-            </div>
-
-            <button
-              style={{ ...styles.btn, marginTop: "0.5rem" }}
-              onClick={closeSpicePack}
-            >
-              close spice pack
-            </button>
-          </div>
-        )}
-
-      </div>
-    </div>
-  );
-};
