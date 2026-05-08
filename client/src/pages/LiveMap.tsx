@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useEvents } from "@/hooks/use-events";
 import { useSparks, type Spark } from "@/hooks/use-sparks";
 import { type EventWithTickets } from "@shared/schema";
-import { format, addHours, isPast } from "date-fns";
+import { format, addHours, addDays, isPast } from "date-fns";
 import { Link } from "wouter";
 import {
   MapPin, ArrowLeft, Ticket, Filter, X, Wifi,
@@ -53,8 +53,6 @@ const CATEGORY_DOT: Record<string, string> = {
   other:      "hsl(220 15% 55%)",
 };
 
-// Spark markers use a fixed purple/violet accent so they're visually distinct
-// from event markers on the map.
 const SPARK_COLOR = "hsl(265 80% 58%)";
 
 function dotColor(category?: string | null): string {
@@ -64,9 +62,11 @@ function dotColor(category?: string | null): string {
 const TRANSPARENT_GIF =
   "data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==";
 
-const WINDOW_STEP_HOURS = 6;
+// ── Available time filters ───────────────────────────────────────────────────
 
-// ── Selected item — either an event or a spark ────────────────────────────────
+type TimeFilter = "now" | "today" | "week";
+
+// ── Selected item ────────────────────────────────────────────────────────────
 
 type SelectedItem =
   | { kind: "event"; data: EventWithTickets }
@@ -86,25 +86,32 @@ export default function LiveMap() {
   const [showLegend, setShowLegend] = useState(false);
   const [mapLoaded,  setMapLoaded]  = useState(false);
 
-  // Toggle spark layer on/off
+  // Spark layer toggle
   const [showSparks, setShowSparks] = useState(true);
 
-  const [windowStart, setWindowStart] = useState<Date>(() => new Date());
-  const windowEnd = addHours(windowStart, 24);
+  // Time filter (default = this whole week)
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>("week");
 
-  const shiftWindow = useCallback((dir: "back" | "forward") => {
-    setWindowStart(prev => {
-      const now  = new Date();
-      const next = addHours(prev, dir === "forward" ? WINDOW_STEP_HOURS : -WINDOW_STEP_HOURS);
-      return next < now ? now : next;
-    });
-  }, []);
+  // Compute start/end based on selected filter
+  const now = new Date();
+  const { windowStart, windowEnd } = useMemo(() => {
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    switch (timeFilter) {
+      case "now":
+        return { windowStart: new Date(now.getTime() - 120 * 60_000), windowEnd: new Date(now.getTime() + 90 * 60_000) };
+      case "today":
+        return { windowStart: startOfToday, windowEnd: addDays(startOfToday, 1) };
+      case "week":
+        return { windowStart: now, windowEnd: addDays(now, 7) };
+      default:
+        return { windowStart: now, windowEnd: addDays(now, 7) };
+    }
+  }, [timeFilter]);
 
   const { data: allEvents, isLoading: eventsLoading } = useEvents({ published: true });
   const { data: allSparks, isLoading: sparksLoading  } = useSparks();
 
   const isLoading = eventsLoading || sparksLoading;
-  const now = new Date();
 
   // ── Event filtering ───────────────────────────────────────────────────────
 
@@ -132,7 +139,7 @@ export default function LiveMap() {
     ...new Set(windowedEvents.map(e => e.category).filter(Boolean)),
   ] as string[];
 
-  // ── Spark filtering — only active/pending sparks with coordinates ─────────
+  // ── Spark filtering ────────────────────────────────────────────────────────
 
   const mappableSparks = (allSparks ?? []).filter(
     s =>
@@ -253,7 +260,6 @@ export default function LiveMap() {
       if (Math.abs(lat) > 90 && Math.abs(lng) <= 90) [lat, lng] = [lng, lat];
       if (!lat || !lng) return;
 
-      // Spark markers are hexagonal/diamond with a ⚡ icon and pulse animation
       const markerHtml = `
         <div style="position:relative;width:40px;height:40px;">
           <div style="position:absolute;inset:-6px;border-radius:50%;background:${SPARK_COLOR}30;animation:ymap-pulse 2s infinite;"></div>
@@ -297,14 +303,15 @@ export default function LiveMap() {
     });
   }, [mapLoaded, mappableSparks, showSparks]);
 
-  // ── Window label ──────────────────────────────────────────────────────────
-
-  const isCurrentWindow = windowStart <= new Date(Date.now() + 60_000);
-  const windowLabel = isCurrentWindow
-    ? "Next 24 hours"
-    : `${format(windowStart, "EEE d MMM · HH:mm")} → ${format(windowEnd, "HH:mm")}`;
+  // ── Labels ────────────────────────────────────────────────────────────────
 
   const totalVisible = filtered.length + (showSparks ? mappableSparks.length : 0);
+
+  const timeFilterLabel = {
+    now: "Happening now",
+    today: "Today",
+    week: "This week",
+  }[timeFilter];
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -347,32 +354,12 @@ export default function LiveMap() {
           <p className="text-xs text-muted-foreground">
             {isLoading
               ? "Loading…"
-              : `${totalVisible} item${totalVisible !== 1 ? "s" : ""} · ${windowLabel}`}
+              : `${totalVisible} item${totalVisible !== 1 ? "s" : ""} · ${timeFilterLabel}`}
           </p>
         </div>
 
-        {/* Controls */}
+        {/* Controls – only map‑related toggles, no time arrows */}
         <div className="flex items-center gap-1 shrink-0">
-          <Button
-            variant="outline"
-            size="icon"
-            className="rounded-full w-8 h-8"
-            disabled={isCurrentWindow}
-            onClick={() => shiftWindow("back")}
-            title="Earlier"
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </Button>
-          <Button
-            variant="outline"
-            size="icon"
-            className="rounded-full w-8 h-8"
-            onClick={() => shiftWindow("forward")}
-            title="Later"
-          >
-            <ChevronRight className="w-4 h-4" />
-          </Button>
-
           {/* Spark layer toggle */}
           <button
             onClick={() => setShowSparks(v => !v)}
@@ -405,23 +392,91 @@ export default function LiveMap() {
             initial={{ opacity: 0, y: -8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
-            className="absolute top-[3.75rem] left-0 right-0 z-20 px-4 pt-2 pb-3 glass border-b border-border/60 flex flex-wrap gap-2"
+            className="absolute top-[3.75rem] left-0 right-0 z-20 px-4 pt-3 pb-4 bg-white dark:bg-zinc-900 border-b border-border/60 space-y-3"
           >
-            {[{ value: "all", label: "All", icon: "🗺️" },
-              ...EVENT_CATEGORIES.filter(c => usedCategories.includes(c.value)),
-            ].map(cat => (
+            {/* Category chips */}
+            <div className="flex flex-wrap gap-2">
+              {[{ value: "all", label: "All", icon: "🗺️" },
+                ...EVENT_CATEGORIES.filter(c => usedCategories.includes(c.value)),
+              ].map(cat => (
+                <button
+                  key={cat.value}
+                  onClick={() => { setCategory(cat.value); /* don't close yet, user might want to change time too */ }}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
+                    category === cat.value
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-background border-border text-muted-foreground hover:border-primary/40 hover:text-foreground"
+                  }`}
+                >
+                  <span>{cat.icon}</span> {cat.label}
+                </button>
+              ))}
+            </div>
+
+            {/* ── Time filter row ── */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground font-medium shrink-0">Time</span>
+
+              {/* "Now" chip */}
               <button
-                key={cat.value}
-                onClick={() => { setCategory(cat.value); setShowFilter(false); }}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
-                  category === cat.value
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "bg-background border-border text-muted-foreground hover:border-primary/40 hover:text-foreground"
+                onClick={() => setTimeFilter("now")}
+                className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
+                  timeFilter === "now"
+                    ? "bg-green-100 text-green-700 border-green-300 dark:bg-green-900/30 dark:text-green-300 dark:border-green-700"
+                    : "bg-background border-border text-muted-foreground hover:border-green-300"
                 }`}
               >
-                <span>{cat.icon}</span> {cat.label}
+                <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                Now
               </button>
-            ))}
+
+              {/* "Today" chip */}
+              <button
+                onClick={() => setTimeFilter("today")}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
+                  timeFilter === "today"
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-background border-border text-muted-foreground hover:border-primary/40"
+                }`}
+              >
+                Today
+              </button>
+
+              {/* "This week" chip */}
+              <button
+                onClick={() => setTimeFilter("week")}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
+                  timeFilter === "week"
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-background border-border text-muted-foreground hover:border-primary/40"
+                }`}
+              >
+                This week
+              </button>
+
+              {/* Optional manual week shift arrows (kept slim) */}
+              <div className="flex items-center ml-auto gap-0.5">
+                <button
+                  onClick={() => {
+                    // Move the whole week window one week back (but never before now)
+                    setWindowStart(prev => addDays(prev, -7) < now ? now : addDays(prev, -7));
+                  }}
+                  className="w-7 h-7 rounded-full border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-primary/30 transition-colors"
+                  title="Previous week"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => {
+                    setWindowStart(prev => addDays(prev, 7));
+                  }}
+                  className="w-7 h-7 rounded-full border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-primary/30 transition-colors"
+                  title="Next week"
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -443,13 +498,11 @@ export default function LiveMap() {
         {/* Nothing visible */}
         {mapLoaded && !isLoading && totalVisible === 0 && (
           <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
-            <div className="glass rounded-2xl px-6 py-5 text-center mx-8 border border-border/60 shadow-xl">
+            <div className="bg-white dark:bg-zinc-900 rounded-2xl px-6 py-5 text-center mx-8 border border-border/60 shadow-xl">
               <div className="text-4xl mb-2">🗓️</div>
               <p className="font-semibold text-foreground">Nothing in this window</p>
               <p className="text-muted-foreground text-sm mt-1">
-                {category !== "all"
-                  ? "Try a different category or shift the time window."
-                  : "Use the arrows to browse a different 24-hour window."}
+                Try a different category or time filter.
               </p>
             </div>
           </div>
@@ -464,7 +517,7 @@ export default function LiveMap() {
                   initial={{ opacity: 0, y: 6, scale: 0.97 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 6, scale: 0.97 }}
-                  className="mb-2 glass border border-border/60 rounded-2xl px-3 py-2.5 shadow-xl min-w-[170px]"
+                  className="mb-2 bg-white dark:bg-zinc-900 border border-border/60 rounded-2xl px-3 py-2.5 shadow-xl min-w-[170px]"
                 >
                   {/* Event categories */}
                   {usedCategories.length > 0 && (
@@ -515,7 +568,7 @@ export default function LiveMap() {
             </AnimatePresence>
             <button
               onClick={() => setShowLegend(v => !v)}
-              className={`flex items-center gap-1.5 glass border text-xs font-medium px-3 py-1.5 rounded-full shadow-lg transition-all ${
+              className={`flex items-center gap-1.5 bg-white dark:bg-zinc-900 border text-xs font-medium px-3 py-1.5 rounded-full shadow-lg transition-all ${
                 showLegend
                   ? "border-primary/50 text-primary"
                   : "border-border/60 text-muted-foreground hover:text-foreground hover:border-primary/30"
@@ -537,7 +590,7 @@ export default function LiveMap() {
         {/* Online events pill */}
         {mapLoaded && !isLoading && onlineEvents.length > 0 && !selected && (
           <Link href="/">
-            <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 glass border border-border/60 text-sm font-medium px-4 py-2 rounded-full shadow-lg hover:border-primary/40 transition-all cursor-pointer">
+            <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 bg-white dark:bg-zinc-900 border border-border/60 text-sm font-medium px-4 py-2 rounded-full shadow-lg hover:border-primary/40 transition-all cursor-pointer">
               <Wifi className="w-4 h-4 text-primary" />
               <span>{onlineEvents.length} online event{onlineEvents.length !== 1 ? "s" : ""} — browse all</span>
             </div>
