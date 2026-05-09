@@ -1,5 +1,5 @@
 // client/src/pages/LanguageExchange.tsx
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -8,7 +8,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { LANGUAGES, CITIES, EVENT_CATEGORIES } from "@/lib/constants";
 import LanguageUserCard from "@/components/language/LanguageUserCard";
 
-// ── Types ────────────────────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 type AgeGroup = "18-25" | "26-35" | "36-45" | "46+";
 type MeetingType = "1on1" | "small_group" | "social";
@@ -21,18 +21,24 @@ interface LanguageUser {
   interests: string[]; meeting_types: MeetingType[]; bio: string;
 }
 interface Filters {
-  language: string; city: string;
-  age_group: AgeGroup | "all"; interest: string; meeting_type: MeetingType | "all";
+  language: string;
+  city: string;
+  ageMin: number;   // index into AGE_GROUPS (0–3)
+  ageMax: number;   // index into AGE_GROUPS (0–3)
+  interest: string;
+  meeting_type: MeetingType | "all";
 }
 
-// ── Constants ────────────────────────────────────────────────────────────────
+// ── Age group constants ───────────────────────────────────────────────────────
 
-const AGE_GROUPS: { value: AgeGroup; label: string }[] = [
-  { value: "18-25", label: "18 – 25" },
-  { value: "26-35", label: "26 – 35" },
-  { value: "36-45", label: "36 – 45" },
-  { value: "46+",   label: "46 +" },
+const AGE_GROUPS: { value: AgeGroup; label: string; short: string }[] = [
+  { value: "18-25", label: "18 – 25", short: "18" },
+  { value: "26-35", label: "26 – 35", short: "26" },
+  { value: "36-45", label: "36 – 45", short: "36" },
+  { value: "46+",   label: "46 +",    short: "46+" },
 ];
+
+// ── Meeting types ─────────────────────────────────────────────────────────────
 
 const MEETING_TYPES: { value: MeetingType; label: string; icon: React.ElementType }[] = [
   { value: "1on1",        label: "1 on 1",      icon: User },
@@ -42,7 +48,7 @@ const MEETING_TYPES: { value: MeetingType; label: string; icon: React.ElementTyp
 
 const INTEREST_CATEGORIES = EVENT_CATEGORIES.filter(c => c.value !== "language");
 
-// ── Mock data ────────────────────────────────────────────────────────────────
+// ── Mock data ─────────────────────────────────────────────────────────────────
 
 const MOCK_USERS: LanguageUser[] = [
   { id: "1", full_name: "Anna K.", avatar_url: "https://i.pravatar.cc/150?img=47", city: "Moscow", age_group: "26-35", native: ["ru"], learning: [{ code: "en", proficiency: "B2" }, { code: "de", proficiency: "A2" }], interests: ["culture", "music", "wellness"], meeting_types: ["1on1", "small_group"], bio: "Love discussing books, films and culture." },
@@ -56,11 +62,141 @@ const MOCK_USERS: LanguageUser[] = [
   { id: "9", full_name: "Priya N.", avatar_url: "https://i.pravatar.cc/150?img=40", city: "Singapore", age_group: "26-35", native: ["hi", "en"], learning: [{ code: "ja", proficiency: "B1" }, { code: "de", proficiency: "A1" }], interests: ["tech", "business", "music"], meeting_types: ["1on1", "social"], bio: "Product manager by day, language learner by night." },
 ];
 
-// ── Component ────────────────────────────────────────────────────────────────
+// ── Dual-handle discrete range slider ────────────────────────────────────────
+// Operates on indices 0–3 mapping to AGE_GROUPS.
+// Both handles snap to the 4 stops. Min handle cannot exceed max and vice versa.
+
+interface AgeRangeSliderProps {
+  minIdx: number;
+  maxIdx: number;
+  onChange: (minIdx: number, maxIdx: number) => void;
+}
+
+function AgeRangeSlider({ minIdx, maxIdx, onChange }: AgeRangeSliderProps) {
+  const trackRef      = useRef<HTMLDivElement>(null);
+  const dragging      = useRef<"min" | "max" | null>(null);
+  const STOPS         = AGE_GROUPS.length - 1; // 3
+
+  // Convert a client X position → nearest stop index
+  const xToIdx = useCallback((clientX: number): number => {
+    if (!trackRef.current) return 0;
+    const { left, width } = trackRef.current.getBoundingClientRect();
+    const pct  = Math.max(0, Math.min(1, (clientX - left) / width));
+    return Math.round(pct * STOPS);
+  }, [STOPS]);
+
+  const onPointerDown = (handle: "min" | "max") => (e: React.PointerEvent) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragging.current = handle;
+  };
+
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (!dragging.current) return;
+    const idx = xToIdx(e.clientX);
+    if (dragging.current === "min") {
+      onChange(Math.min(idx, maxIdx), maxIdx);
+    } else {
+      onChange(minIdx, Math.max(idx, minIdx));
+    }
+  };
+
+  const onPointerUp = () => { dragging.current = null; };
+
+  // Percentage positions for the filled track and handles
+  const minPct = (minIdx / STOPS) * 100;
+  const maxPct = (maxIdx / STOPS) * 100;
+
+  const isFullRange = minIdx === 0 && maxIdx === STOPS;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium text-muted-foreground">Age range</span>
+        <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full transition-all ${
+          isFullRange
+            ? "bg-muted text-muted-foreground"
+            : "bg-primary/10 text-primary"
+        }`}>
+          {isFullRange
+            ? "Any age"
+            : `${AGE_GROUPS[minIdx].label} – ${AGE_GROUPS[maxIdx].label}`
+          }
+        </span>
+      </div>
+
+      {/* Track */}
+      <div
+        ref={trackRef}
+        className="relative h-6 flex items-center select-none"
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerLeave={onPointerUp}
+      >
+        {/* Background rail */}
+        <div className="absolute inset-x-0 h-1.5 rounded-full bg-border" />
+
+        {/* Active fill between handles */}
+        <div
+          className="absolute h-1.5 rounded-full bg-primary transition-all"
+          style={{ left: `${minPct}%`, width: `${maxPct - minPct}%` }}
+        />
+
+        {/* Stop tick marks */}
+        {AGE_GROUPS.map((_, i) => (
+          <div
+            key={i}
+            className="absolute w-1 h-1 rounded-full bg-border -translate-x-0.5"
+            style={{ left: `${(i / STOPS) * 100}%` }}
+          />
+        ))}
+
+        {/* Min handle */}
+        <div
+          className={`absolute w-5 h-5 rounded-full border-2 border-primary bg-background shadow-md cursor-grab active:cursor-grabbing -translate-x-1/2 transition-transform hover:scale-110 z-10 ${
+            minIdx === maxIdx ? "z-20" : ""
+          }`}
+          style={{ left: `${minPct}%` }}
+          onPointerDown={onPointerDown("min")}
+        />
+
+        {/* Max handle */}
+        <div
+          className="absolute w-5 h-5 rounded-full border-2 border-primary bg-background shadow-md cursor-grab active:cursor-grabbing -translate-x-1/2 transition-transform hover:scale-110 z-10"
+          style={{ left: `${maxPct}%` }}
+          onPointerDown={onPointerDown("max")}
+        />
+      </div>
+
+      {/* Labels beneath stop positions */}
+      <div className="relative h-4">
+        {AGE_GROUPS.map((g, i) => (
+          <span
+            key={i}
+            className={`absolute text-[10px] -translate-x-1/2 font-medium transition-colors ${
+              i >= minIdx && i <= maxIdx
+                ? "text-primary"
+                : "text-muted-foreground"
+            }`}
+            style={{ left: `${(i / STOPS) * 100}%` }}
+          >
+            {g.short}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
 
 export default function LanguageExchange() {
   const [filters, setFilters] = useState<Filters>({
-    language: "all", city: "all", age_group: "all", interest: "all", meeting_type: "all",
+    language:     "all",
+    city:         "all",
+    ageMin:       0,
+    ageMax:       3,
+    interest:     "all",
+    meeting_type: "all",
   });
   const [filtersOpen, setFiltersOpen] = useState(false);
 
@@ -68,9 +204,15 @@ export default function LanguageExchange() {
     setFilters(f => ({ ...f, [key]: val }));
 
   const clearFilters = () =>
-    setFilters({ language: "all", city: "all", age_group: "all", interest: "all", meeting_type: "all" });
+    setFilters({ language: "all", city: "all", ageMin: 0, ageMax: 3, interest: "all", meeting_type: "all" });
 
-  const activeCount = Object.values(filters).filter(v => v !== "all").length;
+  // Count non-default filters for the badge
+  const activeCount =
+    (filters.language     !== "all" ? 1 : 0) +
+    (filters.city         !== "all" ? 1 : 0) +
+    (filters.ageMin !== 0 || filters.ageMax !== 3 ? 1 : 0) +
+    (filters.interest     !== "all" ? 1 : 0) +
+    (filters.meeting_type !== "all" ? 1 : 0);
 
   const filtered = useMemo<LanguageUser[]>(() => MOCK_USERS.filter(u => {
     if (filters.language !== "all") {
@@ -78,11 +220,17 @@ export default function LanguageExchange() {
       if (!all.includes(filters.language)) return false;
     }
     if (filters.city !== "all" && u.city !== filters.city) return false;
-    if (filters.age_group !== "all" && u.age_group !== filters.age_group) return false;
-    if (filters.interest !== "all" && !u.interests.includes(filters.interest)) return false;
-    if (filters.meeting_type !== "all" && !u.meeting_types.includes(filters.meeting_type)) return false;
+
+    // Age group range filter
+    const userAgeIdx = AGE_GROUPS.findIndex(a => a.value === u.age_group);
+    if (userAgeIdx < filters.ageMin || userAgeIdx > filters.ageMax) return false;
+
+    if (filters.interest     !== "all" && !u.interests.includes(filters.interest)) return false;
+    if (filters.meeting_type !== "all" && !u.meeting_types.includes(filters.meeting_type as MeetingType)) return false;
     return true;
   }), [filters]);
+
+  const isFullAgeRange = filters.ageMin === 0 && filters.ageMax === 3;
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
@@ -99,10 +247,10 @@ export default function LanguageExchange() {
         </p>
       </div>
 
-      {/* Meeting-type quick filters */}
+      {/* Meeting-type quick filters + filter toggle */}
       <div className="flex flex-wrap gap-2 mb-6">
         {MEETING_TYPES.map(mt => {
-          const Icon = mt.icon;
+          const Icon   = mt.icon;
           const active = filters.meeting_type === mt.value;
           return (
             <button
@@ -137,7 +285,7 @@ export default function LanguageExchange() {
         </button>
       </div>
 
-      {/* Expanded filters */}
+      {/* Expanded filter panel */}
       <AnimatePresence>
         {filtersOpen && (
           <motion.div
@@ -146,48 +294,52 @@ export default function LanguageExchange() {
             exit={{ opacity: 0, height: 0 }}
             className="overflow-hidden"
           >
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6 p-4 bg-muted/40 rounded-2xl border border-border">
-              <div>
-                <p className="text-xs font-medium text-muted-foreground mb-1.5">Language</p>
-                <Select value={filters.language} onValueChange={v => setFilter("language", v)}>
-                  <SelectTrigger className="h-9 bg-background text-sm"><SelectValue placeholder="Any" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Any language</SelectItem>
-                    {LANGUAGES.map(l => <SelectItem key={l.code} value={l.code}>{l.flag} {l.label}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+            <div className="mb-6 p-4 sm:p-5 bg-muted/40 rounded-2xl border border-border space-y-5">
+              {/* Row 1: dropdowns */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-1.5">Language</p>
+                  <Select value={filters.language} onValueChange={v => setFilter("language", v)}>
+                    <SelectTrigger className="h-9 bg-background text-sm"><SelectValue placeholder="Any" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Any language</SelectItem>
+                      {LANGUAGES.map(l => (
+                        <SelectItem key={l.code} value={l.code}>{l.flag} {l.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-1.5">City</p>
+                  <Select value={filters.city} onValueChange={v => setFilter("city", v)}>
+                    <SelectTrigger className="h-9 bg-background text-sm"><SelectValue placeholder="Any" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Any city</SelectItem>
+                      {CITIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="col-span-2 sm:col-span-1">
+                  <p className="text-xs font-medium text-muted-foreground mb-1.5">Interest</p>
+                  <Select value={filters.interest} onValueChange={v => setFilter("interest", v)}>
+                    <SelectTrigger className="h-9 bg-background text-sm"><SelectValue placeholder="Any" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Any interest</SelectItem>
+                      {INTEREST_CATEGORIES.map(c => (
+                        <SelectItem key={c.value} value={c.value}>{c.icon} {c.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-              <div>
-                <p className="text-xs font-medium text-muted-foreground mb-1.5">City</p>
-                <Select value={filters.city} onValueChange={v => setFilter("city", v)}>
-                  <SelectTrigger className="h-9 bg-background text-sm"><SelectValue placeholder="Any" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Any city</SelectItem>
-                    {CITIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <p className="text-xs font-medium text-muted-foreground mb-1.5">Age Group</p>
-                <Select value={filters.age_group} onValueChange={v => setFilter("age_group", v as AgeGroup | "all")}>
-                  <SelectTrigger className="h-9 bg-background text-sm"><SelectValue placeholder="Any" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Any age</SelectItem>
-                    {AGE_GROUPS.map(a => <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <p className="text-xs font-medium text-muted-foreground mb-1.5">Interest</p>
-                <Select value={filters.interest} onValueChange={v => setFilter("interest", v)}>
-                  <SelectTrigger className="h-9 bg-background text-sm"><SelectValue placeholder="Any" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Any interest</SelectItem>
-                    {INTEREST_CATEGORIES.map(c => (
-                      <SelectItem key={c.value} value={c.value}>{c.icon} {c.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+
+              {/* Row 2: age range slider */}
+              <div className="px-1">
+                <AgeRangeSlider
+                  minIdx={filters.ageMin}
+                  maxIdx={filters.ageMax}
+                  onChange={(min, max) => setFilters(f => ({ ...f, ageMin: min, ageMax: max }))}
+                />
               </div>
             </div>
           </motion.div>
@@ -211,10 +363,12 @@ export default function LanguageExchange() {
               <button onClick={() => setFilter("city", "all")}><X className="w-3 h-3" /></button>
             </Badge>
           )}
-          {filters.age_group !== "all" && (
+          {!isFullAgeRange && (
             <Badge variant="secondary" className="gap-1 pr-1">
-              {filters.age_group}
-              <button onClick={() => setFilter("age_group", "all")}><X className="w-3 h-3" /></button>
+              {AGE_GROUPS[filters.ageMin].label} – {AGE_GROUPS[filters.ageMax].label}
+              <button onClick={() => setFilters(f => ({ ...f, ageMin: 0, ageMax: 3 }))}>
+                <X className="w-3 h-3" />
+              </button>
             </Badge>
           )}
           {filters.interest !== "all" && (
@@ -230,7 +384,9 @@ export default function LanguageExchange() {
               <button onClick={() => setFilter("meeting_type", "all")}><X className="w-3 h-3" /></button>
             </Badge>
           )}
-          <button onClick={clearFilters} className="text-xs text-destructive hover:underline ml-1">Clear all</button>
+          <button onClick={clearFilters} className="text-xs text-destructive hover:underline ml-1">
+            Clear all
+          </button>
         </div>
       )}
 
@@ -244,7 +400,9 @@ export default function LanguageExchange() {
         <div className="text-center py-16">
           <Languages className="w-14 h-14 text-muted-foreground/20 mx-auto mb-4" />
           <p className="text-muted-foreground">No partners match your filters. Try adjusting them.</p>
-          <Button variant="outline" className="mt-4 rounded-full" onClick={clearFilters}>Clear Filters</Button>
+          <Button variant="outline" className="mt-4 rounded-full" onClick={clearFilters}>
+            Clear Filters
+          </Button>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
