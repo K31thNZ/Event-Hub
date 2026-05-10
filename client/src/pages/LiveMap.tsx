@@ -668,25 +668,13 @@ export default function LiveMap() {
                       <Button asChild className="flex-1 rounded-xl shadow-lg shadow-primary/20">
                         <Link href={`/events/${event.id}`}>View Event</Link>
                       </Button>
-                      {(event as any).lat && (event as any).lng && (
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          className="rounded-xl shrink-0"
-                          onClick={() => window.open(
-                            `https://maps.google.com/?q=${(event as any).lat},${(event as any).lng}`,
-                            "_blank"
-                          )}
-                        >
-                          <MapPin className="w-4 h-4" />
-                        </Button>
                       )}
                     </div>
                   </div>
                 );
               })()}
 
-              {/* ── Spark panel ── (unchanged) */}
+              {/* ── Spark panel ── */}
               {selected.kind === "spark" && (() => {
                 const spark = selected.data;
                 const accepted = spark.responses.filter(r => r.status === "accepted");
@@ -742,18 +730,6 @@ export default function LiveMap() {
                         style={{ background: SPARK_COLOR }}
                       >
                         <Link href="/sparks">View in Sparks</Link>
-                      </Button>
-                      {(spark as any).lat && (spark as any).lng && (
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          className="rounded-xl shrink-0"
-                          onClick={() => window.open(
-                            `https://maps.google.com/?q=${(spark as any).lat},${(spark as any).lng}`,
-                            "_blank"
-                          )}
-                        >
-                          <MapPin className="w-4 h-4" />
                         </Button>
                       )}
                     </div>
