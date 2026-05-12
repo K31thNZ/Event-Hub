@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useEvents } from "@/hooks/use-events";
 import { useSparks, type Spark } from "@/hooks/use-sparks";
 import { type EventWithTickets } from "@shared/schema";
-import { format, addHours, addDays, isPast } from "date-fns";
+import { format, addDays, isPast } from "date-fns";
 import { Link } from "wouter";
 import {
   MapPin, ArrowLeft, Ticket, Filter, X, Wifi,
@@ -616,7 +616,7 @@ export default function LiveMap() {
                 <div className="w-10 h-1 rounded-full bg-border" />
               </div>
 
-              {/* ── Event panel ── (unchanged) */}
+              {/* ── Event panel ── */}
               {selected.kind === "event" && (() => {
                 const event = selected.data;
                 return (
@@ -668,7 +668,6 @@ export default function LiveMap() {
                       <Button asChild className="flex-1 rounded-xl shadow-lg shadow-primary/20">
                         <Link href={`/events/${event.id}`}>View Event</Link>
                       </Button>
-                      )}
                     </div>
                   </div>
                 );
@@ -730,8 +729,7 @@ export default function LiveMap() {
                         style={{ background: SPARK_COLOR }}
                       >
                         <Link href="/sparks">View in Sparks</Link>
-                        </Button>
-                      )}
+                      </Button>
                     </div>
                   </div>
                 );
