@@ -1,5 +1,8 @@
 import { sql } from "drizzle-orm";
-import { jsonb, pgTable, text, serial, integer, boolean, timestamp, varchar, real } from "drizzle-orm/pg-core";
+import {
+  jsonb, pgTable, text, serial, integer, boolean, timestamp, varchar, real,
+  uniqueIndex,      // ← added for RSVPs
+} from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -105,12 +108,34 @@ export const groupMembers = pgTable("group_members", {
   joinedAt:    timestamp("joined_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+// NEW: RSVPs — Telegram & web event responses
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const rsvps = pgTable("rsvps", {
+  id:        serial("id").primaryKey(),
+  userId:    integer("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  eventId:   integer("event_id")
+    .notNull()
+    .references(() => events.id, { onDelete: "cascade" }),
+  status:    text("status").notNull(),            // "going" | "maybe" | "no"
+  source:    text("source").default("telegram"),  // "telegram" | "web" | "app"
+  sourceChatId:    integer("source_chat_id"),
+  sourceChatTitle: text("source_chat_title"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+}, (table) => ({
+  uniq: uniqueIndex("rsvps_event_user").on(table.eventId, table.userId),
+}));
+
 // ── Relations (original tables) ───────────────────────────────────────────
 export const eventsRelations = relations(events, ({ one, many }) => ({
   organizer:   one(users,  { fields: [events.organizerId], references: [users.id] }),
   group:       one(groups, { fields: [events.groupId],     references: [groups.id] }),
   ticketTypes: many(ticketTypes),
   orders:      many(orders),
+  rsvps:       many(rsvps),   // ← new
 }));
 
 export const ticketTypesRelations = relations(ticketTypes, ({ one }) => ({
@@ -141,6 +166,12 @@ export const groupsRelations = relations(groups, ({ one, many }) => ({
 export const groupMembersRelations = relations(groupMembers, ({ one }) => ({
   group: one(groups, { fields: [groupMembers.groupId], references: [groups.id] }),
   user:  one(users,  { fields: [groupMembers.userId],  references: [users.id] }),
+}));
+
+// ── RSVPs relations ──────────────────────────────────────────────────────
+export const rsvpsRelations = relations(rsvps, ({ one }) => ({
+  user:  one(users,  { fields: [rsvps.userId],  references: [users.id] }),
+  event: one(events, { fields: [rsvps.eventId], references: [events.id] }),
 }));
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -190,6 +221,7 @@ export const sparkResponsesRelations = relations(sparkResponses, ({ one }) => ({
 // ── Inferred types ─────────────────────────────────────────────────────────
 export type Spark              = typeof sparks.$inferSelect;
 export type SparkResponse      = typeof sparkResponses.$inferSelect;
+export type Rsvp               = typeof rsvps.$inferSelect;          // ← new
 
 export type SparkWithResponses = Spark & {
   responses: (SparkResponse & { responder?: { id: string; displayName?: string | null; avatarUrl?: string | null } })[];
@@ -234,6 +266,12 @@ export const insertGroupMemberSchema = createInsertSchema(groupMembers, {
   userId: z.string(),
 }).omit({ id: true, joinedAt: true });
 
+export const insertRsvpSchema = createInsertSchema(rsvps, {
+  userId:  z.number(),
+  eventId: z.number(),
+  status:  z.enum(["going", "maybe", "no"]),
+}).omit({ id: true, updatedAt: true });   // ← new
+
 // ── Types ─────────────────────────────────────────────────────────────────
 export type Event        = typeof events.$inferSelect;
 export type TicketType   = typeof ticketTypes.$inferSelect;
@@ -272,9 +310,9 @@ export type CreateEventRequest = {
   date: Date | string;
   venueAddress: string;
   venueCity: string;
-  locationName?: string | null;   // 🌟 optional venue / place name
-  lat?: number | null;            // 🌍 optional latitude
-  lng?: number | null;            // 🌍 optional longitude
+  locationName?: string | null;
+  lat?: number | null;
+  lng?: number | null;
   imageUrl?: string | null;
   published?: boolean;
   isPrivate?: boolean;
