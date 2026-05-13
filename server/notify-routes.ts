@@ -38,7 +38,7 @@ function validateServiceSecret(req: any, res: any): boolean {
 
 // Bot secret guard – used for RSVP endpoints called by Telegram bot
 function validateBotSecret(req: any, res: any): boolean {
-  const botSecret = process.env.BOT_SECRET;
+  const botSecret = process.env.EXPAT_API_SECRET;
   if (!botSecret) return true; // dev mode
   if (req.headers["x-bot-secret"] !== botSecret) {
     res.status(403).json({ error: "Invalid bot secret" });
