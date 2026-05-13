@@ -1,45 +1,17 @@
 // server/notify-routes.ts
-// Routes called by Event-Hub (and future hubs) after events are published.
-// Also exposes admin routes for availability match management,
-// and bot endpoints for RSVP operations (RSVPs now stored in expatevents DB).
+// Bot‑facing RSVP endpoints — RSVPs are now stored in the expatevents database.
+// The Telegram bot calls these endpoints instead of writing directly to the auth DB.
 
 import type { Express } from "express";
-import { requireAuth, requireAdmin } from "./auth";
-import { notifyMatchingUsers, notifyOrganiserDemand } from "./bot";
-import { storage } from "./storage";
 import { db } from "./db";
-import { availabilityMatches, hosts, rsvps } from "@shared/schema";
-import { eq, and, sql } from "drizzle-orm";
-import { runAvailabilityMatcher } from "./matcher";
-import { z } from "zod";
+import { rsvps, users } from "@shared/schema";
+import { eq, and } from "drizzle-orm";
 
-const notifyEventSchema = z.object({
-  id:           z.number(),
-  title:        z.string(),
-  category:     z.string(),
-  date:         z.coerce.date(),
-  venueCity:    z.string(),
-  venueAddress: z.string(),
-  description:  z.string(),
-  organizerId:  z.number().optional(),
-  imageUrl:     z.string().optional(),
-});
-
-// Shared secret for Event-Hub calls
-function validateServiceSecret(req: any, res: any): boolean {
-  const secret = process.env.SERVICE_SECRET;
-  if (!secret) return true;
-  if (req.headers["x-service-secret"] !== secret) {
-    res.status(403).json({ error: "Invalid service secret" });
-    return false;
-  }
-  return true;
-}
-
-// Bot secret guard – used for RSVP endpoints called by Telegram bot
+// ── Shared secret validation ────────────────────────────────────────────────
+// The bot sends the same secret in the X-Bot-Secret header.
 function validateBotSecret(req: any, res: any): boolean {
-  const botSecret = process.env.EXPAT_API_SECRET;
-  if (!botSecret) return true; // dev mode
+  const botSecret = process.env.EXPAT_API_SECRET;   // reuse existing secret
+  if (!botSecret) return true;                       // dev mode – allow
   if (req.headers["x-bot-secret"] !== botSecret) {
     res.status(403).json({ error: "Invalid bot secret" });
     return false;
@@ -47,123 +19,30 @@ function validateBotSecret(req: any, res: any): boolean {
   return true;
 }
 
+// ── Helper: count RSVPs for a given event ──────────────────────────────────
+async function loadRsvpCounts(eventId: number): Promise<{
+  going: number;
+  maybe: number;
+  no: number;
+}> {
+  const rows = await db
+    .select({ status: rsvps.status })
+    .from(rsvps)
+    .where(eq(rsvps.eventId, eventId));
+
+  const counts = { going: 0, maybe: 0, no: 0 };
+  for (const r of rows) {
+    const k = r.status as keyof typeof counts;
+    if (k in counts) counts[k]++;
+  }
+  return counts;
+}
+
+// ── Route registration ─────────────────────────────────────────────────────
 export function registerNotifyRoutes(app: Express) {
 
-  // ── POST /api/notify/event ────────────────────────────────────────────────
-  app.post("/api/notify/event", async (req, res) => {
-    if (!validateServiceSecret(req, res)) return;
-
-    try {
-      const event = notifyEventSchema.parse(req.body);
-      const result = await notifyMatchingUsers(event);
-      res.json({ ok: true, ...result });
-    } catch (err: any) {
-      if (err?.name === "ZodError") {
-        return res.status(400).json({ error: "Invalid event data", details: err.errors });
-      }
-      console.error("[notify] Error:", err);
-      res.status(500).json({ error: "Notification failed" });
-    }
-  });
-
-  // ── POST /api/notify/profile-updated ─────────────────────────────────────
-  app.post("/api/notify/profile-updated", async (req, res) => {
-    if (!validateServiceSecret(req, res)) return;
-
-    res.json({ ok: true, message: "Matcher queued" });
-
-    setImmediate(async () => {
-      try {
-        await runAvailabilityMatcher();
-        console.log("[notify] Profile-triggered matcher run complete");
-      } catch (err: any) {
-        console.error("[notify] Profile-triggered matcher failed:", err.message);
-      }
-    });
-  });
-
-  // ── GET /api/admin/availability-matches ───────────────────────────────────
-  app.get("/api/admin/availability-matches", requireAdmin, async (req, res) => {
-    try {
-      const matches = await db.select().from(availabilityMatches);
-      res.json(matches);
-    } catch (err) {
-      res.status(500).json({ error: "Failed to fetch matches" });
-    }
-  });
-
-  // ── POST /api/admin/availability-matches/:id/approve ─────────────────────
-  app.post("/api/admin/availability-matches/:id/approve", requireAdmin, async (req, res) => {
-    try {
-      const matchId = parseInt(req.params.id);
-      const { organiserId } = req.body;
-
-      if (!organiserId) {
-        return res.status(400).json({ error: "organiserId required" });
-      }
-
-      const [match] = await db
-        .select()
-        .from(availabilityMatches)
-        .where(eq(availabilityMatches.id, matchId));
-
-      if (!match) return res.status(404).json({ error: "Match not found" });
-
-      await notifyOrganiserDemand(organiserId, {
-        category: match.category,
-        day: match.day,
-        hour: match.hour,
-        userCount: match.userIds.length,
-      });
-
-      await db
-        .update(availabilityMatches)
-        .set({ notified: true })
-        .where(eq(availabilityMatches.id, matchId));
-
-      res.json({ ok: true });
-    } catch (err) {
-      console.error("[notify] Approve error:", err);
-      res.status(500).json({ error: "Failed to approve match" });
-    }
-  });
-
-  // ── POST /api/admin/run-matcher ───────────────────────────────────────────
-  app.post("/api/admin/run-matcher", requireAdmin, async (req, res) => {
-    try {
-      await runAvailabilityMatcher();
-      res.json({ ok: true, message: "Matcher ran successfully" });
-    } catch (err) {
-      res.status(500).json({ error: "Matcher failed" });
-    }
-  });
-
-  // ── GET /api/admin/telegram-stats ─────────────────────────────────────────
-  app.get("/api/admin/telegram-stats", requireAdmin, async (req, res) => {
-    try {
-      const allUsers = await storage.getUsersWithTelegramId();
-      const interestCounts: Record<string, number> = {};
-
-      for (const user of allUsers) {
-        for (const interest of user.interests ?? []) {
-          interestCounts[interest] = (interestCounts[interest] ?? 0) + 1;
-        }
-      }
-
-      res.json({
-        totalConnected: allUsers.length,
-        byInterest: interestCounts,
-      });
-    } catch (err) {
-      res.status(500).json({ error: "Failed to fetch stats" });
-    }
-  });
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // NEW: Bot RSVP endpoints — RSVPs now live in expatevents DB
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  // POST /api/bot/events/:id/rsvp — upsert RSVP and return fresh counts
+  // ── POST /api/bot/events/:id/rsvp ──────────────────────────────────────
+  // Upsert an RSVP (going | maybe | no | none to delete) and return fresh counts.
   app.post("/api/bot/events/:id/rsvp", async (req, res) => {
     if (!validateBotSecret(req, res)) return;
 
@@ -172,7 +51,9 @@ export function registerNotifyRoutes(app: Express) {
 
     const { userId, status, sourceChatId, sourceChatTitle } = req.body;
     if (!userId || !status || !["going", "maybe", "no", "none"].includes(status)) {
-      return res.status(400).json({ error: "userId and status (going|maybe|no|none) required" });
+      return res.status(400).json({
+        error: "userId (string) and status (going|maybe|no|none) are required",
+      });
     }
 
     try {
@@ -203,7 +84,6 @@ export function registerNotifyRoutes(app: Express) {
           });
       }
 
-      // Return updated counts
       const counts = await loadRsvpCounts(eventId);
       res.json({ success: true, counts });
     } catch (err: any) {
@@ -212,7 +92,7 @@ export function registerNotifyRoutes(app: Express) {
     }
   });
 
-  // GET /api/bot/events/:id/rsvp-summary — return { going, maybe, no }
+  // ── GET /api/bot/events/:id/rsvp-summary ──────────────────────────────
   app.get("/api/bot/events/:id/rsvp-summary", async (req, res) => {
     if (!validateBotSecret(req, res)) return;
 
@@ -228,7 +108,7 @@ export function registerNotifyRoutes(app: Express) {
     }
   });
 
-  // GET /api/bot/events/:id/attendees — list of attendees with user info
+  // ── GET /api/bot/events/:id/attendees ──────────────────────────────────
   app.get("/api/bot/events/:id/attendees", async (req, res) => {
     if (!validateBotSecret(req, res)) return;
 
@@ -245,11 +125,9 @@ export function registerNotifyRoutes(app: Express) {
         .from(rsvps)
         .where(eq(rsvps.eventId, eventId));
 
-      // Enrich with user telegram info if possible (the bot needs username/telegramId)
       const result = await Promise.all(
         rows.map(async (r) => {
           try {
-            // Fetch user from the same DB — users table is shared via import
             const [user] = await db
               .select({
                 telegramId: users.telegramId,
@@ -283,8 +161,9 @@ export function registerNotifyRoutes(app: Express) {
     }
   });
 
-  // GET /api/bot/events/:id/my-rsvp — return { status } for a given user
-  // The bot sends the user ID via X-User-Id header.
+  // ── GET /api/bot/events/:id/my-rsvp ────────────────────────────────────
+  // Returns the current RSVP status for a specific user.
+  // The bot sends the user ID via the X-User-Id header.
   app.get("/api/bot/events/:id/my-rsvp", async (req, res) => {
     if (!validateBotSecret(req, res)) return;
 
@@ -307,19 +186,4 @@ export function registerNotifyRoutes(app: Express) {
       res.status(500).json({ error: "Failed to fetch RSVP status" });
     }
   });
-}
-
-// Helper function to compute RSVP counts for an event
-async function loadRsvpCounts(eventId: number): Promise<{ going: number; maybe: number; no: number }> {
-  const rows = await db
-    .select({ status: rsvps.status })
-    .from(rsvps)
-    .where(eq(rsvps.eventId, eventId));
-
-  const counts = { going: 0, maybe: 0, no: 0 };
-  for (const r of rows) {
-    const k = r.status as keyof typeof counts;
-    if (k in counts) counts[k]++;
-  }
-  return counts;
 }
