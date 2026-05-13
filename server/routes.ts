@@ -4,6 +4,7 @@ import { registerGroupRoutes } from "./group-routes";
 import { registerSparkRoutes } from "./spark-routes";
 import { scheduleTicketReminders } from "./ticket-reminders";
 import { registerPicksRoutes } from "./picks-routes";
+import { registerNotifyRoutes } from "./notify-routes";   // ← added
 import type { Express } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
@@ -25,6 +26,7 @@ export async function registerRoutes(
   registerGroupRoutes(app);
   registerSparkRoutes(app);
   registerAdminRoutes(app);
+  registerNotifyRoutes(app);   // ← added – enables bot RSVP endpoints
 
   // ── Server‑mediated uploads (avatars + event images) ────────────────
   app.use(uploadRouter);
@@ -32,7 +34,7 @@ export async function registerRoutes(
   // ── Spark‑bot API ───────────────────────────────────────────────────
   app.use("/api/bot", botSparkRouter);
   app.post("/api/sparks/:id/respond", requireAuth, handleSparkRespond);
-  
+
   // ── Live Map: get today's events in Moscow timezone ─────────────────
   app.get("/api/live-map-events", async (req, res) => {
     try {
@@ -82,7 +84,6 @@ export async function registerRoutes(
   });
 
   // ── Geocoding endpoints ───────────────────────────────────────────
-  // (these are fine; consider adding a simple in‑memory cache for repeated queries)
   app.post("/api/forward-geocode", async (req, res) => {
     try {
       const { query } = req.body;
@@ -214,10 +215,6 @@ export async function registerRoutes(
   });
 
   // ── Events ────────────────────────────────────────────────────────
-  // All the event/order routes are already defined via `api` object
-  // (keep as they are – they use `storage.getEvents` etc.)
-
-  // GET /api/events
   app.get(api.events.list.path, async (req, res) => {
     try {
       const { search, category, city } = req.query;
@@ -233,7 +230,6 @@ export async function registerRoutes(
     }
   });
 
-  // GET /api/events/me
   app.get(api.events.myEvents.path, requireAuth, async (req: any, res) => {
     try {
       const events = await storage.getEventsByOrganizer(String(req.user.id));
@@ -244,7 +240,6 @@ export async function registerRoutes(
     }
   });
 
-  // GET /api/events/:id
   app.get(api.events.get.path, async (req, res) => {
     try {
       const id = parseInt(req.params.id, 10);
@@ -258,7 +253,6 @@ export async function registerRoutes(
     }
   });
 
-  // POST /api/events
   app.post(api.events.create.path, requireAuth, async (req: any, res) => {
     try {
       const parsed = api.events.create.input.safeParse(req.body);
@@ -276,7 +270,6 @@ export async function registerRoutes(
     }
   });
 
-  // PATCH /api/events/:id
   app.patch(api.events.update.path, requireAuth, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id, 10);
@@ -301,7 +294,6 @@ export async function registerRoutes(
     }
   });
 
-  // DELETE /api/events/:id
   app.delete(api.events.delete.path, requireAuth, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id, 10);
@@ -323,7 +315,6 @@ export async function registerRoutes(
   });
 
   // ── Orders ─────────────────────────────────────────────────────────
-  // GET /api/orders/me
   app.get(api.orders.myOrders.path, requireAuth, async (req: any, res) => {
     try {
       const orders = await storage.getOrdersByAttendee(String(req.user.id));
@@ -334,7 +325,6 @@ export async function registerRoutes(
     }
   });
 
-  // GET /api/orders/:id
   app.get(api.orders.get.path, requireAuth, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id, 10);
@@ -354,7 +344,6 @@ export async function registerRoutes(
     }
   });
 
-  // POST /api/orders
   app.post(api.orders.create.path, requireAuth, async (req: any, res) => {
     try {
       const parsed = api.orders.create.input.safeParse(req.body);
@@ -379,5 +368,3 @@ export async function registerRoutes(
 
   return httpServer;
 }
-
-// No `seedDatabase` function needed – it was empty anyway.
