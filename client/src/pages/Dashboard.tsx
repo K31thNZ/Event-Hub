@@ -425,5 +425,4 @@ function AdminPanel() {
   );
 }
 
-// ── The rest of the file (CuratorTab, ChangePasswordTab, main Dashboard export) remains completely unchanged.
-// ... (they are not shown here to keep the answer focused; they are identical to the original)
+export default Dashboard;
