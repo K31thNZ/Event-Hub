@@ -32,6 +32,9 @@ const createSparkSchema = z.object({
   filterInterests: z.array(z.string()).max(5).optional(),
   filterLanguages: z.array(z.string()).max(5).optional(),
   filterMetroLine: z.string().optional().nullable(),
+  // 🌍 Geo coordinates
+  lat:             z.number().optional().nullable(),
+  lng:             z.number().optional().nullable(),
 });
 
 const respondSchema = z.object({
@@ -44,10 +47,7 @@ const confirmSchema = z.object({
 });
 
 // ── Helper: enrich spark rows with response data (without user relations) ─────
-// Because spark tables no longer reference the users table, we do not join
-// sender or responder details. Sender info is already inside the spark row.
 async function enrichSpark(spark: typeof sparks.$inferSelect, viewerUserId?: string) {
-  // Fetch responses – no relation join, so no "responder" field
   const responses = await db.query.sparkResponses.findMany({
     where: eq(sparkResponses.sparkId, spark.id),
   });
@@ -63,8 +63,8 @@ async function enrichSpark(spark: typeof sparks.$inferSelect, viewerUserId?: str
     : null;
 
   return {
-    ...spark,                                   // includes senderDisplayName, senderAvatarUrl
-    responses,                                  // no nested responder object
+    ...spark,                                   // includes senderDisplayName, senderAvatarUrl, lat, lng
+    responses,
     responseCount: responses.filter(r => r.status === "accepted").length,
     myResponse,
   };
@@ -85,7 +85,6 @@ export function registerSparkRoutes(app: Express) {
           inArray(sparks.status, ["pending", "active"]),
           gte(sparks.expiresAt, now),
         ),
-        // NO with: { sender: ... } – sender info is flat on spark
         orderBy: [sparks.meetTime],
       });
 
@@ -104,7 +103,6 @@ export function registerSparkRoutes(app: Express) {
 
       const rows = await db.query.sparks.findMany({
         where:   eq(sparks.senderId, senderId),
-        // NO with: { sender: ... }
         orderBy: [desc(sparks.createdAt)],
       });
 
@@ -136,7 +134,6 @@ export function registerSparkRoutes(app: Express) {
         return res.status(400).json({ message: "Meet time must be in the future" });
       }
 
-      // Include sender display info from auth service
       const senderDisplayName = req.user.displayName ?? req.user.username ?? "Someone";
       const senderAvatarUrl   = req.user.avatarUrl ?? null;
 
@@ -154,6 +151,9 @@ export function registerSparkRoutes(app: Express) {
         filterInterests: d.filterInterests ?? [],
         filterLanguages: d.filterLanguages ?? [],
         filterMetroLine: d.filterMetroLine ?? null,
+        // 🌍 store coordinates if provided
+        lat:             d.lat ?? null,
+        lng:             d.lng ?? null,
         status:          "pending",
       }).returning();
 
@@ -211,7 +211,6 @@ export function registerSparkRoutes(app: Express) {
         return res.status(400).json({ message: "You cannot respond to your own spark" });
       }
 
-      // Check if already accepted: enforce maxRespondents
       if (parsed.data.status === "accepted") {
         const acceptedCount = await db
           .select({ count: sql<number>`count(*)::int` })
@@ -225,7 +224,6 @@ export function registerSparkRoutes(app: Express) {
         }
       }
 
-      // Upsert response
       const existing = await db.query.sparkResponses.findFirst({
         where: and(
           eq(sparkResponses.sparkId, id),
@@ -249,7 +247,6 @@ export function registerSparkRoutes(app: Express) {
         }).returning();
       }
 
-      // Auto-promote spark to "active" if at least 1 accepted
       if (parsed.data.status === "accepted" && spark.status === "pending") {
         await db.update(sparks).set({ status: "active" }).where(eq(sparks.id, id));
       }
@@ -278,7 +275,6 @@ export function registerSparkRoutes(app: Express) {
         return res.status(403).json({ message: "Only the sender can confirm a spark" });
       }
 
-      // Mark selected as confirmed, others as declined
       const allResponses = await db.query.sparkResponses.findMany({
         where: eq(sparkResponses.sparkId, id),
       });
