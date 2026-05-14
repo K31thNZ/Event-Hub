@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   jsonb, pgTable, text, serial, integer, boolean, timestamp, varchar, real,
-  uniqueIndex,      // ← added for RSVPs
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
@@ -38,9 +38,9 @@ export const events = pgTable("events", {
   date:         timestamp("date", { withTimezone: true }).notNull(),
   venueAddress: text("venue_address").notNull(),
   venueCity:    text("venue_city").notNull(),
-  locationName: text("location_name"),       // 🌟 venue / place name (optional)
-  lat:          real("lat"),                 // 🌍 latitude (nullable)
-  lng:          real("lng"),                 // 🌍 longitude (nullable)
+  locationName: text("location_name"),
+  lat:          real("lat"),
+  lng:          real("lng"),
   imageUrl:     text("image_url"),
   published:    boolean("published").default(true).notNull(),
   isPrivate:    boolean("is_private").default(false).notNull(),
@@ -109,9 +109,8 @@ export const groupMembers = pgTable("group_members", {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// NEW: RSVPs — Telegram & web event responses
+// RSVPs — Telegram & web event responses
 // ═══════════════════════════════════════════════════════════════════════════
-
 export const rsvps = pgTable("rsvps", {
   id:        serial("id").primaryKey(),
   userId:    integer("user_id")
@@ -120,8 +119,8 @@ export const rsvps = pgTable("rsvps", {
   eventId:   integer("event_id")
     .notNull()
     .references(() => events.id, { onDelete: "cascade" }),
-  status:    text("status").notNull(),            // "going" | "maybe" | "no"
-  source:    text("source").default("telegram"),  // "telegram" | "web" | "app"
+  status:    text("status").notNull(),
+  source:    text("source").default("telegram"),
   sourceChatId:    integer("source_chat_id"),
   sourceChatTitle: text("source_chat_title"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
@@ -135,7 +134,7 @@ export const eventsRelations = relations(events, ({ one, many }) => ({
   group:       one(groups, { fields: [events.groupId],     references: [groups.id] }),
   ticketTypes: many(ticketTypes),
   orders:      many(orders),
-  rsvps:       many(rsvps),   // ← new
+  rsvps:       many(rsvps),
 }));
 
 export const ticketTypesRelations = relations(ticketTypes, ({ one }) => ({
@@ -168,7 +167,6 @@ export const groupMembersRelations = relations(groupMembers, ({ one }) => ({
   user:  one(users,  { fields: [groupMembers.userId],  references: [users.id] }),
 }));
 
-// ── RSVPs relations ──────────────────────────────────────────────────────
 export const rsvpsRelations = relations(rsvps, ({ one }) => ({
   user:  one(users,  { fields: [rsvps.userId],  references: [users.id] }),
   event: one(events, { fields: [rsvps.eventId], references: [events.id] }),
@@ -196,6 +194,10 @@ export const sparks = pgTable("sparks", {
   filterMetroLine:   text("filter_metro_line"),
   maxRespondents:    integer("max_respondents").notNull().default(5),
 
+  // 🌍 Geo coordinates (nullable)
+  lat:          real("lat"),
+  lng:          real("lng"),
+
   status:       text("status").notNull().default("pending"),
   expiresAt:    timestamp("expires_at", { withTimezone: true }).notNull(),
   createdAt:    timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -221,7 +223,7 @@ export const sparkResponsesRelations = relations(sparkResponses, ({ one }) => ({
 // ── Inferred types ─────────────────────────────────────────────────────────
 export type Spark              = typeof sparks.$inferSelect;
 export type SparkResponse      = typeof sparkResponses.$inferSelect;
-export type Rsvp               = typeof rsvps.$inferSelect;          // ← new
+export type Rsvp               = typeof rsvps.$inferSelect;
 
 export type SparkWithResponses = Spark & {
   responses: (SparkResponse & { responder?: { id: string; displayName?: string | null; avatarUrl?: string | null } })[];
@@ -270,7 +272,7 @@ export const insertRsvpSchema = createInsertSchema(rsvps, {
   userId:  z.number(),
   eventId: z.number(),
   status:  z.enum(["going", "maybe", "no"]),
-}).omit({ id: true, updatedAt: true });   // ← new
+}).omit({ id: true, updatedAt: true });
 
 // ── Types ─────────────────────────────────────────────────────────────────
 export type Event        = typeof events.$inferSelect;
