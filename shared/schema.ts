@@ -113,12 +113,10 @@ export const groupMembers = pgTable("group_members", {
 // ═══════════════════════════════════════════════════════════════════════════
 export const rsvps = pgTable("rsvps", {
   id:        serial("id").primaryKey(),
-  userId:    integer("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
+  userId:    integer("user_id").notNull(),   // plain integer, no FK
   eventId:   integer("event_id")
     .notNull()
-    .references(() => events.id, { onDelete: "cascade" }),
+    .references(() => events.id, { onDelete: "cascade" }),  // event FK stays
   status:    text("status").notNull(),
   source:    text("source").default("telegram"),
   sourceChatId:    integer("source_chat_id"),
@@ -168,7 +166,6 @@ export const groupMembersRelations = relations(groupMembers, ({ one }) => ({
 }));
 
 export const rsvpsRelations = relations(rsvps, ({ one }) => ({
-  user:  one(users,  { fields: [rsvps.userId],  references: [users.id] }),
   event: one(events, { fields: [rsvps.eventId], references: [events.id] }),
 }));
 
