@@ -50,36 +50,45 @@ export function registerNotifyRoutes(app: Express) {
     if (isNaN(eventId)) return res.status(400).json({ error: "Invalid event ID" });
 
     const { userId, status, sourceChatId, sourceChatTitle } = req.body;
+
     if (!userId || !status || !["going", "maybe", "no", "none"].includes(status)) {
       return res.status(400).json({
-        error: "userId (string) and status (going|maybe|no|none) are required",
+        error: "userId (meh-auth integer) and status (going|maybe|no|none) are required",
       });
+    }
+
+    const mehAuthUserId = parseInt(userId, 10);
+    if (isNaN(mehAuthUserId)) {
+      return res.status(400).json({ error: "userId must be a number" });
     }
 
     try {
       if (status === "none") {
         await db
           .delete(rsvps)
-          .where(and(eq(rsvps.eventId, eventId), eq(rsvps.userId, parseInt(userId))));
+          .where(and(
+            eq(rsvps.eventId, eventId),
+            eq(rsvps.userId, mehAuthUserId)
+          ));
       } else {
         await db
           .insert(rsvps)
           .values({
             eventId,
-            userId: parseInt(userId),
+            userId:          mehAuthUserId,
             status,
-            source: "telegram",
-            sourceChatId: sourceChatId ?? null,
+            source:          "telegram",
+            sourceChatId:    sourceChatId    ?? null,
             sourceChatTitle: sourceChatTitle ?? null,
-            updatedAt: new Date(),
+            updatedAt:       new Date(),
           })
           .onConflictDoUpdate({
             target: [rsvps.eventId, rsvps.userId],
             set: {
               status,
-              sourceChatId: sourceChatId ?? null,
+              sourceChatId:    sourceChatId    ?? null,
               sourceChatTitle: sourceChatTitle ?? null,
-              updatedAt: new Date(),
+              updatedAt:       new Date(),
             },
           });
       }
@@ -118,41 +127,46 @@ export function registerNotifyRoutes(app: Express) {
     try {
       const rows = await db
         .select({
-          userId: rsvps.userId,
-          status: rsvps.status,
+          userId:          rsvps.userId,
+          status:          rsvps.status,
           sourceChatTitle: rsvps.sourceChatTitle,
         })
         .from(rsvps)
         .where(eq(rsvps.eventId, eventId));
 
-      const result = await Promise.all(
-        rows.map(async (r) => {
-          try {
-            const [user] = await db
-              .select({
-                telegramId: users.telegramId,
-                username: users.username,
-              })
-              .from(users)
-              .where(eq(users.id, r.userId));
-            return {
-              userId: r.userId,
-              status: r.status,
-              sourceChatTitle: r.sourceChatTitle,
-              telegramId: user?.telegramId ?? null,
-              username: user?.username ?? null,
-            };
-          } catch {
-            return {
-              userId: r.userId,
-              status: r.status,
-              sourceChatTitle: r.sourceChatTitle,
-              telegramId: null,
-              username: null,
-            };
+      // Fetch user details from meh-auth in one batch call
+      const userIds = rows.map(r => r.userId);
+      let userMap: Record<number, { telegramId?: string; username?: string }> = {};
+
+      if (userIds.length > 0) {
+        try {
+          const mehAuthUrl = process.env.AUTH_SERVICE_URL ?? "https://auth.expatevents.org";
+          const secret     = process.env.SERVICE_SECRET;
+          const res2 = await fetch(`${mehAuthUrl}/api/admin/users/batch`, {
+            method: "POST",
+            headers: {
+              "Content-Type":     "application/json",
+              "x-service-secret": secret ?? "",
+            },
+            body: JSON.stringify({ ids: userIds }),
+          });
+          if (res2.ok) {
+            const users: Array<{ id: number; telegramId?: string; username: string }> = await res2.json();
+            userMap = Object.fromEntries(users.map(u => [u.id, u]));
           }
-        })
-      );
+        } catch (err: any) {
+          console.warn("[bot] Could not fetch user details from meh-auth:", err.message);
+          // Non-fatal — return RSVPs without user details
+        }
+      }
+
+      const result = rows.map(r => ({
+        userId:          r.userId,
+        status:          r.status,
+        sourceChatTitle: r.sourceChatTitle,
+        telegramId:      userMap[r.userId]?.telegramId ?? null,
+        username:        userMap[r.userId]?.username   ?? null,
+      }));
 
       res.json(result);
     } catch (err: any) {
@@ -168,7 +182,7 @@ export function registerNotifyRoutes(app: Express) {
     if (!validateBotSecret(req, res)) return;
 
     const eventId = parseInt(req.params.id, 10);
-    const userId = parseInt(req.headers["x-user-id"] as string, 10);
+    const userId  = parseInt(req.headers["x-user-id"] as string, 10);
 
     if (isNaN(eventId) || isNaN(userId)) {
       return res.status(400).json({ error: "Invalid event ID or user ID" });
@@ -178,7 +192,10 @@ export function registerNotifyRoutes(app: Express) {
       const [r] = await db
         .select({ status: rsvps.status })
         .from(rsvps)
-        .where(and(eq(rsvps.eventId, eventId), eq(rsvps.userId, userId)));
+        .where(and(
+          eq(rsvps.eventId, eventId),
+          eq(rsvps.userId, userId)          // userId is now just an integer, no join needed
+        ));
 
       res.json({ status: r?.status ?? null });
     } catch (err: any) {
