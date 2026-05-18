@@ -15,7 +15,7 @@
 import type { Express } from "express";
 import { db } from "./db";
 import { sparks, sparkResponses } from "@shared/schema";
-import { requireAuth, getUser } from "./auth-client";
+import { requireAuth } from "./auth-client";   // getUser removed — unused
 import { eq, and, gte, inArray, desc, sql } from "drizzle-orm";
 import { z } from "zod";
 
@@ -26,7 +26,7 @@ const createSparkSchema = z.object({
   description:     z.string().max(500).optional().default(""),
   activity:        z.string().min(1),
   location:        z.string().min(2).max(200),
-  meetTime:        z.string().datetime(),                         // ISO string
+  meetTime:        z.string().datetime(),                          // ISO string
   expiresInMins:   z.number().int().min(10).max(480).default(60), // 10 min – 8 hrs
   maxRespondents:  z.number().int().min(1).max(20).default(5),
   filterInterests: z.array(z.string()).max(5).optional(),
@@ -46,14 +46,17 @@ const confirmSchema = z.object({
   responderIds: z.array(z.string()).min(1).max(20),
 });
 
-// ── Helper: enrich spark rows with response data (without user relations) ─────
+// ── Helper: enrich spark rows with response data ───────────────────────────────
 async function enrichSpark(spark: typeof sparks.$inferSelect, viewerUserId?: string) {
   const responses = await db.query.sparkResponses.findMany({
     where: eq(sparkResponses.sparkId, spark.id),
   });
 
-  // Auto-expire: mark as expired if TTL passed and still pending
-  if (spark.status === "pending" && new Date(spark.expires_at ?? spark.expiresAt) < new Date()) {
+  // Auto-expire: mark as expired if TTL passed and still pending.
+  // spark.expiresAt is the correct camelCase Drizzle field name.
+  // The previous `spark.expires_at ?? spark.expiresAt` was dead code on the
+  // left side — expires_at does not exist on the inferred type.
+  if (spark.status === "pending" && new Date(spark.expiresAt) < new Date()) {
     await db.update(sparks).set({ status: "expired" }).where(eq(sparks.id, spark.id));
     spark = { ...spark, status: "expired" };
   }
@@ -63,7 +66,7 @@ async function enrichSpark(spark: typeof sparks.$inferSelect, viewerUserId?: str
     : null;
 
   return {
-    ...spark,                                   // includes senderDisplayName, senderAvatarUrl, lat, lng
+    ...spark,                                    // includes senderDisplayName, senderAvatarUrl, lat, lng
     responses,
     responseCount: responses.filter(r => r.status === "accepted").length,
     myResponse,
@@ -97,6 +100,7 @@ export function registerSparkRoutes(app: Express) {
   });
 
   // ── GET /api/sparks/mine — sparks sent by the current user ─────────────────
+  // MUST be registered before /:id or Express treats "mine" as an id value.
   app.get("/api/sparks/mine", requireAuth, async (req: any, res) => {
     try {
       const senderId = String(req.user.id);
@@ -125,9 +129,9 @@ export function registerSparkRoutes(app: Express) {
         });
       }
 
-      const d = parsed.data;
-      const senderId = String(req.user.id);
-      const meetTime = new Date(d.meetTime);
+      const d         = parsed.data;
+      const senderId  = String(req.user.id);
+      const meetTime  = new Date(d.meetTime);
       const expiresAt = new Date(Date.now() + d.expiresInMins * 60 * 1000);
 
       if (meetTime < new Date()) {
@@ -151,7 +155,6 @@ export function registerSparkRoutes(app: Express) {
         filterInterests: d.filterInterests ?? [],
         filterLanguages: d.filterLanguages ?? [],
         filterMetroLine: d.filterMetroLine ?? null,
-        // 🌍 store coordinates if provided
         lat:             d.lat ?? null,
         lng:             d.lng ?? null,
         status:          "pending",
