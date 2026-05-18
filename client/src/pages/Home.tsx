@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { motion, AnimatePresence } from "framer-motion";
 import { EVENT_CATEGORIES } from "@shared/categories";
 import { Link, useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 
 const BANNER_DISMISSED_KEY = "expat_interests_banner_dismissed";
 
@@ -27,6 +28,26 @@ function useShowPersonalisationBanner(user: any): [boolean, () => void] {
   const show = !!user && hasNoInterests && !dismissed;
 
   return [show, dismiss];
+}
+
+// ── RSVP counts lookup ────────────────────────────────────────────────────────
+function useRsvpCounts(eventIds: number[]) {
+  return useQuery({
+    queryKey: ["rsvp-summaries", eventIds],
+    queryFn: async () => {
+      if (eventIds.length === 0) return {};
+      const res = await fetch("/api/events/rsvp-summaries", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ eventIds }),
+      });
+      if (!res.ok) return {};
+      return await res.json() as Record<number, { going: number; maybe: number; no: number }>;
+    },
+    enabled: eventIds.length > 0,
+    staleTime: 30_000,         // refresh every 30 seconds
+    refetchInterval: 60_000,   // keep updated while on screen
+  });
 }
 
 export default function Home() {
@@ -68,9 +89,12 @@ export default function Home() {
   const upcomingEvents = publishedEvents.filter(event => new Date(event.date) >= now);
   const pastEvents = publishedEvents.filter(event => new Date(event.date) < now);
 
-  // Sort upcoming by date ascending, past by date descending (most recent first)
   upcomingEvents.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   pastEvents.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+  // Gather all visible event IDs
+  const allVisibleIds = [...upcomingEvents, ...pastEvents].map(e => e.id);
+  const { data: rsvpCounts } = useRsvpCounts(allVisibleIds);
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -245,7 +269,12 @@ export default function Home() {
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
                     {upcomingEvents.map((event, i) => (
-                      <EventCard key={event.id} event={event} index={i} />
+                      <EventCard
+                        key={event.id}
+                        event={event}
+                        index={i}
+                        rsvpCounts={rsvpCounts?.[event.id]}
+                      />
                     ))}
                   </div>
                 </div>
@@ -265,7 +294,12 @@ export default function Home() {
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8 opacity-80">
                     {pastEvents.map((event, i) => (
-                      <EventCard key={event.id} event={event} index={i} />
+                      <EventCard
+                        key={event.id}
+                        event={event}
+                        index={i}
+                        rsvpCounts={rsvpCounts?.[event.id]}
+                      />
                     ))}
                   </div>
                 </div>
