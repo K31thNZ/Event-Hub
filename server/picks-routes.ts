@@ -74,7 +74,7 @@ export function registerPicksRoutes(app: Express) {
       const picks = await db
         .select()
         .from(curatorPicks)
-        .where(eq(curatorPicks.curatorId, String(req.user.id)))
+        .where(eq(curatorPicks.curatorId, Number(req.user.id)))
         .orderBy(desc(curatorPicks.weekOf));
       res.json(picks);
     } catch (err: any) {
@@ -94,7 +94,7 @@ export function registerPicksRoutes(app: Express) {
       }
 
       const [pick] = await db.insert(curatorPicks).values({
-        curatorId: String(user.id),
+        curatorId: Number(user.id),
         curatorName: user.displayName ?? user.username,
         curatorAvatarUrl: user.avatarUrl ?? null,
         curatorSpecialty: curatorSpecialty ?? "Events",
@@ -116,7 +116,7 @@ export function registerPicksRoutes(app: Express) {
       const [existing] = await db.select().from(curatorPicks).where(eq(curatorPicks.id, pickId));
       if (!existing) return res.status(404).json({ message: "Pick not found" });
 
-      if (existing.curatorId !== String(req.user.id) && req.user.role !== "admin") {
+      if (existing.curatorId !== Number(req.user.id) && req.user.role !== "admin") {
         return res.status(403).json({ message: "Not your pick" });
       }
 
@@ -147,7 +147,7 @@ export function registerPicksRoutes(app: Express) {
       const [existing] = await db.select().from(curatorPicks).where(eq(curatorPicks.id, pickId));
       if (!existing) return res.status(404).json({ message: "Pick not found" });
 
-      if (existing.curatorId !== String(req.user.id) && req.user.role !== "admin") {
+      if (existing.curatorId !== Number(req.user.id) && req.user.role !== "admin") {
         return res.status(403).json({ message: "Not your pick" });
       }
 

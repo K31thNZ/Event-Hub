@@ -1,18 +1,16 @@
 import { db } from "./db";
 import {
   events, ticketTypes, orders, orderTickets,
-  users,
   type Event, type TicketType, type Order, type OrderTicket,
   type EventWithTickets, type OrderWithDetails,
   type CreateEventRequest, type UpdateEventRequest, type CreateOrderRequest,
-  type User,
 } from "@shared/schema";
+// NOTE: No local "users" table in the Event-Hub DB — users live in meh-auth.
+// The User type here is only used for the IStorage interface signature.
+import type { User } from "@shared/models/auth";
 import { eq, desc } from "drizzle-orm";
 
 // ── Internal notification helper ──────────────────────────────────────────
-// Fires-and-forgets a request to meh-auth which calls notifyMatchingUsers().
-// Failures are logged but never throw — a notification failure must never
-// break event creation.
 async function notifyNewEvent(event: EventWithTickets): Promise<void> {
   const authUrl = process.env.AUTH_SERVICE_URL ?? "https://auth.expatevents.org";
   const secret  = process.env.SERVICE_SECRET;
@@ -48,31 +46,25 @@ async function notifyNewEvent(event: EventWithTickets): Promise<void> {
     const { sent, inApp } = await res.json();
     console.log(`[notify] Event ${event.id} "${event.title}": ${sent} Telegram, ${inApp} in-app`);
   } catch (err: any) {
-    // Network error — meh-auth may be sleeping (Render free tier); safe to ignore
     console.error("[notify] Failed to reach meh-auth:", err.message);
   }
 }
 
 // ── Storage interface ─────────────────────────────────────────────────────
+// All userId / organizerId / attendeeId parameters are numbers (meh-auth integer IDs).
 export interface IStorage {
-  getUser(userId: string): Promise<User | undefined>;
   getEvents(params?: { search?: string; category?: string; city?: string }): Promise<EventWithTickets[]>;
   getEvent(id: number): Promise<EventWithTickets | undefined>;
-  getEventsByOrganizer(organizerId: string): Promise<EventWithTickets[]>;
-  createEvent(organizerId: string, eventData: CreateEventRequest): Promise<EventWithTickets>;
+  getEventsByOrganizer(organizerId: number): Promise<EventWithTickets[]>;
+  createEvent(organizerId: number, eventData: CreateEventRequest): Promise<EventWithTickets>;
   updateEvent(id: number, eventData: UpdateEventRequest): Promise<EventWithTickets>;
   deleteEvent(id: number): Promise<void>;
-  getOrdersByAttendee(attendeeId: string): Promise<OrderWithDetails[]>;
+  getOrdersByAttendee(attendeeId: number): Promise<OrderWithDetails[]>;
   getOrder(id: number): Promise<OrderWithDetails | undefined>;
-  createOrder(attendeeId: string, orderData: CreateOrderRequest): Promise<OrderWithDetails>;
+  createOrder(attendeeId: number, orderData: CreateOrderRequest): Promise<OrderWithDetails>;
 }
 
 export class DatabaseStorage implements IStorage {
-
-  async getUser(userId: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.id, userId));
-    return user;
-  }
 
   async deleteEvent(id: number): Promise<void> {
     await db.transaction(async (tx) => {
@@ -113,7 +105,7 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
-  async getEventsByOrganizer(organizerId: string): Promise<EventWithTickets[]> {
+  async getEventsByOrganizer(organizerId: number): Promise<EventWithTickets[]> {
     return await db.query.events.findMany({
       where:   eq(events.organizerId, organizerId),
       with:    { ticketTypes: true },
@@ -121,7 +113,7 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
-  async createEvent(organizerId: string, eventData: CreateEventRequest): Promise<EventWithTickets> {
+  async createEvent(organizerId: number, eventData: CreateEventRequest): Promise<EventWithTickets> {
     const createdEvent = await db.transaction(async (tx) => {
       const [newEvent] = await tx.insert(events).values({
         organizerId,
@@ -133,8 +125,8 @@ export class DatabaseStorage implements IStorage {
         date:         new Date(eventData.date),
         venueAddress: eventData.venueAddress,
         venueCity:    eventData.venueCity,
-        lat:          eventData.lat ?? null,           // 🌍 latitude
-        lng:          eventData.lng ?? null,           // 🌍 longitude
+        lat:          eventData.lat ?? null,
+        lng:          eventData.lng ?? null,
         imageUrl:     eventData.imageUrl ?? null,
         published:    eventData.published ?? true,
         isPrivate:    eventData.isPrivate ?? false,
@@ -156,10 +148,8 @@ export class DatabaseStorage implements IStorage {
       return full!;
     });
 
-    // Fire-and-forget — do NOT await inside the transaction
-    // Only notify for published, non-private, non-recurring-instance events
     if (createdEvent.published && !createdEvent.isPrivate && !createdEvent.parentEventId) {
-      notifyNewEvent(createdEvent).catch(() => {/* already logged inside */});
+      notifyNewEvent(createdEvent).catch(() => {});
     }
 
     return createdEvent;
@@ -175,8 +165,8 @@ export class DatabaseStorage implements IStorage {
       if (eventData.date         !== undefined) updates.date         = new Date(eventData.date as string);
       if (eventData.venueAddress !== undefined) updates.venueAddress = eventData.venueAddress;
       if (eventData.venueCity    !== undefined) updates.venueCity    = eventData.venueCity;
-      if (eventData.lat          !== undefined) updates.lat          = eventData.lat;   // 🌍
-      if (eventData.lng          !== undefined) updates.lng          = eventData.lng;   // 🌍
+      if (eventData.lat          !== undefined) updates.lat          = eventData.lat;
+      if (eventData.lng          !== undefined) updates.lng          = eventData.lng;
       if (eventData.imageUrl     !== undefined) updates.imageUrl     = eventData.imageUrl;
       if (eventData.published    !== undefined) updates.published    = eventData.published;
       if (eventData.isPrivate    !== undefined) updates.isPrivate    = eventData.isPrivate;
@@ -208,7 +198,7 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
-  async getOrdersByAttendee(attendeeId: string): Promise<OrderWithDetails[]> {
+  async getOrdersByAttendee(attendeeId: number): Promise<OrderWithDetails[]> {
     return await db.query.orders.findMany({
       where:   eq(orders.attendeeId, attendeeId),
       with:    { event: true, tickets: { with: { ticketType: true } } },
@@ -223,7 +213,7 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
-  async createOrder(attendeeId: string, orderData: CreateOrderRequest): Promise<OrderWithDetails> {
+  async createOrder(attendeeId: number, orderData: CreateOrderRequest): Promise<OrderWithDetails> {
     return await db.transaction(async (tx) => {
       let totalAmount = 0;
       for (const t of orderData.tickets) {
@@ -236,26 +226,28 @@ export class DatabaseStorage implements IStorage {
       const [newOrder] = await tx.insert(orders).values({
         attendeeId,
         eventId:       orderData.eventId,
-        status:        "completed",
+        status:        "confirmed",
         totalAmount,
         attendeeName:  orderData.attendeeName,
         attendeeEmail: orderData.attendeeEmail,
         notes:         orderData.notes ?? null,
       }).returning();
 
-      await tx.insert(orderTickets).values(
-        orderData.tickets.map(t => ({
-          orderId:      newOrder.id,
-          ticketTypeId: t.ticketTypeId,
-          quantity:     t.quantity,
-        }))
-      );
+      if (orderData.tickets.length) {
+        await tx.insert(orderTickets).values(
+          orderData.tickets.map(t => ({
+            orderId:      newOrder.id,
+            ticketTypeId: t.ticketTypeId,
+            quantity:     t.quantity,
+          }))
+        );
+      }
 
-      const created = await tx.query.orders.findFirst({
+      const full = await tx.query.orders.findFirst({
         where: eq(orders.id, newOrder.id),
         with:  { event: true, tickets: { with: { ticketType: true } } },
       });
-      return created!;
+      return full!;
     });
   }
 }

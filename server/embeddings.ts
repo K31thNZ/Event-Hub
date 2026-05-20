@@ -1,6 +1,9 @@
 // server/embeddings.ts
 // Generates vector embeddings using Google Gemini's text-embedding-004 model.
 // Requires GOOGLE_API environment variable with a valid Gemini API key.
+//
+// NOTE: text-embedding-004 produces 768-dimensional vectors.
+// The events.embedding column in schema.ts is declared as vector(768) to match.
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
@@ -11,11 +14,11 @@ if (!API_KEY) {
 
 const genAI = API_KEY ? new GoogleGenerativeAI(API_KEY) : null;
 
-// Gemini's latest embedding model (768 dimensions, free tier available)
+// Gemini's embedding model (768 dimensions)
 const EMBEDDING_MODEL = "text-embedding-004";
 
 /**
- * Convert a piece of text into a vector embedding.
+ * Convert a piece of text into a 768-dim vector embedding.
  * Returns an empty array if embedding fails or no API key is configured.
  */
 export async function embedText(text: string): Promise<number[]> {
@@ -23,7 +26,7 @@ export async function embedText(text: string): Promise<number[]> {
 
   try {
     const model = genAI.getGenerativeModel({ model: EMBEDDING_MODEL });
-    const result = await model.embedContent(text.slice(0, 2048)); // model’s max input tokens
+    const result = await model.embedContent(text.slice(0, 2048));
     const values = result.embedding?.values ?? [];
 
     if (values.length === 0) {
@@ -33,20 +36,19 @@ export async function embedText(text: string): Promise<number[]> {
     return values;
   } catch (err) {
     console.error("[embeddings] Gemini embedding failed:", err);
-    return [];   // graceful degradation – event is created without vector
+    return [];
   }
 }
 
 /**
- * Generate embeddings for multiple texts in parallel.
+ * Generate embeddings for multiple texts sequentially.
  * Useful when backfilling existing events.
  */
 export async function embedTexts(texts: string[]): Promise<number[][]> {
-  // Gemini doesn't have a batch endpoint for free tier, so we process sequentially
   const results: number[][] = [];
   for (const text of texts) {
     results.push(await embedText(text));
-    // Small delay to avoid hitting rate limits (1500 requests per minute for free tier)
+    // Small delay to avoid hitting rate limits (1500 req/min for free tier)
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   return results;

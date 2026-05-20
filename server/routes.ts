@@ -5,7 +5,7 @@ import { registerSparkRoutes } from "./spark-routes";
 import { scheduleTicketReminders } from "./ticket-reminders";
 import { registerPicksRoutes } from "./picks-routes";
 import { registerNotifyRoutes } from "./notify-routes";
-import { registerRecommendationRoutes } from "./recommendations";   // ← added
+import { registerRecommendationRoutes } from "./recommendations";
 import type { Express } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
@@ -13,10 +13,14 @@ import { api, buildUrl } from "@shared/routes";
 import { requireAuth, getUser } from "./auth-client";
 import { z } from "zod";
 import { db } from "./db";
-import { users } from "@shared/models/auth";
-import { eq, sql } from "drizzle-orm";
-import crypto from "crypto";
+import { sql } from "drizzle-orm";
 import uploadRouter from "./routes/upload";
+
+// NOTE: No local users table in Event-Hub DB.
+// User identity and Telegram linking are managed by the meh-auth service.
+// All userId / organizerId / attendeeId values are meh-auth integer IDs.
+
+const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL ?? "https://auth.expatevents.org";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -28,7 +32,7 @@ export async function registerRoutes(
   registerSparkRoutes(app);
   registerAdminRoutes(app);
   registerNotifyRoutes(app);
-  registerRecommendationRoutes(app);   // ← added
+  registerRecommendationRoutes(app);
 
   // ── Server‑mediated uploads ────────────────────────────────────────
   app.use(uploadRouter);
@@ -137,7 +141,7 @@ export async function registerRoutes(
     }
   });
 
-  // ── Current authenticated user ────────────────────────────────────
+  // ── Current authenticated user (proxied from meh-auth) ───────────
   app.get("/api/user", async (req, res) => {
     try {
       const user = await getUser(req);
@@ -149,13 +153,11 @@ export async function registerRoutes(
     }
   });
 
-  // ── Current user profile (local DB) ───────────────────────────────
+  // ── Current user admin status (derived from meh-auth role) ───────
+  // NOTE: Admin status comes from req.user.role, NOT a local DB table.
   app.get("/api/me", requireAuth, async (req: any, res) => {
     try {
-      const localUser = await db.query.users.findFirst({
-        where: eq(users.id, String(req.user.id)),
-      });
-      res.json({ isAdmin: localUser?.isAdmin ?? false });
+      res.json({ isAdmin: req.user.role === "admin" });
     } catch (err) {
       console.error("[/api/me]", err);
       res.json({ isAdmin: false });
@@ -163,55 +165,49 @@ export async function registerRoutes(
   });
 
   // ── Telegram routes ────────────────────────────────────────────────
-  const BOT_TOKEN    = process.env.TELEGRAM_BOT_TOKEN;
-  const BOT_USERNAME = process.env.TELEGRAM_BOT_USERNAME ?? "meh_auth_bot";
-
-  const generateLinkToken = () => crypto.randomBytes(32).toString("hex");
-  const linkTokens = new Map<string, { userId: string; expires: number }>();
+  // Telegram linking is handled by the meh-auth bot. These routes
+  // proxy to meh-auth so the client doesn't need to know the auth URL.
+  const SERVICE_SECRET = process.env.SERVICE_SECRET;
 
   app.get("/api/telegram/status", (_req, res) => {
-    res.json({ configured: !!BOT_TOKEN });
+    const configured = !!(process.env.TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_BOT_USERNAME);
+    res.json({ configured });
   });
 
+  // Proxy: generate a Telegram link token via meh-auth
   app.post("/api/telegram/link", requireAuth, async (req: any, res) => {
-    if (!BOT_TOKEN) {
-      return res.status(503).json({ message: "Telegram bot is not configured" });
-    }
-    const userId = String(req.user.id);
-    const token = generateLinkToken();
-    linkTokens.set(token, { userId, expires: Date.now() + 10 * 60 * 1000 });
-    const deepLink = `https://t.me/${BOT_USERNAME}?start=link_${token}`;
-    res.json({ url: deepLink });
-  });
-
-  app.post("/api/telegram/webhook", async (req, res) => {
-    const update = req.body;
     try {
-      if (update.message?.text?.startsWith("/start")) {
-        const match = update.message.text.match(/\/start link_([a-f0-9]+)/);
-        if (match) {
-          const token = match[1];
-          const data = linkTokens.get(token);
-          if (data && data.expires > Date.now()) {
-            const telegramId = String(update.message.from.id);
-            await db.update(users).set({ telegramId }).where(eq(users.id, data.userId));
-            linkTokens.delete(token);
-          }
-        }
-      }
-      res.sendStatus(200);
-    } catch (err) {
-      console.error("Webhook error:", err);
-      res.sendStatus(500);
+      const response = await fetch(`${AUTH_SERVICE_URL}/api/telegram/link`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          cookie: req.headers.cookie ?? "",
+          ...(SERVICE_SECRET ? { "x-service-secret": SERVICE_SECRET } : {}),
+        },
+      });
+      const body = await response.json();
+      res.status(response.status).json(body);
+    } catch (err: any) {
+      console.error("[/api/telegram/link]", err);
+      res.status(500).json({ message: "Failed to generate Telegram link" });
     }
   });
 
+  // Proxy: unlink Telegram via meh-auth
   app.post("/api/telegram/unlink", requireAuth, async (req: any, res) => {
     try {
-      await db.update(users).set({ telegramId: null }).where(eq(users.id, String(req.user.id)));
-      res.json({ success: true });
-    } catch (err) {
-      console.error("Unlink error:", err);
+      const response = await fetch(`${AUTH_SERVICE_URL}/api/telegram/unlink`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          cookie: req.headers.cookie ?? "",
+          ...(SERVICE_SECRET ? { "x-service-secret": SERVICE_SECRET } : {}),
+        },
+      });
+      const body = await response.json();
+      res.status(response.status).json(body);
+    } catch (err: any) {
+      console.error("[/api/telegram/unlink]", err);
       res.status(500).json({ message: "Failed to unlink Telegram account" });
     }
   });
@@ -234,7 +230,7 @@ export async function registerRoutes(
 
   app.get(api.events.myEvents.path, requireAuth, async (req: any, res) => {
     try {
-      const events = await storage.getEventsByOrganizer(String(req.user.id));
+      const events = await storage.getEventsByOrganizer(Number(req.user.id));
       res.json(events);
     } catch (err) {
       console.error("[GET /api/events/me]", err);
@@ -264,7 +260,8 @@ export async function registerRoutes(
           field: parsed.error.errors[0]?.path?.join("."),
         });
       }
-      const event = await storage.createEvent(String(req.user.id), parsed.data);
+      // req.user.id is a number from meh-auth
+      const event = await storage.createEvent(Number(req.user.id), parsed.data);
       res.status(201).json(event);
     } catch (err: any) {
       console.error("[POST /api/events]", err);
@@ -278,10 +275,10 @@ export async function registerRoutes(
       if (isNaN(id)) return res.status(400).json({ message: "Invalid event ID" });
       const existing = await storage.getEvent(id);
       if (!existing) return res.status(404).json({ message: "Event not found" });
-      const localUser = await db.query.users.findFirst({
-        where: eq(users.id, String(req.user.id)),
-      });
-      if (existing.organizerId !== String(req.user.id) && !localUser?.isAdmin) {
+      // Authorization: organizer or admin (role from meh-auth, no local DB lookup needed)
+      const isOrganizer = existing.organizerId === Number(req.user.id);
+      const isAdmin = req.user.role === "admin";
+      if (!isOrganizer && !isAdmin) {
         return res.status(403).json({ message: "Not authorized to update this event" });
       }
       const parsed = api.events.update.input.safeParse(req.body);
@@ -302,10 +299,9 @@ export async function registerRoutes(
       if (isNaN(id)) return res.status(400).json({ message: "Invalid event ID" });
       const existing = await storage.getEvent(id);
       if (!existing) return res.status(404).json({ message: "Event not found" });
-      const localUser = await db.query.users.findFirst({
-        where: eq(users.id, String(req.user.id)),
-      });
-      if (existing.organizerId !== String(req.user.id) && !localUser?.isAdmin) {
+      const isOrganizer = existing.organizerId === Number(req.user.id);
+      const isAdmin = req.user.role === "admin";
+      if (!isOrganizer && !isAdmin) {
         return res.status(403).json({ message: "Not authorized to delete this event" });
       }
       await storage.deleteEvent(id);
@@ -319,7 +315,7 @@ export async function registerRoutes(
   // ── Orders ─────────────────────────────────────────────────────────
   app.get(api.orders.myOrders.path, requireAuth, async (req: any, res) => {
     try {
-      const orders = await storage.getOrdersByAttendee(String(req.user.id));
+      const orders = await storage.getOrdersByAttendee(Number(req.user.id));
       res.json(orders);
     } catch (err) {
       console.error("[GET /api/orders/me]", err);
@@ -333,10 +329,9 @@ export async function registerRoutes(
       if (isNaN(id)) return res.status(400).json({ message: "Invalid order ID" });
       const order = await storage.getOrder(id);
       if (!order) return res.status(404).json({ message: "Order not found" });
-      const localUser = await db.query.users.findFirst({
-        where: eq(users.id, String(req.user.id)),
-      });
-      if (order.attendeeId !== String(req.user.id) && !localUser?.isAdmin) {
+      const isOwner = order.attendeeId === Number(req.user.id);
+      const isAdmin = req.user.role === "admin";
+      if (!isOwner && !isAdmin) {
         return res.status(403).json({ message: "Not authorized to view this order" });
       }
       res.json(order);
@@ -357,7 +352,7 @@ export async function registerRoutes(
       }
       const event = await storage.getEvent(parsed.data.eventId);
       if (!event) return res.status(404).json({ message: "Event not found" });
-      const order = await storage.createOrder(String(req.user.id), parsed.data);
+      const order = await storage.createOrder(Number(req.user.id), parsed.data);
       res.status(201).json(order);
     } catch (err: any) {
       console.error("[POST /api/orders]", err);

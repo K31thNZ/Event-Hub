@@ -22,7 +22,7 @@ async function optionalAuth(req: Request, _res: Response, next: Function) {
 async function getMembership(groupId: number, userId: number | string | undefined) {
   if (!userId) return null;
   const [m] = await db.select().from(groupMembers)
-    .where(and(eq(groupMembers.groupId, groupId), eq(groupMembers.userId, String(userId))));
+    .where(and(eq(groupMembers.groupId, groupId), eq(groupMembers.userId, Number(userId))));
   return m ?? null;
 }
 
@@ -71,7 +71,7 @@ export function registerGroupRoutes(app: Express) {
         const memberships = await db.select()
           .from(groupMembers)
           .where(and(
-            eq(groupMembers.userId, String(userId)),
+            eq(groupMembers.userId, Number(userId)),
             eq(groupMembers.status, "active"),
             inArray(groupMembers.groupId, rows.map(r => r.group.id))
           ));
@@ -103,7 +103,7 @@ export function registerGroupRoutes(app: Express) {
       .from(groupMembers)
       .innerJoin(groups, eq(groupMembers.groupId, groups.id))
       .where(and(
-        eq(groupMembers.userId, String(req.user.id)),
+        eq(groupMembers.userId, Number(req.user.id)),
         eq(groupMembers.status, "active"),
         eq(groups.status, "active"),
       ))
@@ -174,7 +174,7 @@ export function registerGroupRoutes(app: Express) {
       }
 
       const [existing] = await db.select().from(groups)
-        .where(and(eq(groups.ownerUserId, String(user.id)), ne(groups.status, "suspended")));
+        .where(and(eq(groups.ownerUserId, Number(user.id)), ne(groups.status, "suspended")));
       if (existing) {
         return res.status(400).json({ message: "You already own a group. Premium members may own one group." });
       }
@@ -191,7 +191,7 @@ export function registerGroupRoutes(app: Express) {
         name: name.trim(),
         slug: slug.trim().toLowerCase(),
         description: description?.trim() ?? "",
-        ownerUserId: String(user.id),
+        ownerUserId: Number(user.id),
         category: category ?? "social",
         imageUrl: imageUrl ?? null,
         bannerUrl: bannerUrl ?? null,
@@ -202,7 +202,7 @@ export function registerGroupRoutes(app: Express) {
 
       await db.insert(groupMembers).values({
         groupId: group.id,
-        userId: String(user.id),
+        userId: Number(user.id),
         role: "owner",
         status: "active",
         displayName: user.displayName ?? user.username,
@@ -281,7 +281,7 @@ export function registerGroupRoutes(app: Express) {
       } else {
         await db.insert(groupMembers).values({
           groupId,
-          userId: String(user.id),
+          userId: Number(user.id),
           role: "member",
           status,
           displayName: user.displayName ?? user.username,
@@ -394,7 +394,7 @@ export function registerGroupRoutes(app: Express) {
 
       const eventDate = new Date(date);
       const [baseEvent] = await db.insert(events).values({
-        organizerId: String(user.id),
+        organizerId: Number(user.id),
         groupId,
         title, description, category,
         date: eventDate,
@@ -420,7 +420,7 @@ export function registerGroupRoutes(app: Express) {
         const futureDates = buildRecurringDates(eventDate, recurrence, recurUntil);
         for (const instanceDate of futureDates) {
           const [instance] = await db.insert(events).values({
-            organizerId: String(user.id),
+            organizerId: Number(user.id),
             groupId,
             title, description, category,
             date: instanceDate,
@@ -468,7 +468,7 @@ export function registerGroupRoutes(app: Express) {
       } else {
         await db.insert(groupMembers).values({
           groupId,
-          userId: String(userId),
+          userId: Number(userId),
           role: "member",
           status: "invited",
           displayName: displayName ?? null,

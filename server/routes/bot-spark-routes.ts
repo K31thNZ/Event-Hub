@@ -3,11 +3,6 @@
 // Internal API routes called by the meh-auth Telegram bot (X-Bot-Secret auth).
 // The handleSparkRespond function is also exported for use by the main
 // session-authenticated frontend route at POST /api/sparks/:id/respond.
-//
-// Mount in your main router:
-//   import { botSparkRouter, handleSparkRespond } from "./routes/bot-spark-routes";
-//   app.use("/api/bot", botSparkRouter);
-//   app.post("/api/sparks/:id/respond", requireAuth, handleSparkRespond);
 
 import { Router, Request, Response, NextFunction } from "express";
 import { db } from "../db";
@@ -15,8 +10,6 @@ import { sparks, sparkResponses } from "@shared/schema";
 import { eq, and, inArray, gte } from "drizzle-orm";
 
 export const botSparkRouter = Router();
-
-// ── Bot-secret auth ───────────────────────────────────────────────────────────
 
 const BOT_SECRET = process.env.EXPAT_API_SECRET ?? "";
 
@@ -72,7 +65,7 @@ botSparkRouter.post("/sparks", async (req, res) => {
       senderId, title, description, activity, location,
       meetTime, expiresInMins, maxRespondents, lat, lng,
     } = req.body as {
-      senderId:       string;
+      senderId:       number | string;
       title:          string;
       description?:   string;
       activity:       string;
@@ -89,6 +82,13 @@ botSparkRouter.post("/sparks", async (req, res) => {
       return;
     }
 
+    // senderId is a meh-auth integer user ID — always coerce to number
+    const senderIdNum = Number(senderId);
+    if (isNaN(senderIdNum)) {
+      res.status(400).json({ error: "Invalid senderId" });
+      return;
+    }
+
     const meetDate = new Date(meetTime);
     if (isNaN(meetDate.getTime())) {
       res.status(400).json({ error: "Invalid meetTime" });
@@ -101,7 +101,7 @@ botSparkRouter.post("/sparks", async (req, res) => {
     const [inserted] = await db
       .insert(sparks)
       .values({
-        senderId,
+        senderId: senderIdNum,
         title:          title.slice(0, 100),
         description:    description?.slice(0, 500) ?? "",
         activity,
@@ -123,14 +123,12 @@ botSparkRouter.post("/sparks", async (req, res) => {
 });
 
 // ── POST /api/bot/sparks/:id/respond ─────────────────────────────────────────
-// Bot route — responderId comes from body.
-
 botSparkRouter.post("/sparks/:id/respond", handleSparkRespond);
 
 // ── Shared respond handler (bot + frontend) ───────────────────────────────────
-// For the frontend session route, the caller is responsible for extracting
-// the authenticated user's id and putting it in req.body.responderId before
-// calling this, OR you can override it from req.session in a wrapper.
+// responderId is always a meh-auth integer user ID.
+// For the bot route, it comes from req.body.responderId (may be string or number).
+// For the frontend session route, it comes from req.user.id (number).
 
 export async function handleSparkRespond(req: Request, res: Response): Promise<void> {
   try {
@@ -140,23 +138,21 @@ export async function handleSparkRespond(req: Request, res: Response): Promise<v
       return;
     }
 
-    // For the session-auth frontend route, responderId may come from session
-    const responderId: string =
-      req.body.responderId ??
-      String((req as any).user?.id ?? (req as any).session?.userId ?? "");
-
-    const status: string = req.body.status ?? "";
-
-    if (!responderId) {
+    // Coerce responderId to number — works for both bot (body) and session (user) callers
+    const rawResponderId = req.body.responderId ?? (req as any).user?.id;
+    const responderId = Number(rawResponderId);
+    if (!rawResponderId || isNaN(responderId)) {
       res.status(401).json({ error: "Not authenticated" });
       return;
     }
+
+    const status: string = req.body.status ?? "";
+
     if (!["accepted", "declined"].includes(status)) {
       res.status(400).json({ error: "status must be 'accepted' or 'declined'" });
       return;
     }
 
-    // ── Load spark ────────────────────────────────────────────────────────
     const [spark] = await db
       .select()
       .from(sparks)
@@ -174,12 +170,12 @@ export async function handleSparkRespond(req: Request, res: Response): Promise<v
       res.json({ ok: false, message: "This Spark has expired." });
       return;
     }
+    // Both are now numbers — safe comparison
     if (spark.senderId === responderId) {
       res.json({ ok: false, message: "You can't respond to your own Spark." });
       return;
     }
 
-    // ── Capacity check ────────────────────────────────────────────────────
     if (status === "accepted") {
       const currentAccepted = await db
         .select()
@@ -190,7 +186,6 @@ export async function handleSparkRespond(req: Request, res: Response): Promise<v
             eq(sparkResponses.status, "accepted")
           )
         );
-      // Don't count the responder's own existing row
       const othersAccepted = currentAccepted.filter(r => r.responderId !== responderId);
       if (othersAccepted.length >= spark.maxRespondents) {
         res.json({ ok: false, message: "This Spark is full." });
@@ -198,11 +193,6 @@ export async function handleSparkRespond(req: Request, res: Response): Promise<v
       }
     }
 
-    // ── Upsert ────────────────────────────────────────────────────────────
-    // Relies on the unique constraint:
-    //   unique("spark_responses_spark_id_responder_id_unique")
-    //   on (spark_id, responder_id)
-    // defined in schema.ts. Without that constraint onConflictDoUpdate fails.
     const [upserted] = await db
       .insert(sparkResponses)
       .values({
@@ -222,7 +212,6 @@ export async function handleSparkRespond(req: Request, res: Response): Promise<v
       })
       .returning();
 
-    // ── Promote spark to "active" on first accept ─────────────────────────
     if (status === "accepted" && spark.status === "pending") {
       await db
         .update(sparks)

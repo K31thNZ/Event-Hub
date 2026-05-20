@@ -14,7 +14,7 @@ const vector = customType<{
   driverData: string | null;
 }>({
   dataType() {
-    return "vector(1536)";
+    return "vector(768)";
   },
   // optional: how to map driver value to your TS type
   // toDriver(value: number[] | null) { return value ? JSON.stringify(value) : null; },

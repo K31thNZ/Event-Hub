@@ -43,11 +43,11 @@ const respondSchema = z.object({
 });
 
 const confirmSchema = z.object({
-  responderIds: z.array(z.string()).min(1).max(20),
+  responderIds: z.array(z.number()).min(1).max(20),
 });
 
 // ── Helper: enrich spark rows with response data ───────────────────────────────
-async function enrichSpark(spark: typeof sparks.$inferSelect, viewerUserId?: string) {
+async function enrichSpark(spark: typeof sparks.$inferSelect, viewerUserId?: number) {
   const responses = await db.query.sparkResponses.findMany({
     where: eq(sparkResponses.sparkId, spark.id),
   });
@@ -80,7 +80,7 @@ export function registerSparkRoutes(app: Express) {
   // ── GET /api/sparks — feed of non-expired sparks for this user ──────────────
   app.get("/api/sparks", requireAuth, async (req: any, res) => {
     try {
-      const viewerId = String(req.user.id);
+      const viewerId = Number(req.user.id);
       const now = new Date();
 
       const rows = await db.query.sparks.findMany({
@@ -103,7 +103,7 @@ export function registerSparkRoutes(app: Express) {
   // MUST be registered before /:id or Express treats "mine" as an id value.
   app.get("/api/sparks/mine", requireAuth, async (req: any, res) => {
     try {
-      const senderId = String(req.user.id);
+      const senderId = Number(req.user.id);
 
       const rows = await db.query.sparks.findMany({
         where:   eq(sparks.senderId, senderId),
@@ -130,7 +130,7 @@ export function registerSparkRoutes(app: Express) {
       }
 
       const d         = parsed.data;
-      const senderId  = String(req.user.id);
+      const senderId  = Number(req.user.id);
       const meetTime  = new Date(d.meetTime);
       const expiresAt = new Date(Date.now() + d.expiresInMins * 60 * 1000);
 
@@ -176,7 +176,7 @@ export function registerSparkRoutes(app: Express) {
 
       const spark = await db.query.sparks.findFirst({ where: eq(sparks.id, id) });
       if (!spark) return res.status(404).json({ message: "Spark not found" });
-      if (spark.senderId !== String(req.user.id)) {
+      if (spark.senderId !== Number(req.user.id)) {
         return res.status(403).json({ message: "Only the sender can cancel a spark" });
       }
 
@@ -209,7 +209,7 @@ export function registerSparkRoutes(app: Express) {
         return res.status(400).json({ message: "This spark has expired" });
       }
 
-      const responderId = String(req.user.id);
+      const responderId = Number(req.user.id);
       if (spark.senderId === responderId) {
         return res.status(400).json({ message: "You cannot respond to your own spark" });
       }
@@ -274,7 +274,7 @@ export function registerSparkRoutes(app: Express) {
 
       const spark = await db.query.sparks.findFirst({ where: eq(sparks.id, id) });
       if (!spark) return res.status(404).json({ message: "Spark not found" });
-      if (spark.senderId !== String(req.user.id)) {
+      if (spark.senderId !== Number(req.user.id)) {
         return res.status(403).json({ message: "Only the sender can confirm a spark" });
       }
 

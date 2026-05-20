@@ -21,7 +21,7 @@ export function registerRecommendationRoutes(app: Express) {
         .limit(20);
 
       if (userRsvps.length === 0) {
-        return res.json([]);   // not enough data yet
+        return res.json([]);
       }
 
       // 2. Fetch the embeddings of those events
@@ -33,7 +33,7 @@ export function registerRecommendationRoutes(app: Express) {
 
       const validEmbeddings = likedEvents
         .map(e => e.embedding)
-        .filter((v): v is number[] => v != null);
+        .filter((v): v is number[] => v != null && v.length > 0);
 
       if (validEmbeddings.length === 0) {
         return res.json([]);
@@ -42,16 +42,21 @@ export function registerRecommendationRoutes(app: Express) {
       // 3. Compute the average user vector
       const userVector = averageVectors(validEmbeddings);
 
-      // 4. Find the closest upcoming events (excluding already RSVP'd)
+      // 4. Serialize vector as a Postgres vector literal (e.g. '[0.1,0.2,...]')
+      // pgvector expects a string like '[0.1, 0.2, ...]' when cast to ::vector
+      const vectorLiteral = `[${userVector.join(",")}]`;
+
+      // 5. Find the closest upcoming events (excluding already RSVP'd)
+      // NOTE: schema defines vector(768) — Gemini text-embedding-004 produces 768 dims.
       const results = await db.execute(
         sql`SELECT id, title, description, category, date, venue_city, venue_address,
-                   image_url, 1 - (embedding <=> ${userVector}::vector) AS similarity
+                   image_url, 1 - (embedding <=> ${vectorLiteral}::vector) AS similarity
             FROM events
             WHERE published = true
               AND date > now()
               AND embedding IS NOT NULL
-              AND id != ALL(${eventIds})
-            ORDER BY embedding <=> ${userVector}::vector
+              AND id != ALL(${eventIds}::int[])
+            ORDER BY embedding <=> ${vectorLiteral}::vector
             LIMIT 10`
       );
 
