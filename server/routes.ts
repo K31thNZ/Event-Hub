@@ -4,7 +4,8 @@ import { registerGroupRoutes } from "./group-routes";
 import { registerSparkRoutes } from "./spark-routes";
 import { scheduleTicketReminders } from "./ticket-reminders";
 import { registerPicksRoutes } from "./picks-routes";
-import { registerNotifyRoutes } from "./notify-routes";   // ← added
+import { registerNotifyRoutes } from "./notify-routes";
+import { registerRecommendationRoutes } from "./recommendations";   // ← added
 import type { Express } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
@@ -21,21 +22,22 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  // Register external route modules (ensure these files exist)
+  // Register external route modules
   registerPicksRoutes(app);
   registerGroupRoutes(app);
   registerSparkRoutes(app);
   registerAdminRoutes(app);
-  registerNotifyRoutes(app);   // ← added – enables bot RSVP endpoints
+  registerNotifyRoutes(app);
+  registerRecommendationRoutes(app);   // ← added
 
-  // ── Server‑mediated uploads (avatars + event images) ────────────────
+  // ── Server‑mediated uploads ────────────────────────────────────────
   app.use(uploadRouter);
 
   // ── Spark‑bot API ───────────────────────────────────────────────────
   app.use("/api/bot", botSparkRouter);
   app.post("/api/sparks/:id/respond", requireAuth, handleSparkRespond);
 
-  // ── Live Map: get today's events in Moscow timezone ─────────────────
+  // ── Live Map: today's events in Moscow timezone ────────────────────
   app.get("/api/live-map-events", async (req, res) => {
     try {
       const todayEvents = await db.execute(sql`
