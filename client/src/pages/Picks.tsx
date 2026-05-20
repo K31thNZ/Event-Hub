@@ -65,13 +65,13 @@ export default function Picks() {
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
             <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary/10 text-primary font-semibold text-sm mb-6 border border-primary/20">
               <Sparkles className="w-4 h-4" />
-              AI‑Powered Picks
+              Recommended for You
             </div>
             <h1 className="text-5xl md:text-6xl font-display font-bold mb-4 leading-tight">
-              Recommended for You
+              Events matched to your taste
             </h1>
             <p className="text-muted-foreground text-lg max-w-xl mx-auto">
-              Events matched to your taste using semantic understanding — not just tags.
+              Each time you rate an event, we get better at finding the best ones.
             </p>
           </motion.div>
         </div>
