@@ -27,13 +27,15 @@ async function notifyNewEvent(event: EventWithTickets): Promise<void> {
         "x-service-secret": secret,
       },
       body: JSON.stringify({
-        id:          event.id,
-        title:       event.title,
-        category:    event.category,
-        date:        event.date,
-        venueCity:   event.venueCity,
+        id:           event.id,
+        title:        event.title,
+        category:     event.category,
+        date:         event.date,
+        venueCity:    event.venueCity,
         venueAddress: event.venueAddress,
-        description: event.description,
+        description:  event.description,
+        imageUrl:     event.imageUrl ?? undefined,
+        organizerId:  event.organizerId ?? undefined,
       }),
     });
 
