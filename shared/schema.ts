@@ -1,13 +1,32 @@
 import { sql } from "drizzle-orm";
 import {
   jsonb, pgTable, text, serial, integer, boolean, timestamp, varchar, real,
-  uniqueIndex,
+  uniqueIndex, customType,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 export * from "./models/auth";
-import { users } from "./models/auth";
+
+// ── Custom vector type (pgvector) ─────────────────────────────────────────
+const vector = customType<{
+  data: number[] | null;
+  driverData: string | null;
+}>({
+  dataType() {
+    return "vector(1536)";
+  },
+  // optional: how to map driver value to your TS type
+  // toDriver(value: number[] | null) { return value ? JSON.stringify(value) : null; },
+  // fromDriver(value: string | null) { return value ? JSON.parse(value) as number[] : null; },
+});
+
+// ── NOTE ──────────────────────────────────────────────────────────────────
+// There is NO local users table. User records live in meh-auth.
+// All "userId" / "organizerId" / "attendeeId" / "ownerUserId" / "curatorId"
+// columns store the meh-auth integer user ID as a plain integer column —
+// no FK constraint to a local users table.
+// ─────────────────────────────────────────────────────────────────────────
 
 // ── Groups (must be defined before events) ────────────────────────────────
 export const groups = pgTable("groups", {
@@ -15,7 +34,7 @@ export const groups = pgTable("groups", {
   slug:           text("slug").notNull().unique(),
   name:           text("name").notNull(),
   description:    text("description").notNull().default(""),
-  ownerUserId:    varchar("owner_user_id").notNull().references(() => users.id),
+  ownerUserId:    integer("owner_user_id").notNull(),   // meh-auth user id, no FK
   category:       text("category").notNull().default("social"),
   imageUrl:       text("image_url"),
   bannerUrl:      text("banner_url"),
@@ -29,7 +48,7 @@ export const groups = pgTable("groups", {
 // ── Events ────────────────────────────────────────────────────────────────
 export const events = pgTable("events", {
   id:           serial("id").primaryKey(),
-  organizerId:  varchar("organizer_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  organizerId:  integer("organizer_id").notNull(),   // meh-auth user id, no FK
   groupId:      integer("group_id").references(() => groups.id, { onDelete: "set null" }),
   title:        text("title").notNull(),
   description:  text("description").notNull(),
@@ -49,6 +68,9 @@ export const events = pgTable("events", {
   recurrenceUntil: timestamp("recurrence_until", { withTimezone: true }),
   parentEventId:   integer("parent_event_id"),
   createdAt:    timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  sourceUrl:    text("source_url"),
+  // 🌟 AI embeddings for vector search
+  embedding:    vector("embedding"),
 });
 
 // ── Ticket types ──────────────────────────────────────────────────────────
@@ -64,7 +86,7 @@ export const ticketTypes = pgTable("ticket_types", {
 // ── Orders ────────────────────────────────────────────────────────────────
 export const orders = pgTable("orders", {
   id:            serial("id").primaryKey(),
-  attendeeId:    varchar("attendee_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  attendeeId:    integer("attendee_id").notNull(),   // meh-auth user id, no FK
   eventId:       integer("event_id").references(() => events.id, { onDelete: "cascade" }).notNull(),
   status:        text("status").notNull(),
   totalAmount:   integer("total_amount").notNull(),
@@ -84,7 +106,7 @@ export const orderTickets = pgTable("order_tickets", {
 // ── Curator picks ─────────────────────────────────────────────────────────
 export const curatorPicks = pgTable("curator_picks", {
   id:               serial("id").primaryKey(),
-  curatorId:        varchar("curator_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  curatorId:        integer("curator_id").notNull(),   // meh-auth user id, no FK
   curatorName:      text("curator_name").notNull(),
   curatorAvatarUrl: text("curator_avatar_url"),
   curatorSpecialty: text("curator_specialty").notNull().default("Events"),
@@ -100,7 +122,7 @@ export const curatorPicks = pgTable("curator_picks", {
 export const groupMembers = pgTable("group_members", {
   id:          serial("id").primaryKey(),
   groupId:     integer("group_id").notNull().references(() => groups.id, { onDelete: "cascade" }),
-  userId:      varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  userId:      integer("user_id").notNull(),   // meh-auth user id, no FK
   role:        text("role").notNull().default("member"),
   status:      text("status").notNull().default("active"),
   displayName: text("display_name"),
@@ -108,15 +130,13 @@ export const groupMembers = pgTable("group_members", {
   joinedAt:    timestamp("joined_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
-// RSVPs — Telegram & web event responses
-// ═══════════════════════════════════════════════════════════════════════════
+// ── RSVPs ─────────────────────────────────────────────────────────────────
 export const rsvps = pgTable("rsvps", {
   id:        serial("id").primaryKey(),
-  userId:    integer("user_id").notNull(),   // plain integer, no FK
+  userId:    integer("user_id").notNull(),   // meh-auth user id, no FK
   eventId:   integer("event_id")
     .notNull()
-    .references(() => events.id, { onDelete: "cascade" }),  // event FK stays
+    .references(() => events.id, { onDelete: "cascade" }),
   status:    text("status").notNull(),
   source:    text("source").default("telegram"),
   sourceChatId:    integer("source_chat_id"),
@@ -126,9 +146,8 @@ export const rsvps = pgTable("rsvps", {
   uniq: uniqueIndex("rsvps_event_user").on(table.eventId, table.userId),
 }));
 
-// ── Relations (original tables) ───────────────────────────────────────────
+// ── Relations ─────────────────────────────────────────────────────────────
 export const eventsRelations = relations(events, ({ one, many }) => ({
-  organizer:   one(users,  { fields: [events.organizerId], references: [users.id] }),
   group:       one(groups, { fields: [events.groupId],     references: [groups.id] }),
   ticketTypes: many(ticketTypes),
   orders:      many(orders),
@@ -140,8 +159,7 @@ export const ticketTypesRelations = relations(ticketTypes, ({ one }) => ({
 }));
 
 export const ordersRelations = relations(orders, ({ one, many }) => ({
-  attendee: one(users,  { fields: [orders.attendeeId], references: [users.id] }),
-  event:    one(events, { fields: [orders.eventId],    references: [events.id] }),
+  event:    one(events, { fields: [orders.eventId], references: [events.id] }),
   tickets:  many(orderTickets),
 }));
 
@@ -150,19 +168,13 @@ export const orderTicketsRelations = relations(orderTickets, ({ one }) => ({
   ticketType: one(ticketTypes, { fields: [orderTickets.ticketTypeId], references: [ticketTypes.id] }),
 }));
 
-export const curatorPicksRelations = relations(curatorPicks, ({ one }) => ({
-  curator: one(users, { fields: [curatorPicks.curatorId], references: [users.id] }),
-}));
-
-export const groupsRelations = relations(groups, ({ one, many }) => ({
-  owner:   one(users, { fields: [groups.ownerUserId], references: [users.id] }),
+export const groupsRelations = relations(groups, ({ many }) => ({
   members: many(groupMembers),
   events:  many(events),
 }));
 
 export const groupMembersRelations = relations(groupMembers, ({ one }) => ({
   group: one(groups, { fields: [groupMembers.groupId], references: [groups.id] }),
-  user:  one(users,  { fields: [groupMembers.userId],  references: [users.id] }),
 }));
 
 export const rsvpsRelations = relations(rsvps, ({ one }) => ({
@@ -170,12 +182,12 @@ export const rsvpsRelations = relations(rsvps, ({ one }) => ({
 }));
 
 // ═══════════════════════════════════════════════════════════════════════════
-// SPARKS — No FK to users; stores sender info directly
+// SPARKS — Stores sender info directly, no FK to users
 // ═══════════════════════════════════════════════════════════════════════════
 
 export const sparks = pgTable("sparks", {
   id:           serial("id").primaryKey(),
-  senderId:     varchar("sender_id").notNull(),
+  senderId:     integer("sender_id").notNull(),   // meh-auth user id, no FK
 
   senderDisplayName: text("sender_display_name"),
   senderAvatarUrl:   text("sender_avatar_url"),
@@ -191,7 +203,6 @@ export const sparks = pgTable("sparks", {
   filterMetroLine:   text("filter_metro_line"),
   maxRespondents:    integer("max_respondents").notNull().default(5),
 
-  // 🌍 Geo coordinates (nullable)
   lat:          real("lat"),
   lng:          real("lng"),
 
@@ -203,7 +214,7 @@ export const sparks = pgTable("sparks", {
 export const sparkResponses = pgTable("spark_responses", {
   id:          serial("id").primaryKey(),
   sparkId:     integer("spark_id").notNull().references(() => sparks.id, { onDelete: "cascade" }),
-  responderId: varchar("responder_id").notNull(),
+  responderId: integer("responder_id").notNull(),   // meh-auth user id, no FK
   status:      text("status").notNull().default("pending"),
   message:     text("message"),
   createdAt:   timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -217,29 +228,21 @@ export const sparkResponsesRelations = relations(sparkResponses, ({ one }) => ({
   spark: one(sparks, { fields: [sparkResponses.sparkId], references: [sparks.id] }),
 }));
 
-// ── Inferred types ─────────────────────────────────────────────────────────
-export type Spark              = typeof sparks.$inferSelect;
-export type SparkResponse      = typeof sparkResponses.$inferSelect;
-export type Rsvp               = typeof rsvps.$inferSelect;
-
-export type SparkWithResponses = Spark & {
-  responses: (SparkResponse & { responder?: { id: string; displayName?: string | null; avatarUrl?: string | null } })[];
-  responseCount: number;
-  myResponse?: SparkResponse | null;
-};
-
-// ── Insert schemas ────────────────────────────────────────────────────────
+// ── Zod insert schemas ────────────────────────────────────────────────────
 export const insertEventSchema = createInsertSchema(events, {
-  organizerId: z.string(),
+  organizerId: z.number(),
   date: z.coerce.date(),
-}).omit({ id: true, createdAt: true });
-
-export const insertTicketTypeSchema = createInsertSchema(ticketTypes, {
-  eventId: z.number(),
-}).omit({ id: true });
+}).omit({ id: true, createdAt: true }).extend({
+  ticketTypes: z.array(z.object({
+    name: z.string(),
+    price: z.number(),
+    quantity: z.number(),
+    maxPerOrder: z.number(),
+  })).optional(),
+});
 
 export const insertOrderSchema = createInsertSchema(orders, {
-  attendeeId: z.string(),
+  attendeeId: z.number(),
   eventId: z.number(),
   totalAmount: z.number(),
   status: z.string().default("pending"),
@@ -251,18 +254,18 @@ export const insertOrderTicketSchema = createInsertSchema(orderTickets, {
 }).omit({ id: true });
 
 export const insertCuratorPicksSchema = createInsertSchema(curatorPicks, {
-  curatorId: z.string(),
+  curatorId: z.number(),
   weekOf: z.coerce.date(),
   eventIds: z.array(z.number()),
 }).omit({ id: true, createdAt: true, updatedAt: true });
 
 export const insertGroupSchema = createInsertSchema(groups, {
-  ownerUserId: z.string(),
+  ownerUserId: z.number(),
 }).omit({ id: true, createdAt: true, updatedAt: true });
 
 export const insertGroupMemberSchema = createInsertSchema(groupMembers, {
   groupId: z.number(),
-  userId: z.string(),
+  userId: z.number(),
 }).omit({ id: true, joinedAt: true });
 
 export const insertRsvpSchema = createInsertSchema(rsvps, {
@@ -279,6 +282,8 @@ export type OrderTicket  = typeof orderTickets.$inferSelect;
 export type CuratorPick  = typeof curatorPicks.$inferSelect;
 export type Group        = typeof groups.$inferSelect;
 export type GroupMember  = typeof groupMembers.$inferSelect;
+export type Spark        = typeof sparks.$inferSelect;
+export type SparkResponse = typeof sparkResponses.$inferSelect;
 
 export type EventWithTickets    = Event & { ticketTypes: TicketType[] };
 export type CuratorPickWithEvents = CuratorPick & { events: EventWithTickets[] };
@@ -300,7 +305,7 @@ export type GroupWithDetails = Group & {
 
 // ── Request types ─────────────────────────────────────────────────────────
 export type CreateEventRequest = {
-  organizerId: string;
+  organizerId?: number;
   groupId?: number | null;
   title: string;
   description: string;
@@ -323,7 +328,7 @@ export type CreateEventRequest = {
 export type UpdateEventRequest = Partial<Omit<CreateEventRequest, "organizerId">>;
 
 export type CreateOrderRequest = {
-  attendeeId: string;
+  attendeeId?: number;
   eventId: number;
   attendeeName: string;
   attendeeEmail: string;
