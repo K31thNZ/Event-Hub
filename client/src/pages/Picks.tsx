@@ -1,5 +1,5 @@
 // client/src/pages/Picks.tsx
-// Now repurposed for AI‑powered event recommendations (vector search).
+// AI‑powered event recommendations (vector search).
 import { useQuery } from "@tanstack/react-query";
 import { getQueryFn } from "@/lib/queryClient";
 import { Link } from "wouter";
