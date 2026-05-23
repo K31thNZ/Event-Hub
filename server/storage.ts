@@ -178,6 +178,7 @@ export class DatabaseStorage implements IStorage {
       if (eventData.date         !== undefined) updates.date         = new Date(eventData.date as string);
       if (eventData.venueAddress !== undefined) updates.venueAddress = eventData.venueAddress;
       if (eventData.venueCity    !== undefined) updates.venueCity    = eventData.venueCity;
+      if (eventData.locationName !== undefined) updates.locationName = eventData.locationName;
       if (eventData.lat          !== undefined) updates.lat          = eventData.lat;
       if (eventData.lng          !== undefined) updates.lng          = eventData.lng;
       if (eventData.imageUrl     !== undefined) updates.imageUrl     = eventData.imageUrl;

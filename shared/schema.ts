@@ -360,7 +360,7 @@ export type CreateEventRequest = {
   imageUrl?: string | null;
   published?: boolean;
   isPrivate?: boolean;
-  recurrence?: "weekly" | "biweekly" | "monthly" | null;
+  recurrence?: "daily" | "weekly" | "biweekly" | "monthly" | null;
   recurrenceUntil?: Date | string | null;
   ticketTypes: { name: string; price: number; quantity: number; maxPerOrder: number }[];
 };

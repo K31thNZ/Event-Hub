@@ -44,8 +44,9 @@ import {
   CheckCircle2, XCircle, Pencil, Trash2, Eye, EyeOff, ExternalLink,
   Search, Filter, RefreshCw, ChevronLeft, MapPin, Calendar, Tag,
   Layers, Globe, ShieldAlert, LayoutList, LayoutGrid, Check, X,
-  Clock, Sparkles, ArrowUpDown,
+  Clock, Sparkles, ArrowUpDown, Plus, Minus, Lock, Unlock, Repeat,
 } from "lucide-react";
+import { MapLibreLocationPicker } from "@/components/ui/MapLibreLocationPicker";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface TicketType {
@@ -79,6 +80,14 @@ interface AdminEvent {
 }
 
 // ── Edit sheet schema ─────────────────────────────────────────────────────────
+const ticketSchema = z.object({
+  id:           z.number().optional(),
+  name:         z.string().min(1, "Required"),
+  price:        z.number().min(0),
+  quantity:     z.number().min(1),
+  maxPerOrder:  z.number().min(1),
+});
+
 const editSchema = z.object({
   title:        z.string().min(3, "Min 3 chars"),
   description:  z.string().min(10, "Min 10 chars"),
@@ -87,12 +96,15 @@ const editSchema = z.object({
   date:         z.string().min(1),
   venueAddress: z.string().min(2),
   venueCity:    z.string().min(2),
-  locationName: z.string().optional().nullable(),   // 🌟 added
+  locationName: z.string().optional().nullable(),
   lat:          z.number().optional().nullable(),
   lng:          z.number().optional().nullable(),
   imageUrl:     z.string().optional().nullable(),
   sourceUrl:    z.string().optional().nullable(),
+  isPrivate:    z.boolean(),
+  recurrence:   z.string().optional().nullable(),
   published:    z.boolean(),
+  ticketTypes:  z.array(ticketSchema).optional(),
 });
 type EditValues = z.infer<typeof editSchema>;
 
@@ -119,11 +131,12 @@ function EditSheet({
   event, open, onClose, onSaved,
 }: {
   event: AdminEvent | null;
-  open: boolean;
+  open:  boolean;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const { toast } = useToast();
+
   const form = useForm<EditValues>({
     resolver: zodResolver(editSchema),
     values: event ? {
@@ -134,23 +147,42 @@ function EditSheet({
       date:         format(new Date(event.date), "yyyy-MM-dd'T'HH:mm"),
       venueAddress: event.venueAddress,
       venueCity:    event.venueCity,
-      locationName: event.locationName ?? null,   // 🌟
+      locationName: event.locationName ?? null,
       lat:          event.lat ?? null,
       lng:          event.lng ?? null,
       imageUrl:     event.imageUrl ?? "",
       sourceUrl:    event.sourceUrl ?? "",
+      isPrivate:    event.isPrivate,
+      recurrence:   event.recurrence ?? null,
       published:    event.published,
+      ticketTypes:  event.ticketTypes?.map(t => ({
+        id:          t.id,
+        name:        t.name,
+        price:       t.price,
+        quantity:    t.quantity,
+        maxPerOrder: t.maxPerOrder,
+      })) ?? [],
     } : undefined,
   });
 
+  const { fields: ticketFields, append: appendTicket, remove: removeTicket } =
+    (form as any).useFieldArray
+      ? (form as any).useFieldArray({ name: "ticketTypes" })
+      : { fields: form.watch("ticketTypes") ?? [], append: () => {}, remove: () => {} };
+
   const watchedCategory = form.watch("category");
   const watchedImage    = form.watch("imageUrl");
+  const watchedLat      = form.watch("lat");
+  const watchedLng      = form.watch("lng");
+  const watchedAddress  = form.watch("venueAddress");
+  const watchedCity     = form.watch("venueCity");
+  const watchedTickets  = form.watch("ticketTypes") ?? [];
 
   const onSubmit = async (data: EditValues) => {
     if (!event) return;
     try {
       await apiRequest("PATCH", `/api/admin/events/${event.id}`, data);
-      toast({ title: "Event saved" });
+      toast({ title: "Event saved ✓" });
       onSaved();
       onClose();
     } catch (err: any) {
@@ -158,41 +190,55 @@ function EditSheet({
     }
   };
 
+  // Add / remove ticket rows managed via form array watch
+  const handleAddTicket = () => {
+    const cur = form.getValues("ticketTypes") ?? [];
+    form.setValue("ticketTypes", [...cur, { name: "", price: 0, quantity: 50, maxPerOrder: 4 }]);
+  };
+  const handleRemoveTicket = (idx: number) => {
+    const cur = form.getValues("ticketTypes") ?? [];
+    form.setValue("ticketTypes", cur.filter((_, i) => i !== idx));
+  };
+
   return (
     <Sheet open={open} onOpenChange={v => { if (!v) onClose(); }}>
       <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto">
-        <SheetHeader className="mb-6">
+        <SheetHeader className="mb-5">
           <SheetTitle className="text-xl font-bold flex items-center gap-2">
             <Pencil className="w-5 h-5 text-primary" /> Edit Event
           </SheetTitle>
           <SheetDescription>
-            ID #{event?.id} · Changes save immediately.
+            ID #{event?.id} · All changes save on submit.
           </SheetDescription>
         </SheetHeader>
 
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5 pb-8">
-          {/* Cover preview */}
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5 pb-10">
+
+          {/* ── Cover image preview ── */}
           {watchedImage && (
             <div className="rounded-xl overflow-hidden aspect-video bg-muted border border-border">
               <img src={watchedImage} alt="" className="w-full h-full object-cover" />
             </div>
           )}
 
+          {/* ── Title ── */}
           <div className="space-y-1.5">
-            <Label>Title</Label>
+            <Label>Title *</Label>
             <Input {...form.register("title")} className="h-11 rounded-xl" />
             {form.formState.errors.title && <p className="text-destructive text-xs">{form.formState.errors.title.message}</p>}
           </div>
 
+          {/* ── Description ── */}
           <div className="space-y-1.5">
-            <Label>Description</Label>
-            <Textarea {...form.register("description")} className="rounded-xl min-h-[110px]" />
+            <Label>Description *</Label>
+            <Textarea {...form.register("description")} className="rounded-xl min-h-[120px]" />
             {form.formState.errors.description && <p className="text-destructive text-xs">{form.formState.errors.description.message}</p>}
           </div>
 
+          {/* ── Categories ── */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label>Category</Label>
+              <Label>Category *</Label>
               <Controller control={form.control} name="category" render={({ field }) => (
                 <Select onValueChange={field.onChange} value={field.value}>
                   <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
@@ -218,11 +264,13 @@ function EditSheet({
             </div>
           </div>
 
+          {/* ── Date & Time ── */}
           <div className="space-y-1.5">
-            <Label>Date & Time</Label>
+            <Label>Date & Time *</Label>
             <Input {...form.register("date")} type="datetime-local" className="h-11 rounded-xl" />
           </div>
 
+          {/* ── Venue fields ── */}
           <div className="space-y-1.5">
             <Label>Venue / Place Name <span className="text-muted-foreground text-xs">(optional)</span></Label>
             <Input {...form.register("locationName")} className="h-11 rounded-xl" placeholder="e.g. Surf Coffee, Gorky Park" />
@@ -230,48 +278,227 @@ function EditSheet({
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label>Venue Address</Label>
+              <Label>Address *</Label>
               <Input {...form.register("venueAddress")} className="h-11 rounded-xl" />
+              {form.formState.errors.venueAddress && <p className="text-destructive text-xs">{form.formState.errors.venueAddress.message}</p>}
             </div>
             <div className="space-y-1.5">
-              <Label>City</Label>
+              <Label>City *</Label>
               <Input {...form.register("venueCity")} className="h-11 rounded-xl" />
+              {form.formState.errors.venueCity && <p className="text-destructive text-xs">{form.formState.errors.venueCity.message}</p>}
             </div>
           </div>
 
+          {/* ── Map pin ── */}
+          <div className="rounded-2xl border border-border bg-muted/30 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold flex items-center gap-1.5">
+                <MapPin className="w-4 h-4 text-primary" /> Coordinates
+              </p>
+              {(watchedLat || watchedLng) && (
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground hover:text-destructive underline"
+                  onClick={() => { form.setValue("lat", null); form.setValue("lng", null); }}
+                >
+                  Clear pin
+                </button>
+              )}
+            </div>
+
+            {/* Manual lat/lng override */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Latitude</Label>
+                <Input
+                  {...form.register("lat", { setValueAs: v => v === "" || v === null ? null : parseFloat(v) })}
+                  className="h-9 rounded-lg font-mono text-xs"
+                  placeholder="55.7558"
+                  step="0.00001"
+                  type="number"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Longitude</Label>
+                <Input
+                  {...form.register("lng", { setValueAs: v => v === "" || v === null ? null : parseFloat(v) })}
+                  className="h-9 rounded-lg font-mono text-xs"
+                  placeholder="37.6176"
+                  step="0.00001"
+                  type="number"
+                />
+              </div>
+            </div>
+
+            {/* Interactive map */}
+            <MapLibreLocationPicker
+              address={watchedAddress}
+              city={watchedCity}
+              lat={watchedLat ?? undefined}
+              lng={watchedLng ?? undefined}
+              onLocationPicked={({ address, city, lat, lng }) => {
+                form.setValue("venueAddress", address, { shouldDirty: true });
+                form.setValue("venueCity",    city,    { shouldDirty: true });
+                form.setValue("lat",          lat,     { shouldDirty: true });
+                form.setValue("lng",          lng,     { shouldDirty: true });
+              }}
+            />
+          </div>
+
+          {/* ── Cover image URL ── */}
           <div className="space-y-1.5">
             <Label>Cover Image URL</Label>
             <Input {...form.register("imageUrl")} className="h-11 rounded-xl font-mono text-xs" placeholder="https://…" />
           </div>
 
+          {/* ── Source URL ── */}
           <div className="space-y-1.5">
-            <Label>Source URL <span className="text-muted-foreground text-xs">(scraped from)</span></Label>
+            <Label>Source URL <span className="text-muted-foreground text-xs">(original post / event page)</span></Label>
             <Input {...form.register("sourceUrl")} className="h-11 rounded-xl font-mono text-xs" placeholder="https://…" />
           </div>
 
-          <div className="space-y-2">
-            <Label>Status</Label>
-            <Controller control={form.control} name="published" render={({ field }) => (
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => field.onChange(true)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium transition-all ${field.value ? "bg-emerald-600 text-white border-emerald-600" : "border-border text-muted-foreground hover:border-emerald-400"}`}
-                >
-                  <Eye className="w-4 h-4" /> Publish
-                </button>
-                <button
-                  type="button"
-                  onClick={() => field.onChange(false)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium transition-all ${!field.value ? "bg-amber-500 text-white border-amber-500" : "border-border text-muted-foreground hover:border-amber-400"}`}
-                >
-                  <EyeOff className="w-4 h-4" /> Keep Draft
-                </button>
-              </div>
+          {/* ── Recurrence ── */}
+          <div className="space-y-1.5">
+            <Label className="flex items-center gap-1.5"><Repeat className="w-3.5 h-3.5" /> Recurrence <span className="text-muted-foreground text-xs">(optional)</span></Label>
+            <Controller control={form.control} name="recurrence" render={({ field }) => (
+              <Select onValueChange={v => field.onChange(v === "__none__" ? null : v)} value={field.value ?? "__none__"}>
+                <SelectTrigger className="h-11 rounded-xl"><SelectValue placeholder="One-off event" /></SelectTrigger>
+                <SelectContent className="bg-white dark:bg-zinc-900">
+                  <SelectItem value="__none__">— One-off —</SelectItem>
+                  <SelectItem value="daily">Daily</SelectItem>
+                  <SelectItem value="weekly">Weekly</SelectItem>
+                  <SelectItem value="biweekly">Bi-weekly</SelectItem>
+                  <SelectItem value="monthly">Monthly</SelectItem>
+                </SelectContent>
+              </Select>
             )} />
           </div>
 
-          <div className="flex gap-3 pt-4 border-t border-border">
+          {/* ── Visibility & Status ── */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Visibility</Label>
+              <Controller control={form.control} name="isPrivate" render={({ field }) => (
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => field.onChange(false)}
+                    className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-sm font-medium transition-all ${!field.value ? "bg-sky-600 text-white border-sky-600" : "border-border text-muted-foreground hover:border-sky-400"}`}
+                  >
+                    <Unlock className="w-3.5 h-3.5" /> Public
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => field.onChange(true)}
+                    className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-sm font-medium transition-all ${field.value ? "bg-zinc-700 text-white border-zinc-700" : "border-border text-muted-foreground hover:border-zinc-400"}`}
+                  >
+                    <Lock className="w-3.5 h-3.5" /> Private
+                  </button>
+                </div>
+              )} />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Status</Label>
+              <Controller control={form.control} name="published" render={({ field }) => (
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => field.onChange(true)}
+                    className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-sm font-medium transition-all ${field.value ? "bg-emerald-600 text-white border-emerald-600" : "border-border text-muted-foreground hover:border-emerald-400"}`}
+                  >
+                    <Eye className="w-3.5 h-3.5" /> Published
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => field.onChange(false)}
+                    className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-sm font-medium transition-all ${!field.value ? "bg-amber-500 text-white border-amber-500" : "border-border text-muted-foreground hover:border-amber-400"}`}
+                  >
+                    <EyeOff className="w-3.5 h-3.5" /> Draft
+                  </button>
+                </div>
+              )} />
+            </div>
+          </div>
+
+          {/* ── Ticket types ── */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <Label className="flex items-center gap-1.5">
+                <Tag className="w-3.5 h-3.5" /> Ticket Types
+                <span className="text-muted-foreground text-xs font-normal">({watchedTickets.length})</span>
+              </Label>
+              <Button type="button" size="sm" variant="outline" className="h-8 rounded-xl gap-1.5 text-xs" onClick={handleAddTicket}>
+                <Plus className="w-3.5 h-3.5" /> Add Ticket
+              </Button>
+            </div>
+
+            {watchedTickets.length === 0 && (
+              <p className="text-xs text-muted-foreground bg-muted rounded-xl px-4 py-3">
+                No ticket types — this is a free event. Add a ticket type to start selling.
+              </p>
+            )}
+
+            {watchedTickets.map((ticket, idx) => (
+              <div key={idx} className="rounded-xl border border-border bg-background p-4 space-y-3 relative">
+                <button
+                  type="button"
+                  onClick={() => handleRemoveTicket(idx)}
+                  className="absolute top-3 right-3 text-muted-foreground hover:text-destructive transition-colors"
+                >
+                  <Minus className="w-4 h-4" />
+                </button>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Ticket Name</Label>
+                  <Input
+                    {...form.register(`ticketTypes.${idx}.name`)}
+                    className="h-9 rounded-lg text-sm"
+                    placeholder="General Admission"
+                  />
+                  {(form.formState.errors.ticketTypes as any)?.[idx]?.name && (
+                    <p className="text-destructive text-xs">{(form.formState.errors.ticketTypes as any)[idx].name.message}</p>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Price (₽)</Label>
+                    <Input
+                      {...form.register(`ticketTypes.${idx}.price`, { valueAsNumber: true })}
+                      className="h-9 rounded-lg text-sm"
+                      type="number"
+                      min={0}
+                      placeholder="0"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Total Qty</Label>
+                    <Input
+                      {...form.register(`ticketTypes.${idx}.quantity`, { valueAsNumber: true })}
+                      className="h-9 rounded-lg text-sm"
+                      type="number"
+                      min={1}
+                      placeholder="50"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Max / Order</Label>
+                    <Input
+                      {...form.register(`ticketTypes.${idx}.maxPerOrder`, { valueAsNumber: true })}
+                      className="h-9 rounded-lg text-sm"
+                      type="number"
+                      min={1}
+                      placeholder="4"
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* ── Submit ── */}
+          <div className="flex gap-3 pt-4 border-t border-border sticky bottom-0 bg-background py-4 -mx-6 px-6">
             <Button type="button" variant="outline" onClick={onClose} className="flex-1 rounded-xl">Cancel</Button>
             <Button type="submit" disabled={form.formState.isSubmitting} className="flex-1 rounded-xl">
               {form.formState.isSubmitting ? "Saving…" : "Save Changes"}
@@ -282,6 +509,7 @@ function EditSheet({
     </Sheet>
   );
 }
+
 
 // ── Event Detail Panel (slide-in preview) ─────────────────────────────────────
 function EventDetailPanel({

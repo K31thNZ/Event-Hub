@@ -2,88 +2,135 @@ import { useEffect, useState, useCallback } from "react";
 import Map, { Marker, NavigationControl } from "react-map-gl/maplibre";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { Button } from "@/components/ui/button";
-import { Navigation, Loader2, MapPin } from "lucide-react";
+import { Navigation, Loader2, MapPin, LocateFixed } from "lucide-react";
 
-// Free, no‑API‑key tile source (OpenStreetMap)
+// Free, no‑API‑key tile source (OpenStreetMap via Stadia)
 const MAP_STYLE = "https://tiles.stadiamaps.com/styles/osm_bright.json";
 
-interface MapLibreLocationPickerProps {
-  address?: string | null;
-  city?: string | null;
-  onLocationPicked: (address: string, city: string) => void;
+interface PickedLocation {
+  address: string;
+  city:    string;
+  lat:     number;
+  lng:     number;
 }
 
-export function MapLibreLocationPicker({ address, city, onLocationPicked }: MapLibreLocationPickerProps) {
+interface MapLibreLocationPickerProps {
+  /** Initial address shown on the map */
+  address?: string | null;
+  /** Initial city used for forward-geocoding if no coordinates given */
+  city?: string | null;
+  /** Existing coordinates — if supplied the map flies straight to them */
+  lat?: number | null;
+  lng?: number | null;
+  /** Called every time the user drops a pin; receives full geocoded location */
+  onLocationPicked: (loc: PickedLocation) => void;
+}
+
+export function MapLibreLocationPicker({
+  address, city, lat, lng, onLocationPicked,
+}: MapLibreLocationPickerProps) {
   const [viewState, setViewState] = useState({
-    longitude: 37.6176,  // Moscow center
-    latitude: 55.7558,
-    zoom: 12,
+    longitude: lng ?? 37.6176,   // default: Moscow center
+    latitude:  lat ?? 55.7558,
+    zoom:      lat && lng ? 15 : 12,
   });
-  const [marker, setMarker] = useState<{ longitude: number; latitude: number } | null>(null);
-  const [isPicking, setIsPicking] = useState(false);
+  const [marker, setMarker] = useState<{ longitude: number; latitude: number } | null>(
+    lat && lng ? { longitude: lng, latitude: lat } : null
+  );
+  const [isPicking,   setIsPicking]   = useState(false);
   const [isGeocoding, setIsGeocoding] = useState(false);
 
-  // Reverse geocode: when user clicks the map
+  // ── When existing coordinates are passed, fly to them ─────────────────────
+  useEffect(() => {
+    if (lat && lng) {
+      setViewState(prev => ({ ...prev, latitude: lat, longitude: lng, zoom: 15 }));
+      setMarker({ longitude: lng, latitude: lat });
+    }
+  }, [lat, lng]);
+
+  // ── Reverse geocode when user clicks in pick mode ──────────────────────────
   const onMapClick = useCallback(async (event: any) => {
     if (!isPicking) return;
-    const { lng, lat } = event.lngLat;
-    setMarker({ longitude: lng, latitude: lat });
+    const { lng: clickLng, lat: clickLat } = event.lngLat;
+    setMarker({ longitude: clickLng, latitude: clickLat });
     setIsGeocoding(true);
 
     try {
       const response = await fetch("/api/reverse-geocode", {
-        method: "POST",
+        method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lat, lng }),
+        body:    JSON.stringify({ lat: clickLat, lng: clickLng }),
       });
       if (response.ok) {
         const { address: fullAddress, city: locationCity } = await response.json();
-        onLocationPicked(fullAddress, locationCity);
+        onLocationPicked({
+          address: fullAddress,
+          city:    locationCity,
+          lat:     clickLat,
+          lng:     clickLng,
+        });
       } else {
-        console.error("Reverse geocoding failed");
+        // Reverse geocode failed — still emit coordinates with raw values
+        onLocationPicked({
+          address: address ?? "",
+          city:    city ?? "",
+          lat:     clickLat,
+          lng:     clickLng,
+        });
       }
-    } catch (error) {
-      console.error("Geocoding error:", error);
+    } catch {
+      onLocationPicked({
+        address: address ?? "",
+        city:    city ?? "",
+        lat:     clickLat,
+        lng:     clickLng,
+      });
     } finally {
       setIsGeocoding(false);
       setIsPicking(false);
     }
-  }, [isPicking, onLocationPicked]);
+  }, [isPicking, onLocationPicked, address, city]);
 
-  // Forward geocode: when address/city props change
+  // ── Forward geocode when address/city text changes (no coords yet) ─────────
   useEffect(() => {
+    if (lat && lng) return;           // already have coords — don't override
     if (!address && !city) return;
     const query = [address, city].filter(Boolean).join(", ");
     if (query.length < 5) return;
 
-    const fetchCoordinates = async () => {
+    let cancelled = false;
+    const run = async () => {
       setIsGeocoding(true);
       try {
         const response = await fetch("/api/forward-geocode", {
-          method: "POST",
+          method:  "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query }),
+          body:    JSON.stringify({ query }),
         });
-        if (response.ok) {
-          const { latitude, longitude } = await response.json();
-          setViewState(prev => ({ ...prev, latitude, longitude }));
-          setMarker({ longitude, latitude });
+        if (!cancelled && response.ok) {
+          const { latitude: fLat, longitude: fLng } = await response.json();
+          setViewState(prev => ({ ...prev, latitude: fLat, longitude: fLng, zoom: 14 }));
+          setMarker({ longitude: fLng, latitude: fLat });
         }
-      } catch (error) {
-        console.error("Forward geocoding error:", error);
-      } finally {
-        setIsGeocoding(false);
+      } catch { /* silent */ } finally {
+        if (!cancelled) setIsGeocoding(false);
       }
     };
-    fetchCoordinates();
-  }, [address, city]);
+    run();
+    return () => { cancelled = true; };
+  }, [address, city]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <label className="text-sm font-medium flex items-center gap-1.5">
           <MapPin className="w-4 h-4 text-primary" />
-          Map Location
+          Map pin
+          {marker && (
+            <span className="text-xs text-muted-foreground font-mono">
+              ({marker.latitude.toFixed(5)}, {marker.longitude.toFixed(5)})
+            </span>
+          )}
         </label>
         <Button
           type="button"
@@ -94,24 +141,38 @@ export function MapLibreLocationPicker({ address, city, onLocationPicked }: MapL
           disabled={isGeocoding}
         >
           {isGeocoding ? (
-            <><Loader2 className="w-3 h-3 animate-spin" /> Finding address…</>
+            <><Loader2 className="w-3 h-3 animate-spin" /> Geocoding…</>
           ) : isPicking ? (
-            <><MapPin className="w-3 h-3" /> Click map to place pin</>
+            <><MapPin className="w-3 h-3" /> Click map to pin</>
           ) : (
-            <><Navigation className="w-3 h-3" /> Drop pin</>
+            <><LocateFixed className="w-3 h-3" /> Drop pin</>
           )}
         </Button>
       </div>
-      <div className="rounded-2xl overflow-hidden border border-border">
+
+      {isPicking && (
+        <p className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-1.5">
+          Click anywhere on the map to set the event pin. Address fields will update automatically.
+        </p>
+      )}
+
+      <div className={`rounded-2xl overflow-hidden border transition-all ${isPicking ? "border-primary ring-2 ring-primary/20" : "border-border"}`}>
         <Map
           {...viewState}
           onMove={evt => setViewState(evt.viewState)}
           onClick={onMapClick}
           mapStyle={MAP_STYLE}
-          style={{ width: "100%", height: "300px" }}
+          style={{ width: "100%", height: "260px" }}
+          cursor={isPicking ? "crosshair" : "grab"}
         >
           <NavigationControl position="top-right" />
-          {marker && <Marker longitude={marker.longitude} latitude={marker.latitude} color="red" />}
+          {marker && (
+            <Marker
+              longitude={marker.longitude}
+              latitude={marker.latitude}
+              color="#e11d48"
+            />
+          )}
         </Map>
       </div>
     </div>
