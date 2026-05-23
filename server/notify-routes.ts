@@ -252,7 +252,7 @@ export function registerNotifyRoutes(app: Express) {
         ));
 
       // Fetch telegram usernames from meh-auth in one batch call
-      const userIds = [...new Set(rows.map(r => r.attendeeId))];
+      const userIds = Array.from(new Set(rows.map(r => r.attendeeId)));
       let userMap: Record<number, { telegramId?: string; username?: string }> = {};
 
       if (userIds.length > 0) {

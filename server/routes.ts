@@ -13,7 +13,8 @@ import { api, buildUrl } from "@shared/routes";
 import { requireAuth, getUser } from "./auth-client";
 import { z } from "zod";
 import { db } from "./db";
-import { sql } from "drizzle-orm";
+import { sql, desc, gt } from "drizzle-orm";
+import { events, groups } from "@shared/schema";
 import uploadRouter from "./routes/upload";
 
 // NOTE: No local users table in Event-Hub DB.
@@ -34,7 +35,83 @@ export async function registerRoutes(
   registerNotifyRoutes(app);
   registerRecommendationRoutes(app);
 
+
+  // ── Sitemap ────────────────────────────────────────────────────────────
+  // Server-rendered XML sitemap — covers all published events and groups.
+  // Bots and Google see real URLs; regenerated on every request (cheap query).
+  const SITE_URL = (process.env.APP_URL ?? "https://expatevents.org").replace(/\/$/, "");
+
+  app.get("/sitemap.xml", async (_req, res) => {
+    try {
+      const now = new Date();
+
+      const [allEvents, allGroups] = await Promise.all([
+        db
+          .select({ id: events.id, updatedAt: events.createdAt })
+          .from(events)
+          .where(sql`${events.published} = true`)
+          .orderBy(desc(events.createdAt))
+          .limit(5000),
+        db
+          .select({ slug: groups.slug, updatedAt: groups.updatedAt })
+          .from(groups)
+          .orderBy(desc(groups.updatedAt))
+          .limit(1000),
+      ]);
+
+      const staticPages = [
+        { loc: `/`,         priority: "1.0", changefreq: "daily"   },
+        { loc: `/groups`,   priority: "0.8", changefreq: "daily"   },
+        { loc: `/language`, priority: "0.7", changefreq: "weekly"  },
+      ];
+
+      const urls = [
+        ...staticPages.map(p =>
+          `  <url>\n    <loc>${SITE_URL}${p.loc}</loc>\n    <changefreq>${p.changefreq}</changefreq>\n    <priority>${p.priority}</priority>\n  </url>`
+        ),
+        ...allEvents.map(e =>
+          `  <url>\n    <loc>${SITE_URL}/events/${e.id}</loc>\n    <lastmod>${(e.updatedAt ?? now).toISOString().split("T")[0]}</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>0.9</priority>\n  </url>`
+        ),
+        ...allGroups.map(g =>
+          `  <url>\n    <loc>${SITE_URL}/groups/${g.slug}</loc>\n    <lastmod>${(g.updatedAt ?? now).toISOString().split("T")[0]}</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>0.7</priority>\n  </url>`
+        ),
+      ];
+
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join("\n")}\n</urlset>`;
+
+      res
+        .status(200)
+        .set("Content-Type", "application/xml; charset=utf-8")
+        .set("Cache-Control", "public, max-age=3600")   // 1 hr CDN cache
+        .end(xml);
+    } catch (err: any) {
+      console.error("[sitemap] error:", err.message);
+      res.status(500).end("<?xml version=\"1.0\"?><urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\"/>");
+    }
+  });
+
   // ── Server‑mediated uploads ────────────────────────────────────────
+  // ── Admin: Cloudinary URL audit ───────────────────────────────────────────
+  // GET /api/admin/cloudinary-check — lists events still using Cloudinary CDN
+  // URLs so they can be re-migrated to R2 before they 404.
+  app.get("/api/admin/cloudinary-check", async (_req, res) => {
+    try {
+      const rows = await db.execute(
+        sql`SELECT id, title, image_url
+            FROM events
+            WHERE image_url LIKE '%cloudinary.com%'
+            ORDER BY id`
+      );
+      res.json({
+        count:  rows.rows.length,
+        events: rows.rows,
+        status: rows.rows.length === 0 ? "clean" : "needs_migration",
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.use(uploadRouter);
 
   // ── Spark‑bot API ───────────────────────────────────────────────────

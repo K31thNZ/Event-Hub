@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+
+# Don't index auth, API, or admin paths
+Disallow: /api/
+Disallow: /admin/
+Disallow: /profile
+Disallow: /orders/
+
+Sitemap: https://expatevents.org/sitemap.xml

@@ -5,6 +5,7 @@ import viteConfig from "../vite.config";
 import fs from "fs";
 import path from "path";
 import { nanoid } from "nanoid";
+import { renderEventHtml, renderDefaultHtml } from "./og-meta";
 
 const viteLogger = createLogger();
 
@@ -42,13 +43,26 @@ export async function setupVite(server: Server, app: Express) {
         "index.html",
       );
 
-      // always reload the index.html file from disk incase it changes
+      // Always reload the template from disk in dev (hot reload)
       let template = await fs.promises.readFile(clientTemplate, "utf-8");
       template = template.replace(
         `src="/src/main.tsx"`,
         `src="/src/main.tsx?v=${nanoid()}"`,
       );
-      const page = await vite.transformIndexHtml(url, template);
+
+      // Run through Vite's HTML transforms (plugin hooks, etc.)
+      let page = await vite.transformIndexHtml(url, template);
+
+      // Inject OG/meta tags for event pages
+      const eventMatch = req.path.match(/^\/events\/(\d+)(?:\/|$)/);
+      if (eventMatch) {
+        const eventId = parseInt(eventMatch[1], 10);
+        const withMeta = await renderEventHtml(eventId, page);
+        page = withMeta ?? renderDefaultHtml(page);
+      } else {
+        page = renderDefaultHtml(page);
+      }
+
       res.status(200).set({ "Content-Type": "text/html" }).end(page);
     } catch (e) {
       vite.ssrFixStacktrace(e as Error);
