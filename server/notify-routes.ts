@@ -4,8 +4,8 @@
 
 import type { Express } from "express";
 import { db } from "./db";
-import { rsvps, users, orders } from "@shared/schema";
-import { eq, and } from "drizzle-orm";
+import { rsvps, orders } from "@shared/schema";
+import { eq, and, inArray, sql } from "drizzle-orm";
 
 // ── Shared secret validation ────────────────────────────────────────────────
 // The bot sends the same secret in the X-Bot-Secret header.
@@ -40,6 +40,58 @@ async function loadRsvpCounts(eventId: number): Promise<{
 
 // ── Route registration ─────────────────────────────────────────────────────
 export function registerNotifyRoutes(app: Express) {
+
+  // ── POST /api/events/rsvp-summaries ────────────────────────────────────
+  // Frontend-facing batch endpoint — called by Home.tsx to show ✅/🤔 counts
+  // on event cards. Accepts a JSON body { eventIds: number[] } and returns
+  // a map of eventId → { going, maybe, no }.
+  //
+  // Uses a single GROUP BY query instead of N per-event queries.
+  app.post("/api/events/rsvp-summaries", async (req, res) => {
+    const { eventIds } = req.body as { eventIds?: unknown };
+
+    if (
+      !Array.isArray(eventIds) ||
+      eventIds.length === 0 ||
+      !eventIds.every(id => typeof id === "number" && Number.isInteger(id))
+    ) {
+      return res.status(400).json({ error: "eventIds must be a non-empty array of integers" });
+    }
+
+    // Hard cap — don't let the client accidentally send 10k IDs
+    const ids: number[] = (eventIds as number[]).slice(0, 500);
+
+    try {
+      // One query: SELECT event_id, status, COUNT(*) FROM rsvps WHERE event_id IN (...) GROUP BY event_id, status
+      const rows = await db
+        .select({
+          eventId: rsvps.eventId,
+          status:  rsvps.status,
+          count:   sql<number>`cast(count(*) as int)`,
+        })
+        .from(rsvps)
+        .where(inArray(rsvps.eventId, ids))
+        .groupBy(rsvps.eventId, rsvps.status);
+
+      // Build the response map, initialising every requested event to zero counts
+      const result: Record<number, { going: number; maybe: number; no: number }> = {};
+      for (const id of ids) {
+        result[id] = { going: 0, maybe: 0, no: 0 };
+      }
+      for (const row of rows) {
+        const bucket = result[row.eventId];
+        if (!bucket) continue;
+        if (row.status === "going")  bucket.going  = row.count;
+        if (row.status === "maybe")  bucket.maybe  = row.count;
+        if (row.status === "no")     bucket.no     = row.count;
+      }
+
+      res.json(result);
+    } catch (err: any) {
+      console.error("[rsvp-summaries] error:", err.message);
+      res.status(500).json({ error: "Failed to load RSVP summaries" });
+    }
+  });
 
   // ── POST /api/bot/events/:id/rsvp ──────────────────────────────────────
   // Upsert an RSVP (going | maybe | no | none to delete) and return fresh counts.
@@ -151,8 +203,8 @@ export function registerNotifyRoutes(app: Express) {
             body: JSON.stringify({ ids: userIds }),
           });
           if (res2.ok) {
-            const users: Array<{ id: number; telegramId?: string; username: string }> = await res2.json();
-            userMap = Object.fromEntries(users.map(u => [u.id, u]));
+            const usersData: Array<{ id: number; telegramId?: string; username: string }> = await res2.json();
+            userMap = Object.fromEntries(usersData.map(u => [u.id, u]));
           }
         } catch (err: any) {
           console.warn("[bot] Could not fetch user details from meh-auth:", err.message);
@@ -257,7 +309,7 @@ export function registerNotifyRoutes(app: Express) {
         .from(rsvps)
         .where(and(
           eq(rsvps.eventId, eventId),
-          eq(rsvps.userId, userId)          // userId is now just an integer, no join needed
+          eq(rsvps.userId, userId)
         ));
 
       res.json({ status: r?.status ?? null });
