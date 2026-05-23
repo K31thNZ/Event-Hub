@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   jsonb, pgTable, text, serial, integer, boolean, timestamp, varchar, real,
-  uniqueIndex, customType,
+  uniqueIndex, index, customType,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
@@ -16,9 +16,6 @@ const vector = customType<{
   dataType() {
     return "vector(768)";
   },
-  // optional: how to map driver value to your TS type
-  // toDriver(value: number[] | null) { return value ? JSON.stringify(value) : null; },
-  // fromDriver(value: string | null) { return value ? JSON.parse(value) as number[] : null; },
 });
 
 // ── NOTE ──────────────────────────────────────────────────────────────────
@@ -43,7 +40,10 @@ export const groups = pgTable("groups", {
   status:         text("status").notNull().default("active"),
   createdAt:      timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt:      timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => ({
+  ownerIdx:   index("groups_owner_idx").on(table.ownerUserId),
+  statusIdx:  index("groups_status_idx").on(table.status),
+}));
 
 // ── Events ────────────────────────────────────────────────────────────────
 export const events = pgTable("events", {
@@ -71,7 +71,20 @@ export const events = pgTable("events", {
   sourceUrl:    text("source_url"),
   // 🌟 AI embeddings for vector search
   embedding:    vector("embedding"),
-});
+}, (table) => ({
+  // Core listing queries — published + date ordering used on every page load
+  publishedDateIdx:   index("events_published_date_idx").on(table.published, table.date),
+  // Category filter (very common on Home page)
+  categoryIdx:        index("events_category_idx").on(table.category),
+  // City filter
+  cityIdx:            index("events_venue_city_idx").on(table.venueCity),
+  // Organiser dashboard: "my events"
+  organizerIdx:       index("events_organizer_idx").on(table.organizerId),
+  // Group event listing
+  groupIdx:           index("events_group_idx").on(table.groupId),
+  // Live map / upcoming queries ordered by date
+  dateIdx:            index("events_date_idx").on(table.date),
+}));
 
 // ── Ticket types ──────────────────────────────────────────────────────────
 export const ticketTypes = pgTable("ticket_types", {
@@ -81,7 +94,9 @@ export const ticketTypes = pgTable("ticket_types", {
   price:       integer("price").notNull(),
   quantity:    integer("quantity").notNull(),
   maxPerOrder: integer("max_per_order").notNull(),
-});
+}, (table) => ({
+  eventIdx: index("ticket_types_event_idx").on(table.eventId),
+}));
 
 // ── Orders ────────────────────────────────────────────────────────────────
 export const orders = pgTable("orders", {
@@ -94,14 +109,22 @@ export const orders = pgTable("orders", {
   attendeeEmail: text("attendee_email").notNull(),
   notes:         text("notes"),
   createdAt:     timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => ({
+  // Attendee order history
+  attendeeIdx:      index("orders_attendee_idx").on(table.attendeeId),
+  // Event ticket-buyers query
+  eventStatusIdx:   index("orders_event_status_idx").on(table.eventId, table.status),
+}));
 
 export const orderTickets = pgTable("order_tickets", {
   id:           serial("id").primaryKey(),
   orderId:      integer("order_id").references(() => orders.id, { onDelete: "cascade" }).notNull(),
   ticketTypeId: integer("ticket_type_id").references(() => ticketTypes.id, { onDelete: "cascade" }).notNull(),
   quantity:     integer("quantity").notNull(),
-});
+}, (table) => ({
+  orderIdx:      index("order_tickets_order_idx").on(table.orderId),
+  ticketTypeIdx: index("order_tickets_ticket_type_idx").on(table.ticketTypeId),
+}));
 
 // ── Curator picks ─────────────────────────────────────────────────────────
 export const curatorPicks = pgTable("curator_picks", {
@@ -128,7 +151,12 @@ export const groupMembers = pgTable("group_members", {
   displayName: text("display_name"),
   avatarUrl:   text("avatar_url"),
   joinedAt:    timestamp("joined_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => ({
+  // Group member roster
+  groupIdx:  index("group_members_group_idx").on(table.groupId),
+  // User's group memberships
+  userIdx:   index("group_members_user_idx").on(table.userId),
+}));
 
 // ── RSVPs ─────────────────────────────────────────────────────────────────
 export const rsvps = pgTable("rsvps", {
@@ -143,7 +171,12 @@ export const rsvps = pgTable("rsvps", {
   sourceChatTitle: text("source_chat_title"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 }, (table) => ({
-  uniq: uniqueIndex("rsvps_event_user").on(table.eventId, table.userId),
+  // Unique RSVP per (event, user) — also serves as the primary lookup index
+  uniq:     uniqueIndex("rsvps_event_user").on(table.eventId, table.userId),
+  // User's RSVP history
+  userIdx:  index("rsvps_user_idx").on(table.userId),
+  // rsvp-summaries batch query: GROUP BY event_id, status
+  eventStatusIdx: index("rsvps_event_status_idx").on(table.eventId, table.status),
 }));
 
 // ── Relations ─────────────────────────────────────────────────────────────
@@ -209,16 +242,23 @@ export const sparks = pgTable("sparks", {
   status:       text("status").notNull().default("pending"),
   expiresAt:    timestamp("expires_at", { withTimezone: true }).notNull(),
   createdAt:    timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => ({
+  senderIdx:    index("sparks_sender_idx").on(table.senderId),
+  statusIdx:    index("sparks_status_idx").on(table.status),
+  expiresAtIdx: index("sparks_expires_at_idx").on(table.expiresAt),
+}));
 
 export const sparkResponses = pgTable("spark_responses", {
   id:          serial("id").primaryKey(),
   sparkId:     integer("spark_id").notNull().references(() => sparks.id, { onDelete: "cascade" }),
   responderId: integer("responder_id").notNull(),   // meh-auth user id, no FK
-  status:      text("status").notNull().default("pending"),
   message:     text("message"),
+  status:      text("status").notNull().default("pending"),
   createdAt:   timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => ({
+  sparkIdx:     index("spark_responses_spark_idx").on(table.sparkId),
+  responderIdx: index("spark_responses_responder_idx").on(table.responderId),
+}));
 
 export const sparksRelations = relations(sparks, ({ many }) => ({
   responses: many(sparkResponses),

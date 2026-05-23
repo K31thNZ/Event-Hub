@@ -8,7 +8,7 @@ import {
 // NOTE: No local "users" table in the Event-Hub DB — users live in meh-auth.
 // The User type here is only used for the IStorage interface signature.
 import type { User } from "@shared/models/auth";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and, ilike, or } from "drizzle-orm";
 
 // ── Internal notification helper ──────────────────────────────────────────
 async function notifyNewEvent(event: EventWithTickets): Promise<void> {
@@ -24,7 +24,7 @@ async function notifyNewEvent(event: EventWithTickets): Promise<void> {
       method:  "POST",
       headers: {
         "Content-Type":     "application/json",
-        "x-service-secret": secret,
+        "x-service-secret": secret ?? "",
       },
       body: JSON.stringify({
         id:           event.id,
@@ -80,23 +80,34 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
+  // ── getEvents — filters pushed down to Postgres, no JS-level scan ────────
   async getEvents(params?: { search?: string; category?: string; city?: string }): Promise<EventWithTickets[]> {
-    const results = await db.query.events.findMany({
-      with: { ticketTypes: true },
+    // Build WHERE conditions at the DB level so Postgres can use indexes
+    // and we don't pull the whole table into Node memory.
+    const conditions = [];
+
+    if (params?.category) {
+      conditions.push(eq(events.category, params.category));
+    }
+
+    if (params?.city) {
+      conditions.push(ilike(events.venueCity, `%${params.city}%`));
+    }
+
+    if (params?.search) {
+      const term = `%${params.search}%`;
+      conditions.push(
+        or(
+          ilike(events.title,       term),
+          ilike(events.description, term),
+        )!
+      );
+    }
+
+    return await db.query.events.findMany({
+      where:   conditions.length > 0 ? and(...conditions) : undefined,
+      with:    { ticketTypes: true },
       orderBy: [desc(events.createdAt)],
-    });
-    return results.filter(e => {
-      let matches = true;
-      if (params?.search) {
-        const s = params.search.toLowerCase();
-        matches = matches && (
-          e.title.toLowerCase().includes(s) ||
-          e.description.toLowerCase().includes(s)
-        );
-      }
-      if (params?.category) matches = matches && e.category === params.category;
-      if (params?.city)     matches = matches && e.venueCity.toLowerCase().includes(params.city.toLowerCase());
-      return matches;
     });
   }
 
