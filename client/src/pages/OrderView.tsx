@@ -14,6 +14,7 @@ export default function OrderView() {
     try {
       const html2pdf = (await import("html2pdf.js")).default;
       const el = document.getElementById("ticket-pdf");
+      if (!el) return;
       html2pdf()
         .set({
           margin: [0.5, 0.5],

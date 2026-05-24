@@ -132,7 +132,7 @@ botSparkRouter.post("/sparks/:id/respond", handleSparkRespond);
 
 export async function handleSparkRespond(req: Request, res: Response): Promise<void> {
   try {
-    const sparkId = parseInt(req.params.id, 10);
+    const sparkId = parseInt(String(req.params.id), 10);
     if (isNaN(sparkId)) {
       res.status(400).json({ error: "Invalid spark id" });
       return;
@@ -201,13 +201,11 @@ export async function handleSparkRespond(req: Request, res: Response): Promise<v
         status,
         message:   null,
         createdAt: new Date(),
-        updatedAt: new Date(),
       })
       .onConflictDoUpdate({
         target: [sparkResponses.sparkId, sparkResponses.responderId],
         set: {
           status,
-          updatedAt: new Date(),
         },
       })
       .returning();

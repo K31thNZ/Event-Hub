@@ -108,7 +108,7 @@ function EditEventSheet({ event, open, onClose, adminMode = false }: {
           <SheetTitle className="text-2xl font-display">{adminMode ? "Edit Event (Admin)" : "Edit Event"}</SheetTitle>
           <SheetDescription>Make changes and save to update the event.</SheetDescription>
         </SheetHeader>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
+        <form onSubmit={form.handleSubmit(onSubmit as any)} className="space-y-5">
           <div className="space-y-1.5"><Label>Title</Label><Input {...form.register("title")} className="h-11 rounded-xl" /></div>
           <div className="space-y-1.5"><Label>Description</Label><Textarea {...form.register("description")} className="rounded-xl min-h-[100px]" /></div>
           <div className="grid grid-cols-2 gap-4">
@@ -754,7 +754,9 @@ function SparkEditSheet({ spark, open, onClose }: { spark: Spark | null; open: b
       location: spark.location,
       meetTime: spark.meetTime,
       maxRespondents: spark.maxRespondents,
-      status: spark.status,
+      status: (["pending","active","cancelled","confirmed"] as const).includes(spark.status as any)
+        ? (spark.status as EditSparkForm["status"])
+        : "pending",
     } : undefined,
   });
 
@@ -779,7 +781,7 @@ function SparkEditSheet({ spark, open, onClose }: { spark: Spark | null; open: b
           <SheetTitle className="text-2xl font-display">Edit Spark (Admin)</SheetTitle>
           <SheetDescription>Modify the spark details. Changes save immediately.</SheetDescription>
         </SheetHeader>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
+        <form onSubmit={form.handleSubmit(onSubmit as any)} className="space-y-5">
           <div className="space-y-1.5"><Label>Title</Label><Input {...form.register("title")} className="h-11 rounded-xl" /></div>
           <div className="space-y-1.5"><Label>Description</Label><Textarea {...form.register("description")} className="rounded-xl min-h-[80px]" /></div>
           <div className="grid grid-cols-2 gap-4">

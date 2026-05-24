@@ -15,6 +15,11 @@ export interface User {
   isGamesMember: boolean;
   dice: number;
   hasPassword?: boolean; // added by meh-auth sanitize()
+  // OAuth provider IDs — present when user signed up via OAuth
+  googleId?: string | null;
+  yandexId?: string | null;
+  // Convenience flag — true when user has the admin role
+  isAdmin?: boolean;
 }
 
 async function fetchUser(): Promise<User | null> {

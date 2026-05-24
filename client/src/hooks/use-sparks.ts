@@ -19,24 +19,30 @@ export interface SparkResponseItem {
 }
 
 export interface Spark {
-  id:              number;
-  senderId:        string;
-  title:           string;
-  description:     string;
-  activity:        string;
-  location:        string;
-  meetTime:        string;
-  expiresAt:       string;
-  maxRespondents:  number;
-  filterInterests: string[] | null;
-  filterLanguages: string[] | null;
-  filterMetroLine: string | null;
-  status:          "pending" | "active" | "expired" | "cancelled" | "confirmed";
-  createdAt:       string;
-  sender?:         SparkSender;
-  responses:       SparkResponseItem[];
-  responseCount:   number;
-  myResponse?:     SparkResponseItem | null;
+  id:                  number;
+  senderId:            string;
+  title:               string;
+  description:         string;
+  activity:            string;
+  location:            string;
+  meetTime:            string;
+  expiresAt:           string;
+  maxRespondents:      number;
+  filterInterests:     string[] | null;
+  filterLanguages:     string[] | null;
+  filterMetroLine:     string | null;
+  status:              "pending" | "active" | "expired" | "cancelled" | "confirmed";
+  createdAt:           string;
+  // denormalized sender fields (populated by server for display)
+  senderDisplayName?:  string | null;
+  senderAvatarUrl?:    string | null;
+  sender?:             SparkSender;
+  responses:           SparkResponseItem[];
+  responseCount:       number;
+  myResponse?:         SparkResponseItem | null;
+  // optional coordinates for map display
+  lat?:                number | null;
+  lng?:                number | null;
 }
 
 // Feed of all active sparks
@@ -71,6 +77,8 @@ export function useCreateSpark() {
       description?:    string;
       activity:        string;
       location:        string;
+      lat?:            number | null;
+      lng?:            number | null;
       meetTime:        string;
       expiresInMins:   number;
       maxRespondents:  number;

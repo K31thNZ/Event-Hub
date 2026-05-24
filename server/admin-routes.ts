@@ -37,7 +37,7 @@ export function registerAdminRoutes(app: Express) {
   // ── PATCH /api/admin/events/:id ───────────────────────────────────────────
   app.patch("/api/admin/events/:id", requireAdmin, async (req, res) => {
     try {
-      const id = parseInt(req.params.id, 10);
+      const id = parseInt(String(req.params.id), 10);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid event ID" });
 
       const existing = await storage.getEvent(id);
@@ -54,7 +54,7 @@ export function registerAdminRoutes(app: Express) {
   // ── DELETE /api/admin/events/:id ──────────────────────────────────────────
   app.delete("/api/admin/events/:id", requireAdmin, async (req, res) => {
     try {
-      const id = parseInt(req.params.id, 10);
+      const id = parseInt(String(req.params.id), 10);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid event ID" });
 
       const existing = await storage.getEvent(id);
@@ -89,7 +89,7 @@ export function registerAdminRoutes(app: Express) {
   // ── PATCH /api/admin/groups/:id ───────────────────────────────────────────
   app.patch("/api/admin/groups/:id", requireAdmin, async (req, res) => {
     try {
-      const id = parseInt(req.params.id, 10);
+      const id = parseInt(String(req.params.id), 10);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid group ID" });
 
       const existing = await db.query.groups.findFirst({
@@ -123,7 +123,7 @@ export function registerAdminRoutes(app: Express) {
   // ── DELETE /api/admin/groups/:id ──────────────────────────────────────────
   app.delete("/api/admin/groups/:id", requireAdmin, async (req, res) => {
     try {
-      const id = parseInt(req.params.id, 10);
+      const id = parseInt(String(req.params.id), 10);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid group ID" });
 
       const existing = await db.query.groups.findFirst({

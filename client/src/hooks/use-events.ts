@@ -3,7 +3,7 @@ import { api, buildUrl } from "@shared/routes";
 import { type EventWithTickets } from "@shared/schema";
 import { z } from "zod";
 
-export function useEvents(params?: { search?: string; category?: string; city?: string }) {
+export function useEvents(params?: { search?: string; category?: string; city?: string; published?: boolean }) {
   return useQuery({
     queryKey: [api.events.list.path, params],
     queryFn: async () => {

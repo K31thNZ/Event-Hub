@@ -81,7 +81,7 @@ export async function runTicketReminders(): Promise<void> {
         `Don't forget your ticket! ` +
         `[View ticket](https://expatevents.org/orders/${order.id})`;
 
-      const ok = await sendReminderToUser(order.attendeeId, message);
+      const ok = await sendReminderToUser(String(order.attendeeId), message);
 
       if (ok) {
         alreadyReminded.add(key);

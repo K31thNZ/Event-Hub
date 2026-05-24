@@ -98,7 +98,7 @@ async function runReminderCheck(): Promise<void> {
         `Your ticket is confirmed. See you there! 🎉\n` +
         `[View your ticket](https://expatevents.org/orders/${order.id})`;
 
-      const ok = await sendReminderToUser(order.attendeeId, message);
+      const ok = await sendReminderToUser(String(order.attendeeId), message);
 
       if (ok) {
         remindedOrders.add(order.id);

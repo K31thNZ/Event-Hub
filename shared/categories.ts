@@ -7,21 +7,21 @@
 //   - Notification subscriber filtering
 
 export const EVENT_CATEGORIES = [
-  { value: "networking",  label: "Networking" },
-  { value: "tech",        label: "Tech & Innovation" },
-  { value: "culture",     label: "Arts & Culture" },
-  { value: "food",        label: "Food & Drink" },
-  { value: "sports",      label: "Sports & Fitness" },
-  { value: "music",       label: "Music & Nightlife" },
-  { value: "language",    label: "Language Exchange" },
-  { value: "outdoor",     label: "Outdoor & Travel" },
-  { value: "games",       label: "Games & Hobbies" },
-  { value: "business",    label: "Business & Finance" },
-  { value: "wellness",    label: "Health & Wellness" },
-  { value: "family",      label: "Family & Kids" },
-  { value: "social",      label: "Social & Meetups" },
-  { value: "volunteering","label": "Volunteering" },
-  { value: "other",       label: "Other" },
+  { value: "networking",   label: "Networking",         icon: "🤝" },
+  { value: "tech",         label: "Tech & Innovation",  icon: "💻" },
+  { value: "culture",      label: "Arts & Culture",     icon: "🎨" },
+  { value: "food",         label: "Food & Drink",       icon: "🍽️" },
+  { value: "sports",       label: "Sports & Fitness",   icon: "⚽" },
+  { value: "music",        label: "Music & Nightlife",  icon: "🎵" },
+  { value: "language",     label: "Language Exchange",  icon: "🗣️" },
+  { value: "outdoor",      label: "Outdoor & Travel",   icon: "🌿" },
+  { value: "games",        label: "Games & Hobbies",    icon: "🎮" },
+  { value: "business",     label: "Business & Finance", icon: "💼" },
+  { value: "wellness",     label: "Health & Wellness",  icon: "🧘" },
+  { value: "family",       label: "Family & Kids",      icon: "👨‍👩‍👧" },
+  { value: "social",       label: "Social & Meetups",   icon: "🎉" },
+  { value: "volunteering", label: "Volunteering",       icon: "🙌" },
+  { value: "other",        label: "Other",              icon: "✨" },
 ] as const;
 
 export type EventCategory = typeof EVENT_CATEGORIES[number]["value"];
