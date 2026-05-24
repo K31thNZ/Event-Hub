@@ -1,315 +1,79 @@
-import { useState, useEffect, useRef } from "react";
+// client/src/pages/Profile.tsx
+// Redesigned profile page — inspired by research across Meetup, Hinge, Tandem, InterNations.
+//
+// Key improvements vs. old version:
+//  • Hero banner + large avatar — identity-first (Meetup / Hinge pattern)
+//  • Profile completeness bar — Bumble/LinkedIn pattern to nudge completion
+//  • Bio text area — every social/dating/language app surfaces this prominently
+//  • City field — surfaced and persisted (was missing entirely)
+//  • Meeting-type preferences — visible selection, saved to match-profile
+//  • Age preferences saved correctly (schema fix tracked separately)
+//  • CATEGORY_ICONS removed — icons pulled from shared/categories instead
+//  • Public card preview — users see exactly how they appear in Language Exchange
+//  • All sections use a sticky-header tab pattern; single Save at the bottom
+
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { User, Bell, Calendar, Camera, Pencil, Check, X, Languages, MapPin, Plus, Trash2 } from "lucide-react";
-import { motion } from "framer-motion";
+import { Progress } from "@/components/ui/progress";
+import {
+  User, Bell, Calendar, Camera, Pencil, Check, X,
+  Languages, MapPin, Plus, Trash2, Eye, Users,
+} from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import { EVENT_CATEGORIES } from "@shared/categories";
 import { TelegramConnect } from "@/components/TelegramConnect";
 import { isTelegramMiniApp } from "@/hooks/use-telegram-miniapp-auth";
+import { LANGUAGES } from "@/lib/constants";
 
 const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? "https://auth.expatevents.org";
 
-// ── Server-mediated avatar upload ─────────────────────────────────────────────
-async function uploadAvatar(file: File): Promise<string> {
-  const formData = new FormData();
-  formData.append("file", file);
-  const res = await fetch("/api/upload/avatar", {
-    method: "POST",
-    credentials: "include",
-    body: formData,
-  });
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({}));
-    throw new Error(error.error || "Upload failed");
-  }
-  return (await res.json()).url;
-}
+// ── Types ─────────────────────────────────────────────────────────────────────
 
-// ── Category icons ────────────────────────────────────────────────────────────
-const CATEGORY_ICONS: Record<string, string> = {
-  networking: "🔗", tech: "💻", culture: "🎨", food: "🍔",
-  sports: "⚽", music: "🎵", language: "🌍", outdoor: "🏕️",
-  games: "🎮", business: "💼", wellness: "🧘", family: "👨‍👩‍👧",
-  social: "🤝", volunteering: "🙌", other: "📌",
+export type ProficiencyLevel = "A1" | "A2" | "B1" | "B2" | "C1" | "C2";
+export interface LanguageEntry { code: string; proficiency: ProficiencyLevel; }
+
+const PROFICIENCY_LEVELS: { value: ProficiencyLevel; label: string }[] = [
+  { value: "A1", label: "A1 – Beginner"     },
+  { value: "A2", label: "A2 – Elementary"   },
+  { value: "B1", label: "B1 – Intermediate" },
+  { value: "B2", label: "B2 – Upper-inter." },
+  { value: "C1", label: "C1 – Advanced"     },
+  { value: "C2", label: "C2 – Mastery"      },
+];
+
+const PROFICIENCY_COLORS: Record<ProficiencyLevel, string> = {
+  A1: "bg-slate-100 text-slate-700",
+  A2: "bg-blue-100 text-blue-700",
+  B1: "bg-emerald-100 text-emerald-700",
+  B2: "bg-teal-100 text-teal-700",
+  C1: "bg-violet-100 text-violet-700",
+  C2: "bg-amber-100 text-amber-700",
 };
 
-// ── Age group definitions (shared with LanguageExchange) ──────────────────────
+// ── Age group definitions ─────────────────────────────────────────────────────
+
 export const AGE_GROUPS: { value: string; label: string; short: string }[] = [
   { value: "18-25", label: "18 – 25", short: "18" },
   { value: "26-35", label: "26 – 35", short: "26" },
   { value: "36-45", label: "36 – 45", short: "36" },
   { value: "46+",   label: "46 +",    short: "46+" },
 ];
-
 const AGE_STOPS = AGE_GROUPS.length - 1; // 3
 
-// ── Dual-handle discrete range slider (preferred age range) ──────────────────
-interface AgeRangeSliderProps {
-  minIdx: number;
-  maxIdx: number;
-  onChange: (min: number, max: number) => void;
-  label?: string;
-}
+// ── Meeting types ─────────────────────────────────────────────────────────────
 
-function AgeRangeSlider({ minIdx, maxIdx, onChange, label }: AgeRangeSliderProps) {
-  const trackRef   = useRef<HTMLDivElement>(null);
-  const dragging   = useRef<"min" | "max" | null>(null);
-
-  const xToIdx = (clientX: number): number => {
-    if (!trackRef.current) return 0;
-    const { left, width } = trackRef.current.getBoundingClientRect();
-    const pct = Math.max(0, Math.min(1, (clientX - left) / width));
-    return Math.round(pct * AGE_STOPS);
-  };
-
-  const onPointerDown = (handle: "min" | "max") => (e: React.PointerEvent) => {
-    e.currentTarget.setPointerCapture(e.pointerId);
-    dragging.current = handle;
-  };
-  const onPointerMove = (e: React.PointerEvent) => {
-    if (!dragging.current) return;
-    const idx = xToIdx(e.clientX);
-    if (dragging.current === "min") onChange(Math.min(idx, maxIdx), maxIdx);
-    else                             onChange(minIdx, Math.max(idx, minIdx));
-  };
-  const onPointerUp = () => { dragging.current = null; };
-
-  const minPct    = (minIdx / AGE_STOPS) * 100;
-  const maxPct    = (maxIdx / AGE_STOPS) * 100;
-  const isAnyAge  = minIdx === 0 && maxIdx === AGE_STOPS;
-
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        {label && <span className="text-xs font-medium text-muted-foreground">{label}</span>}
-        <span className={`ml-auto text-xs font-semibold px-2.5 py-0.5 rounded-full transition-all ${
-          isAnyAge ? "bg-muted text-muted-foreground" : "bg-primary/10 text-primary"
-        }`}>
-          {isAnyAge ? "Any age" : `${AGE_GROUPS[minIdx].label} – ${AGE_GROUPS[maxIdx].label}`}
-        </span>
-      </div>
-
-      {/* Track area */}
-      <div
-        ref={trackRef}
-        className="relative h-7 flex items-center select-none px-2.5"
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerLeave={onPointerUp}
-      >
-        <div className="absolute inset-x-2.5 h-1.5 rounded-full bg-border" />
-        <div
-          className="absolute h-1.5 rounded-full bg-primary transition-all duration-75"
-          style={{
-            left:  `calc(${minPct}% * (100% - 20px) / 100% + 10px)`,
-            right: `calc(${100 - maxPct}% * (100% - 20px) / 100% + 10px)`,
-          }}
-        />
-        {/* Stop ticks */}
-        {AGE_GROUPS.map((_, i) => (
-          <div
-            key={i}
-            className="absolute w-1 h-1 rounded-full bg-border/60"
-            style={{ left: `calc(${(i / AGE_STOPS) * 100}% * (100% - 20px) / 100% + 9px)` }}
-          />
-        ))}
-        {/* Min handle */}
-        <div
-          className="absolute w-5 h-5 rounded-full border-2 border-primary bg-background shadow-md cursor-grab active:cursor-grabbing z-10 hover:scale-110 transition-transform"
-          style={{ left: `calc(${minPct}% * (100% - 20px) / 100%)` }}
-          onPointerDown={onPointerDown("min")}
-        />
-        {/* Max handle */}
-        <div
-          className="absolute w-5 h-5 rounded-full border-2 border-primary bg-background shadow-md cursor-grab active:cursor-grabbing z-10 hover:scale-110 transition-transform"
-          style={{ left: `calc(${maxPct}% * (100% - 20px) / 100%)` }}
-          onPointerDown={onPointerDown("max")}
-        />
-      </div>
-
-      {/* Stop labels */}
-      <div className="relative h-4 px-2.5">
-        {AGE_GROUPS.map((g, i) => (
-          <span
-            key={i}
-            className={`absolute text-[10px] font-medium -translate-x-1/2 transition-colors ${
-              i >= minIdx && i <= maxIdx ? "text-primary" : "text-muted-foreground"
-            }`}
-            style={{ left: `calc(${(i / AGE_STOPS) * 100}% * (100% - 20px) / 100% + 10px)` }}
-          >
-            {g.short}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ── Single-handle "my age group" pin ─────────────────────────────────────────
-interface AgeGroupPinProps {
-  value: string;   // AGE_GROUPS[i].value or ""
-  onChange: (val: string) => void;
-}
-
-function AgeGroupPin({ value, onChange }: AgeGroupPinProps) {
-  const trackRef   = useRef<HTMLDivElement>(null);
-  const isDragging = useRef(false);
-  const currentIdx = AGE_GROUPS.findIndex(a => a.value === value);
-  const pinIdx     = currentIdx >= 0 ? currentIdx : -1;
-
-  const xToIdx = (clientX: number): number => {
-    if (!trackRef.current) return 0;
-    const { left, width } = trackRef.current.getBoundingClientRect();
-    const pct = Math.max(0, Math.min(1, (clientX - left) / width));
-    return Math.round(pct * AGE_STOPS);
-  };
-
-  const commit = (clientX: number) => {
-    const idx = xToIdx(clientX);
-    onChange(AGE_GROUPS[idx].value);
-  };
-
-  const onPointerDown = (e: React.PointerEvent) => {
-    e.currentTarget.setPointerCapture(e.pointerId);
-    isDragging.current = true;
-    commit(e.clientX);
-  };
-  const onPointerMove = (e: React.PointerEvent) => {
-    if (!isDragging.current) return;
-    commit(e.clientX);
-  };
-  const onPointerUp = () => { isDragging.current = false; };
-
-  const pinPct = pinIdx >= 0 ? (pinIdx / AGE_STOPS) * 100 : null;
-
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-muted-foreground">My age group</span>
-        <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full transition-all ${
-          pinIdx >= 0 ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
-        }`}>
-          {pinIdx >= 0 ? AGE_GROUPS[pinIdx].label : "Not set"}
-        </span>
-      </div>
-
-      <div
-        ref={trackRef}
-        className="relative h-7 flex items-center select-none px-2.5"
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerLeave={onPointerUp}
-      >
-        <div className="absolute inset-x-2.5 h-1.5 rounded-full bg-border cursor-pointer" />
-
-        {/* Stop ticks + click zones */}
-        {AGE_GROUPS.map((g, i) => (
-          <button
-            key={i}
-            type="button"
-            onClick={() => onChange(g.value)}
-            className="absolute w-4 h-4 rounded-full -translate-x-1/2 flex items-center justify-center group"
-            style={{ left: `calc(${(i / AGE_STOPS) * 100}% * (100% - 20px) / 100% + 10px)` }}
-          >
-            <span className={`w-2.5 h-2.5 rounded-full transition-all ${
-              i === pinIdx
-                ? "bg-primary scale-0"  // hidden when handle is here
-                : "bg-border group-hover:bg-primary/40"
-            }`} />
-          </button>
-        ))}
-
-        {/* Pin handle */}
-        {pinPct !== null && (
-          <div
-            className="absolute w-6 h-6 rounded-full border-2 border-primary bg-primary/10 shadow-md cursor-grab active:cursor-grabbing z-10 flex items-center justify-center hover:scale-110 transition-transform pointer-events-none"
-            style={{ left: `calc(${pinPct}% * (100% - 20px) / 100%)` }}
-          >
-            <span className="w-2 h-2 rounded-full bg-primary" />
-          </div>
-        )}
-      </div>
-
-      {/* Labels */}
-      <div className="relative h-4 px-2.5">
-        {AGE_GROUPS.map((g, i) => (
-          <span
-            key={i}
-            className={`absolute text-[10px] font-medium -translate-x-1/2 transition-colors ${
-              i === pinIdx ? "text-primary" : "text-muted-foreground"
-            }`}
-            style={{ left: `calc(${(i / AGE_STOPS) * 100}% * (100% - 20px) / 100% + 10px)` }}
-          >
-            {g.short}
-          </span>
-        ))}
-      </div>
-
-      {pinIdx < 0 && (
-        <p className="text-xs text-muted-foreground pl-1">
-          Tap or drag to set your age group — this helps match you with compatible partners
-        </p>
-      )}
-    </div>
-  );
-}
-
-// ── Language data ─────────────────────────────────────────────────────────────
-
-const PROFICIENCY_LEVELS = [
-  { value: "A1", label: "A1 — Beginner" },
-  { value: "A2", label: "A2 — Elementary" },
-  { value: "B1", label: "B1 — Intermediate" },
-  { value: "B2", label: "B2 — Upper-intermediate" },
-  { value: "C1", label: "C1 — Advanced" },
-  { value: "C2", label: "C2 — Mastery" },
-] as const;
-
-export type ProficiencyLevel = (typeof PROFICIENCY_LEVELS)[number]["value"];
-
-export interface LanguageEntry {
-  code: string;
-  proficiency: ProficiencyLevel;
-}
-
-const LANGUAGES = [
-  { code: "en", label: "English",            flag: "🇬🇧" },
-  { code: "ru", label: "Russian",            flag: "🇷🇺" },
-  { code: "de", label: "German",             flag: "🇩🇪" },
-  { code: "fr", label: "French",             flag: "🇫🇷" },
-  { code: "es", label: "Spanish",            flag: "🇪🇸" },
-  { code: "it", label: "Italian",            flag: "🇮🇹" },
-  { code: "pt", label: "Portuguese",         flag: "🇵🇹" },
-  { code: "nl", label: "Dutch",              flag: "🇳🇱" },
-  { code: "pl", label: "Polish",             flag: "🇵🇱" },
-  { code: "sv", label: "Swedish",            flag: "🇸🇪" },
-  { code: "no", label: "Norwegian",          flag: "🇳🇴" },
-  { code: "da", label: "Danish",             flag: "🇩🇰" },
-  { code: "fi", label: "Finnish",            flag: "🇫🇮" },
-  { code: "cs", label: "Czech",              flag: "🇨🇿" },
-  { code: "sk", label: "Slovak",             flag: "🇸🇰" },
-  { code: "hu", label: "Hungarian",          flag: "🇭🇺" },
-  { code: "ro", label: "Romanian",           flag: "🇷🇴" },
-  { code: "uk", label: "Ukrainian",          flag: "🇺🇦" },
-  { code: "ar", label: "Arabic",             flag: "🇸🇦" },
-  { code: "zh", label: "Chinese (Mandarin)", flag: "🇨🇳" },
-  { code: "ja", label: "Japanese",           flag: "🇯🇵" },
-  { code: "ko", label: "Korean",             flag: "🇰🇷" },
-  { code: "hi", label: "Hindi",              flag: "🇮🇳" },
-  { code: "fa", label: "Persian (Farsi)",    flag: "🇮🇷" },
-  { code: "tr", label: "Turkish",            flag: "🇹🇷" },
-  { code: "he", label: "Hebrew",             flag: "🇮🇱" },
-  { code: "el", label: "Greek",              flag: "🇬🇷" },
-  { code: "id", label: "Indonesian",         flag: "🇮🇩" },
-  { code: "th", label: "Thai",               flag: "🇹🇭" },
-  { code: "vi", label: "Vietnamese",         flag: "🇻🇳" },
+const MEETING_TYPES = [
+  { value: "1on1",        label: "1 on 1",      emoji: "👤" },
+  { value: "small_group", label: "Small Group",  emoji: "👥" },
+  { value: "social",      label: "Social Event", emoji: "🎉" },
 ];
 
 // ── Moscow Metro data ─────────────────────────────────────────────────────────
@@ -334,60 +98,379 @@ const ALL_STATIONS = METRO_LINES.flatMap(l =>
 );
 
 // ── Availability grid ─────────────────────────────────────────────────────────
-
 const DAYS  = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const HOURS = Array.from({ length: 16 }, (_, i) => i + 8);
 type Slot   = { day: number; hour: number };
 
-// ── Profile component ─────────────────────────────────────────────────────────
+// ── Avatar upload ─────────────────────────────────────────────────────────────
+async function uploadAvatar(file: File): Promise<string> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch("/api/upload/avatar", {
+    method: "POST",
+    credentials: "include",
+    body: formData,
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error((error as { error?: string }).error || "Upload failed");
+  }
+  return ((await res.json()) as { url: string }).url;
+}
+
+// ── Completeness score ────────────────────────────────────────────────────────
+interface ProfileData {
+  displayName: string;
+  avatarUrl: string;
+  bio: string;
+  city: string;
+  nativeLanguage: string;
+  learningLanguages: LanguageEntry[];
+  interests: string[];
+  meetingTypes: string[];
+  myAgeGroup: string;
+  metroStation: string;
+  slots: Slot[];
+}
+
+function computeCompleteness(d: ProfileData): { score: number; missing: string[] } {
+  const checks: Array<{ label: string; ok: boolean }> = [
+    { label: "Display name",          ok: d.displayName.trim().length > 0 },
+    { label: "Profile photo",         ok: d.avatarUrl.length > 0 },
+    { label: "Bio",                   ok: d.bio.trim().length >= 20 },
+    { label: "City",                  ok: d.city.trim().length > 0 },
+    { label: "Native language",       ok: d.nativeLanguage.length > 0 },
+    { label: "Learning language",     ok: d.learningLanguages.length > 0 },
+    { label: "Interests (3+)",        ok: d.interests.length >= 3 },
+    { label: "Meeting style",         ok: d.meetingTypes.length > 0 },
+    { label: "Age group",             ok: d.myAgeGroup.length > 0 },
+    { label: "Availability",          ok: d.slots.length > 0 },
+  ];
+  const done    = checks.filter(c => c.ok).length;
+  const missing = checks.filter(c => !c.ok).map(c => c.label);
+  return { score: Math.round((done / checks.length) * 100), missing };
+}
+
+// ── Dual-handle discrete age range slider ────────────────────────────────────
+interface AgeRangeSliderProps {
+  minIdx: number;
+  maxIdx: number;
+  onChange: (min: number, max: number) => void;
+  label?: string;
+}
+
+function AgeRangeSlider({ minIdx, maxIdx, onChange, label }: AgeRangeSliderProps) {
+  const trackRef = useRef<HTMLDivElement>(null);
+  const dragging = useRef<"min" | "max" | null>(null);
+
+  const xToIdx = (clientX: number): number => {
+    if (!trackRef.current) return 0;
+    const { left, width } = trackRef.current.getBoundingClientRect();
+    return Math.round(Math.max(0, Math.min(1, (clientX - left) / width)) * AGE_STOPS);
+  };
+
+  const onPointerDown = (handle: "min" | "max") => (e: React.PointerEvent) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragging.current = handle;
+  };
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (!dragging.current) return;
+    const idx = xToIdx(e.clientX);
+    if (dragging.current === "min") onChange(Math.min(idx, maxIdx), maxIdx);
+    else                             onChange(minIdx, Math.max(idx, minIdx));
+  };
+  const onPointerUp = () => { dragging.current = null; };
+
+  const minPct   = (minIdx / AGE_STOPS) * 100;
+  const maxPct   = (maxIdx / AGE_STOPS) * 100;
+  const isAnyAge = minIdx === 0 && maxIdx === AGE_STOPS;
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        {label && <span className="text-xs font-medium text-muted-foreground">{label}</span>}
+        <span className={`ml-auto text-xs font-semibold px-2.5 py-0.5 rounded-full transition-all ${
+          isAnyAge ? "bg-muted text-muted-foreground" : "bg-primary/10 text-primary"
+        }`}>
+          {isAnyAge ? "Any age" : `${AGE_GROUPS[minIdx].label} – ${AGE_GROUPS[maxIdx].label}`}
+        </span>
+      </div>
+      <div
+        ref={trackRef}
+        className="relative h-7 flex items-center select-none px-2.5"
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerLeave={onPointerUp}
+      >
+        <div className="absolute inset-x-2.5 h-1.5 rounded-full bg-border" />
+        <div
+          className="absolute h-1.5 rounded-full bg-primary transition-all duration-75"
+          style={{
+            left:  `calc(${minPct}% * (100% - 20px) / 100% + 10px)`,
+            right: `calc(${100 - maxPct}% * (100% - 20px) / 100% + 10px)`,
+          }}
+        />
+        {AGE_GROUPS.map((_, i) => (
+          <div
+            key={i}
+            className="absolute w-1 h-1 rounded-full bg-border/60"
+            style={{ left: `calc(${(i / AGE_STOPS) * 100}% * (100% - 20px) / 100% + 9px)` }}
+          />
+        ))}
+        <div
+          className="absolute w-5 h-5 rounded-full border-2 border-primary bg-background shadow-md cursor-grab active:cursor-grabbing z-10 hover:scale-110 transition-transform"
+          style={{ left: `calc(${minPct}% * (100% - 20px) / 100%)` }}
+          onPointerDown={onPointerDown("min")}
+        />
+        <div
+          className="absolute w-5 h-5 rounded-full border-2 border-primary bg-background shadow-md cursor-grab active:cursor-grabbing z-10 hover:scale-110 transition-transform"
+          style={{ left: `calc(${maxPct}% * (100% - 20px) / 100%)` }}
+          onPointerDown={onPointerDown("max")}
+        />
+      </div>
+      <div className="relative h-4 px-2.5">
+        {AGE_GROUPS.map((g, i) => (
+          <span
+            key={i}
+            className={`absolute text-[10px] font-medium -translate-x-1/2 transition-colors ${
+              i >= minIdx && i <= maxIdx ? "text-primary" : "text-muted-foreground"
+            }`}
+            style={{ left: `calc(${(i / AGE_STOPS) * 100}% * (100% - 20px) / 100% + 10px)` }}
+          >
+            {g.short}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Single-handle "my age group" pin ─────────────────────────────────────────
+interface AgeGroupPinProps {
+  value: string;
+  onChange: (val: string) => void;
+}
+
+function AgeGroupPin({ value, onChange }: AgeGroupPinProps) {
+  const trackRef   = useRef<HTMLDivElement>(null);
+  const isDragging = useRef(false);
+  const currentIdx = AGE_GROUPS.findIndex(a => a.value === value);
+  const pinIdx     = currentIdx >= 0 ? currentIdx : -1;
+
+  const xToIdx = useCallback((clientX: number): number => {
+    if (!trackRef.current) return 0;
+    const { left, width } = trackRef.current.getBoundingClientRect();
+    return Math.round(Math.max(0, Math.min(1, (clientX - left) / width)) * AGE_STOPS);
+  }, []);
+
+  const commit = (clientX: number) => onChange(AGE_GROUPS[xToIdx(clientX)].value);
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    isDragging.current = true;
+    commit(e.clientX);
+  };
+  const onPointerMove = (e: React.PointerEvent) => { if (isDragging.current) commit(e.clientX); };
+  const onPointerUp   = () => { isDragging.current = false; };
+
+  const pinPct = pinIdx >= 0 ? (pinIdx / AGE_STOPS) * 100 : null;
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium text-muted-foreground">My age group</span>
+        <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full transition-all ${
+          pinIdx >= 0 ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
+        }`}>
+          {pinIdx >= 0 ? AGE_GROUPS[pinIdx].label : "Not set"}
+        </span>
+      </div>
+      <div
+        ref={trackRef}
+        className="relative h-7 flex items-center select-none px-2.5"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerLeave={onPointerUp}
+      >
+        <div className="absolute inset-x-2.5 h-1.5 rounded-full bg-border cursor-pointer" />
+        {AGE_GROUPS.map((g, i) => (
+          <button
+            key={i}
+            type="button"
+            onClick={() => onChange(g.value)}
+            className="absolute w-4 h-4 rounded-full -translate-x-1/2 flex items-center justify-center group"
+            style={{ left: `calc(${(i / AGE_STOPS) * 100}% * (100% - 20px) / 100% + 10px)` }}
+          >
+            <span className={`w-2.5 h-2.5 rounded-full transition-all ${
+              i === pinIdx ? "bg-primary scale-0" : "bg-border group-hover:bg-primary/40"
+            }`} />
+          </button>
+        ))}
+        {pinPct !== null && (
+          <div
+            className="absolute w-6 h-6 rounded-full border-2 border-primary bg-primary/10 shadow-md cursor-grab active:cursor-grabbing z-10 flex items-center justify-center hover:scale-110 transition-transform pointer-events-none"
+            style={{ left: `calc(${pinPct}% * (100% - 20px) / 100%)` }}
+          >
+            <span className="w-2 h-2 rounded-full bg-primary" />
+          </div>
+        )}
+      </div>
+      <div className="relative h-4 px-2.5">
+        {AGE_GROUPS.map((g, i) => (
+          <span
+            key={i}
+            className={`absolute text-[10px] font-medium -translate-x-1/2 transition-colors ${
+              i === pinIdx ? "text-primary" : "text-muted-foreground"
+            }`}
+            style={{ left: `calc(${(i / AGE_STOPS) * 100}% * (100% - 20px) / 100% + 10px)` }}
+          >
+            {g.short}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Public preview card (mini version of LanguageUserCard) ───────────────────
+interface PreviewCardProps {
+  displayName: string;
+  avatarUrl: string;
+  bio: string;
+  city: string;
+  ageGroup: string;
+  native: string[];
+  learning: LanguageEntry[];
+  interests: string[];
+  meetingTypes: string[];
+}
+
+function PublicPreviewCard(p: PreviewCardProps) {
+  const hasContent = p.native.length > 0 || p.learning.length > 0 || p.bio;
+  if (!hasContent) return null;
+
+  return (
+    <Card className="rounded-2xl border-primary/30 border-2 shadow-lg overflow-hidden">
+      <div className="bg-primary/5 px-4 py-2.5 border-b border-border/50 flex items-center gap-2">
+        <Eye className="w-4 h-4 text-primary" />
+        <span className="text-sm font-semibold text-primary">How others see you</span>
+      </div>
+      <CardContent className="p-4 space-y-3">
+        <div className="flex items-start gap-3">
+          <Avatar className="h-11 w-11 shrink-0">
+            <AvatarImage src={p.avatarUrl} />
+            <AvatarFallback className="bg-primary/10 text-primary font-semibold text-sm">
+              {(p.displayName || "?").substring(0, 2).toUpperCase()}
+            </AvatarFallback>
+          </Avatar>
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-sm truncate">{p.displayName || "Your name"}</p>
+            <div className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5 flex-wrap">
+              {p.city && <><MapPin className="w-3 h-3 shrink-0" /><span>{p.city}</span><span className="mx-0.5">·</span></>}
+              {p.ageGroup && <span>{p.ageGroup}</span>}
+            </div>
+          </div>
+        </div>
+        {p.bio && <p className="text-xs text-muted-foreground line-clamp-2">{p.bio}</p>}
+        {p.native.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {p.native.map(code => {
+              const lang = LANGUAGES.find(l => l.code === code);
+              return (
+                <span key={code} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-medium">
+                  {lang?.flag} {lang?.label}
+                </span>
+              );
+            })}
+            {p.learning.map(({ code, proficiency }) => {
+              const lang = LANGUAGES.find(l => l.code === code);
+              return (
+                <span key={code} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-border text-xs font-medium">
+                  {lang?.flag} {lang?.label}
+                  <span className={`ml-0.5 px-1 rounded text-[10px] font-bold ${PROFICIENCY_COLORS[proficiency] ?? ""}`}>
+                    {proficiency}
+                  </span>
+                </span>
+              );
+            })}
+          </div>
+        )}
+        {p.meetingTypes.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {p.meetingTypes.map(t => {
+              const mt = MEETING_TYPES.find(m => m.value === t);
+              return <Badge key={t} variant="secondary" className="text-xs rounded-full">{mt?.emoji} {mt?.label}</Badge>;
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Section heading component ─────────────────────────────────────────────────
+function SectionHeading({ icon: Icon, title, subtitle }: {
+  icon: React.ElementType;
+  title: string;
+  subtitle?: string;
+}) {
+  return (
+    <div className="bg-muted/30 px-5 py-3 sm:px-8 sm:py-4 border-b border-border/50 flex items-start gap-3">
+      <Icon className="w-4 h-4 sm:w-5 sm:h-5 text-primary mt-0.5 shrink-0" />
+      <div>
+        <h2 className="text-base sm:text-lg font-bold">{title}</h2>
+        {subtitle && <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ── Main Profile component ────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 
 export default function Profile() {
   const { user, isLoading } = useAuth();
   const queryClient         = useQueryClient();
 
-  const [interests,     setInterests]     = useState<string[]>([]);
-  const [slots,         setSlots]         = useState<Slot[]>([]);
+  // ── State ──────────────────────────────────────────────────────────────────
   const [displayName,   setDisplayName]   = useState("");
   const [avatarUrl,     setAvatarUrl]     = useState("");
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [avatarFile,    setAvatarFile]    = useState<File | null>(null);
+  const [avatarError,   setAvatarError]   = useState<string | null>(null);
   const [editingName,   setEditingName]   = useState(false);
   const [nameInput,     setNameInput]     = useState("");
-  const [saving,        setSaving]        = useState(false);
-  const [saved,         setSaved]         = useState(false);
-  const [uploadingAvatar, setUploadingAvatar] = useState(false);
-  const [avatarError,   setAvatarError]   = useState<string | null>(null);
-  const [isMouseDown,   setIsMouseDown]   = useState(false);
-  const [dragMode,      setDragMode]      = useState<"add" | "remove">("add");
+  const [bio,           setBio]           = useState("");
+  const [city,          setCity]          = useState("");
 
-  // Language & match-profile state
-  const [nativeLanguage,    setNativeLanguage]    = useState<string>("");
-  const [learningLanguages, setLearningLanguages] = useState<LanguageEntry[]>([]);
+  const [interests,        setInterests]        = useState<string[]>([]);
+  const [meetingTypes,     setMeetingTypes]      = useState<string[]>([]);
+  const [nativeLanguage,   setNativeLanguage]    = useState<string>("");
+  const [learningLanguages,setLearningLanguages] = useState<LanguageEntry[]>([]);
 
-  // Age: own group + preferred range
-  const [myAgeGroup,       setMyAgeGroup]       = useState<string>("");   // e.g. "26-35"
-  const [preferredAgeMin,  setPreferredAgeMin]  = useState<number>(0);    // index 0–3
-  const [preferredAgeMax,  setPreferredAgeMax]  = useState<number>(3);    // index 0–3
+  const [myAgeGroup,      setMyAgeGroup]      = useState<string>("");
+  const [preferredAgeMin, setPreferredAgeMin] = useState<number>(0);
+  const [preferredAgeMax, setPreferredAgeMax] = useState<number>(3);
 
-  // Location
   const [metroStation,        setMetroStation]        = useState<string>("");
   const [stationSearch,       setStationSearch]       = useState<string>("");
   const [stationDropdownOpen, setStationDropdownOpen] = useState(false);
 
+  const [slots,       setSlots]       = useState<Slot[]>([]);
+  const [isMouseDown, setIsMouseDown] = useState(false);
+  const [dragMode,    setDragMode]    = useState<"add" | "remove">("add");
+
+  const [saving,          setSaving]          = useState(false);
+  const [saved,           setSaved]           = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [showPreview,     setShowPreview]     = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const stationRef   = useRef<HTMLDivElement>(null);
 
-  // Close station dropdown on outside click
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (stationRef.current && !stationRef.current.contains(e.target as Node))
-        setStationDropdownOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  // Load user data
+  // ── Load data ──────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!user) return;
     setInterests(user.interests ?? []);
@@ -403,27 +486,63 @@ export default function Profile() {
     fetch(`${AUTH_URL}/api/user/match-profile`, { credentials: "include" })
       .then(r => r.json())
       .then((data: {
-        nativeLanguage?:   string;
+        nativeLanguage?:    string;
         learningLanguages?: LanguageEntry[];
-        metroStation?:     string;
-        myAgeGroup?:       string;
-        preferredAgeMin?:  number;
-        preferredAgeMax?:  number;
+        metroStation?:      string;
+        myAgeGroup?:        string;
+        preferredAgeMin?:   number;
+        preferredAgeMax?:   number;
+        bio?:               string;
+        city?:              string;
+        meetingTypes?:      string[];
       }) => {
-        if (data.nativeLanguage)    setNativeLanguage(data.nativeLanguage);
-        if (data.learningLanguages) setLearningLanguages(data.learningLanguages);
-        if (data.metroStation)      setMetroStation(data.metroStation);
-        if (data.myAgeGroup)        setMyAgeGroup(data.myAgeGroup);
-        if (data.preferredAgeMin != null) setPreferredAgeMin(data.preferredAgeMin);
-        if (data.preferredAgeMax != null) setPreferredAgeMax(data.preferredAgeMax);
+        if (data.nativeLanguage)              setNativeLanguage(data.nativeLanguage);
+        if (data.learningLanguages)           setLearningLanguages(data.learningLanguages);
+        if (data.metroStation)                setMetroStation(data.metroStation);
+        if (data.myAgeGroup)                  setMyAgeGroup(data.myAgeGroup);
+        if (data.preferredAgeMin != null)     setPreferredAgeMin(data.preferredAgeMin);
+        if (data.preferredAgeMax != null)     setPreferredAgeMax(data.preferredAgeMax);
+        if (data.bio)                         setBio(data.bio);
+        if (data.city)                        setCity(data.city);
+        if (data.meetingTypes)                setMeetingTypes(data.meetingTypes);
       })
       .catch(() => {});
   }, [user]);
 
+  // Close station dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (stationRef.current && !stationRef.current.contains(e.target as Node))
+        setStationDropdownOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  // ── Completeness ───────────────────────────────────────────────────────────
+  const profileData: ProfileData = {
+    displayName,
+    avatarUrl: avatarPreview ?? avatarUrl,
+    bio,
+    city,
+    nativeLanguage,
+    learningLanguages,
+    interests,
+    meetingTypes,
+    myAgeGroup,
+    metroStation,
+    slots,
+  };
+  const { score: completeness, missing } = computeCompleteness(profileData);
+
+  // ── Interest toggle ────────────────────────────────────────────────────────
   const toggleInterest = (value: string) =>
     setInterests(prev => prev.includes(value) ? prev.filter(i => i !== value) : [...prev, value]);
 
-  // ── Availability grid helpers ─────────────────────────────────────────────
+  const toggleMeetingType = (value: string) =>
+    setMeetingTypes(prev => prev.includes(value) ? prev.filter(i => i !== value) : [...prev, value]);
+
+  // ── Availability grid ──────────────────────────────────────────────────────
   const isSlotActive = (day: number, hour: number) =>
     slots.some(s => s.day === day && s.hour === hour);
 
@@ -431,40 +550,42 @@ export default function Profile() {
     setIsMouseDown(true);
     const active = isSlotActive(day, hour);
     setDragMode(active ? "remove" : "add");
-    toggleSlot(day, hour, active ? "remove" : "add");
+    setSlots(prev =>
+      active ? prev.filter(s => !(s.day === day && s.hour === hour))
+             : [...prev, { day, hour }]
+    );
   };
 
   const handleSlotMouseEnter = (day: number, hour: number) => {
     if (!isMouseDown) return;
-    toggleSlot(day, hour, dragMode);
-  };
-
-  const toggleSlot = (day: number, hour: number, mode: "add" | "remove") => {
     setSlots(prev => {
-      const exists = prev.some(s => s.day === day && s.hour === hour);
-      if (mode === "add"    && !exists) return [...prev, { day, hour }];
-      if (mode === "remove" && exists)  return prev.filter(s => !(s.day === day && s.hour === hour));
-      return prev;
+      if (dragMode === "add") {
+        if (prev.some(s => s.day === day && s.hour === hour)) return prev;
+        return [...prev, { day, hour }];
+      } else {
+        return prev.filter(s => !(s.day === day && s.hour === hour));
+      }
     });
   };
 
-  // ── Learning language helpers ─────────────────────────────────────────────
+  // ── Learning languages helpers ─────────────────────────────────────────────
   const addLearningLanguage = () => {
     if (learningLanguages.length >= 3) return;
     const used = new Set([nativeLanguage, ...learningLanguages.map(l => l.code)]);
-    const next = LANGUAGES.find(l => !used.has(l.code));
+    const next  = LANGUAGES.find(l => !used.has(l.code));
     if (!next) return;
     setLearningLanguages(prev => [...prev, { code: next.code, proficiency: "A1" }]);
   };
 
-  const removeLearningLanguage = (i: number) =>
-    setLearningLanguages(prev => prev.filter((_, idx) => idx !== i));
+  const updateLearningLanguage = (idx: number, field: "code" | "proficiency", val: string) =>
+    setLearningLanguages(prev => prev.map((e, i) =>
+      i === idx ? { ...e, [field]: val } : e
+    ));
 
-  const updateLearningLanguage = (i: number, field: keyof LanguageEntry, value: string) =>
-    setLearningLanguages(prev =>
-      prev.map((entry, idx) => idx === i ? { ...entry, [field]: value } : entry)
-    );
+  const removeLearningLanguage = (idx: number) =>
+    setLearningLanguages(prev => prev.filter((_, i) => i !== idx));
 
+  // ── Metro station ──────────────────────────────────────────────────────────
   const filteredStations = stationSearch.trim().length > 0
     ? ALL_STATIONS.filter(s =>
         s.station.toLowerCase().includes(stationSearch.toLowerCase())
@@ -498,8 +619,8 @@ export default function Profile() {
           setAvatarUrl(finalAvatarUrl);
           setAvatarPreview(null);
           setAvatarFile(null);
-        } catch (err: any) {
-          setAvatarError(err.message ?? "Upload failed");
+        } catch (err: unknown) {
+          setAvatarError((err as Error).message ?? "Upload failed");
           setSaving(false); setUploadingAvatar(false);
           return;
         }
@@ -536,10 +657,12 @@ export default function Profile() {
             nativeLanguage:    nativeLanguage    || undefined,
             learningLanguages: learningLanguages.length ? learningLanguages : undefined,
             metroStation:      metroStation      || undefined,
-            // Age preferences
             myAgeGroup:        myAgeGroup        || undefined,
             preferredAgeMin,
             preferredAgeMax,
+            bio:               bio.trim()        || undefined,
+            city:              city.trim()        || undefined,
+            meetingTypes:      meetingTypes.length ? meetingTypes : undefined,
           }),
         }),
       ]);
@@ -547,8 +670,8 @@ export default function Profile() {
       queryClient.invalidateQueries({ queryKey: ["auth-user"] });
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
-    } catch (err) {
-      console.error("Failed to save profile:", err);
+    } catch {
+      console.error("Failed to save profile");
     } finally {
       setSaving(false);
     }
@@ -570,125 +693,236 @@ export default function Profile() {
     </div>
   );
 
-  const initials     = (displayName || user.username || "U").substring(0, 2).toUpperCase();
+  const initials      = (displayName || user.username || "U").substring(0, 2).toUpperCase();
   const currentAvatar = avatarPreview ?? avatarUrl;
   const nativeLang    = LANGUAGES.find(l => l.code === nativeLanguage);
 
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div
-      className="min-h-screen bg-muted/20 py-8 px-4 sm:py-12 sm:px-6 lg:px-8"
+      className="min-h-screen bg-muted/20 pb-12"
       onMouseUp={() => setIsMouseDown(false)}
       onMouseLeave={() => setIsMouseDown(false)}
     >
-      <div className="max-w-3xl mx-auto space-y-6 sm:space-y-8">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-6 sm:space-y-8">
+      {/* ── Hero banner ── */}
+      <div className="relative h-32 sm:h-44 bg-gradient-to-br from-primary/30 via-primary/10 to-background">
+        <div className="absolute inset-0 bg-gradient-to-t from-background/60 to-transparent" />
+      </div>
 
-          {/* ── Identity Card ── */}
-          <Card className="rounded-2xl sm:rounded-3xl border-border/60 shadow-lg overflow-hidden">
-            <div className="bg-primary/5 px-5 py-3 sm:px-8 sm:py-4 border-b border-border/50 flex items-center gap-2">
-              <User className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
-              <h2 className="text-lg sm:text-xl font-bold font-display">Your Profile</h2>
+      <div className="max-w-2xl mx-auto px-4 sm:px-6">
+
+        {/* ── Identity row (overlaps banner) ── */}
+        <div className="-mt-14 sm:-mt-16 mb-6 flex items-end gap-4">
+          {/* Avatar */}
+          <div className="relative shrink-0">
+            <Avatar className="h-24 w-24 sm:h-28 sm:w-28 ring-4 ring-background shadow-xl">
+              <AvatarImage src={currentAvatar} />
+              <AvatarFallback className="bg-primary/10 text-primary text-2xl sm:text-3xl font-bold">
+                {initials}
+              </AvatarFallback>
+            </Avatar>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center shadow-lg hover:bg-primary/90 transition-colors"
+              title="Change photo"
+            >
+              <Camera className="w-4 h-4" />
+            </button>
+            <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif"
+              className="hidden" onChange={handleAvatarChange} />
+          </div>
+
+          {/* Name + badges */}
+          <div className="flex-1 min-w-0 pb-1">
+            {editingName ? (
+              <div className="flex items-center gap-2">
+                <Input
+                  value={nameInput}
+                  onChange={e => setNameInput(e.target.value)}
+                  className="h-9 rounded-xl text-base font-bold max-w-xs"
+                  autoFocus
+                  onKeyDown={e => {
+                    if (e.key === "Enter")  { setDisplayName(nameInput); setEditingName(false); }
+                    if (e.key === "Escape") { setNameInput(displayName); setEditingName(false); }
+                  }}
+                />
+                <button onClick={() => { setDisplayName(nameInput); setEditingName(false); }} className="text-primary">
+                  <Check className="w-5 h-5" />
+                </button>
+                <button onClick={() => { setNameInput(displayName); setEditingName(false); }} className="text-muted-foreground">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl sm:text-2xl font-bold truncate drop-shadow-sm">{displayName || user.username}</h1>
+                <button onClick={() => setEditingName(true)} className="text-muted-foreground hover:text-primary transition-colors shrink-0">
+                  <Pencil className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+            {user.email && <p className="text-xs text-muted-foreground break-all mt-0.5">{user.email}</p>}
+            <div className="flex gap-1.5 flex-wrap mt-1">
+              {user.isExpatMember  && <Badge variant="secondary" className="text-xs">ExpatEvents</Badge>}
+              {user.isGamesMember  && <Badge variant="secondary" className="text-xs">Games in English</Badge>}
+              {user.role === "admin" && <Badge className="text-xs">Admin</Badge>}
             </div>
-            <CardContent className="p-5 sm:p-8">
-              <div className="flex flex-col sm:flex-row items-start gap-5 sm:gap-6">
-                <div className="relative shrink-0">
-                  <Avatar className="h-20 w-20 sm:h-24 sm:w-24 ring-2 ring-border">
-                    <AvatarImage src={currentAvatar} />
-                    <AvatarFallback className="bg-primary/10 text-primary text-xl sm:text-2xl">{initials}</AvatarFallback>
-                  </Avatar>
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="absolute -bottom-1 -right-1 w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-primary text-white flex items-center justify-center shadow-md hover:bg-primary/90 transition-colors"
-                    title="Change photo"
-                  >
-                    <Camera className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                  </button>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp,image/gif"
-                    className="hidden"
-                    onChange={handleAvatarChange}
+          </div>
+        </div>
+
+        {/* Avatar feedback */}
+        {(avatarPreview || avatarError) && (
+          <div className="mb-4 px-4 py-2.5 bg-muted/60 rounded-xl flex items-center gap-3 text-sm">
+            {avatarPreview && <>
+              <span className="text-muted-foreground flex-1">New photo selected — save to apply</span>
+              <button onClick={cancelAvatarChange} className="text-destructive text-xs hover:underline shrink-0">Cancel</button>
+            </>}
+            {avatarError && <span className="text-destructive">{avatarError}</span>}
+          </div>
+        )}
+
+        {/* ── Completeness bar ── */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-6 p-4 bg-background rounded-2xl border border-border/60 shadow-sm"
+        >
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-semibold">Profile completeness</span>
+            <span className={`text-sm font-bold ${completeness >= 80 ? "text-emerald-600" : completeness >= 50 ? "text-amber-500" : "text-muted-foreground"}`}>
+              {completeness}%
+            </span>
+          </div>
+          <Progress value={completeness} className="h-2" />
+          {missing.length > 0 && completeness < 100 && (
+            <p className="text-xs text-muted-foreground mt-2">
+              Still missing: {missing.slice(0, 3).join(" · ")}{missing.length > 3 ? ` +${missing.length - 3} more` : ""}
+            </p>
+          )}
+        </motion.div>
+
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
+
+          {/* ── Bio & Location ── */}
+          <Card className="rounded-2xl border-border/60 shadow-sm overflow-hidden">
+            <SectionHeading icon={User} title="About You" subtitle="This is the first thing people read on your language exchange card" />
+            <CardContent className="p-5 sm:p-6 space-y-4">
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium">Bio</Label>
+                <Textarea
+                  value={bio}
+                  onChange={e => setBio(e.target.value)}
+                  placeholder="Tell people a bit about yourself — where you're from, what you do, what you enjoy talking about…"
+                  className="rounded-xl min-h-[88px] resize-none text-sm"
+                  maxLength={280}
+                />
+                <div className="flex justify-end">
+                  <span className={`text-xs ${bio.length > 240 ? "text-amber-500" : "text-muted-foreground"}`}>
+                    {bio.length}/280
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-medium flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 text-muted-foreground" /> City
+                  </Label>
+                  <Input
+                    value={city}
+                    onChange={e => setCity(e.target.value)}
+                    placeholder="e.g. Moscow, Dubai, London…"
+                    className="rounded-xl h-9 text-sm"
                   />
                 </div>
-                <div className="flex-1 min-w-0 space-y-2 sm:space-y-3">
-                  {editingName ? (
-                    <div className="flex items-center gap-2">
-                      <Input
-                        value={nameInput}
-                        onChange={e => setNameInput(e.target.value)}
-                        className="h-9 sm:h-10 rounded-xl text-base sm:text-lg font-bold max-w-xs"
-                        autoFocus
-                        onKeyDown={e => {
-                          if (e.key === "Enter")  { setDisplayName(nameInput); setEditingName(false); }
-                          if (e.key === "Escape") { setNameInput(displayName); setEditingName(false); }
-                        }}
-                      />
-                      <button onClick={() => { setDisplayName(nameInput); setEditingName(false); }} className="text-primary hover:text-primary/80">
-                        <Check className="w-5 h-5" />
+                <div className="space-y-1.5" ref={stationRef}>
+                  <Label className="text-sm font-medium flex items-center gap-1.5">
+                    <span className="text-muted-foreground text-xs font-bold">М</span> Moscow Metro
+                  </Label>
+                  <div className="relative">
+                    <Input
+                      value={metroStation ? metroStation : stationSearch}
+                      onChange={e => {
+                        if (metroStation) { setMetroStation(""); setStationSearch(e.target.value); }
+                        else setStationSearch(e.target.value);
+                        setStationDropdownOpen(true);
+                      }}
+                      onFocus={() => setStationDropdownOpen(true)}
+                      placeholder="Search station…"
+                      className="rounded-xl h-9 text-sm pr-8"
+                    />
+                    {metroStation && (
+                      <button
+                        type="button"
+                        onClick={() => { setMetroStation(""); setStationSearch(""); }}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-destructive"
+                      >
+                        <X className="w-3.5 h-3.5" />
                       </button>
-                      <button onClick={() => { setNameInput(displayName); setEditingName(false); }} className="text-muted-foreground hover:text-foreground">
-                        <X className="w-5 h-5" />
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <h1 className="text-xl sm:text-2xl font-bold truncate">{displayName || user.username}</h1>
-                      <button onClick={() => setEditingName(true)} className="text-muted-foreground hover:text-primary transition-colors shrink-0" title="Edit name">
-                        <Pencil className="w-4 h-4" />
-                      </button>
-                    </div>
-                  )}
-                  {user.email && <p className="text-muted-foreground text-xs sm:text-sm break-all">{user.email}</p>}
-                  <div className="flex gap-2 flex-wrap">
-                    {user.isExpatMember  && <Badge variant="secondary">ExpatEvents</Badge>}
-                    {user.isGamesMember  && <Badge variant="secondary">Games in English</Badge>}
-                    {user.role === "admin" && <Badge>Admin</Badge>}
+                    )}
+                    {/* Line badge */}
+                    {metroStation && (() => {
+                      const s = ALL_STATIONS.find(x => x.station === metroStation);
+                      return s ? (
+                        <span className="absolute left-2 -bottom-5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full text-white" style={{ background: s.color }}>
+                          {s.line.split("—")[0].trim()}
+                        </span>
+                      ) : null;
+                    })()}
+                    {stationDropdownOpen && (
+                      <div className="absolute z-50 mt-1 w-full max-h-56 overflow-y-auto rounded-xl border border-border bg-background shadow-xl">
+                        {stationSearch.trim().length > 0 ? (
+                          filteredStations.length > 0
+                            ? filteredStations.map(({ station, line, color }) => (
+                              <button
+                                key={station + line}
+                                type="button"
+                                className="w-full text-left px-4 py-2.5 text-sm hover:bg-muted/60 flex items-center gap-3 transition-colors"
+                                onMouseDown={() => { setMetroStation(station); setStationSearch(""); setStationDropdownOpen(false); }}
+                              >
+                                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: color }} />
+                                <span className="flex-1 font-medium">{station}</span>
+                                <span className="text-xs text-muted-foreground truncate max-w-[120px]">{line}</span>
+                              </button>
+                            ))
+                            : <p className="px-4 py-3 text-sm text-muted-foreground">No stations found</p>
+                        ) : (
+                          METRO_LINES.map(lineGroup => (
+                            <div key={lineGroup.line}>
+                              <div className="px-4 py-1.5 text-xs font-semibold sticky top-0 bg-background/95 backdrop-blur-sm border-b border-border/30 flex items-center gap-2" style={{ color: lineGroup.color }}>
+                                <span className="w-2 h-2 rounded-full" style={{ background: lineGroup.color }} />
+                                {lineGroup.line}
+                              </div>
+                              {lineGroup.stations.map(station => (
+                                <button
+                                  key={station}
+                                  type="button"
+                                  className={`w-full text-left px-4 py-2 text-sm hover:bg-muted/60 flex items-center gap-3 transition-colors ${metroStation === station ? "bg-primary/10 text-primary font-medium" : ""}`}
+                                  onMouseDown={() => { setMetroStation(station); setStationSearch(""); setStationDropdownOpen(false); }}
+                                >
+                                  <span className="w-1.5 h-1.5 rounded-full shrink-0 opacity-60" style={{ background: lineGroup.color }} />
+                                  {station}
+                                </button>
+                              ))}
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
                   </div>
-                  {avatarPreview && (
-                    <div className="flex items-center gap-3 pt-1">
-                      <span className="text-xs sm:text-sm text-muted-foreground">New photo selected — save to apply</span>
-                      <button onClick={cancelAvatarChange} className="text-xs text-destructive hover:underline">Cancel</button>
-                    </div>
-                  )}
-                  {avatarError && <p className="text-xs sm:text-sm text-destructive">{avatarError}</p>}
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          {/* ── Telegram Card ── */}
-          {!isTelegramMiniApp() && (
-            <Card className="rounded-2xl sm:rounded-3xl border-border/60 shadow-lg overflow-hidden">
-              <div className="bg-primary/5 px-5 py-3 sm:px-8 sm:py-4 border-b border-border/50 flex items-center gap-2">
-                <Bell className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
-                <h2 className="text-lg sm:text-xl font-bold font-display">Telegram Notifications</h2>
-              </div>
-              <CardContent className="p-5 sm:p-8">
-                <TelegramConnect
-                  connected={!!user.telegramId}
-                  onUnlinked={() => queryClient.invalidateQueries({ queryKey: ["auth-user"] })}
-                />
-              </CardContent>
-            </Card>
-          )}
+          {/* ── Languages ── */}
+          <Card className="rounded-2xl border-border/60 shadow-sm overflow-hidden">
+            <SectionHeading icon={Languages} title="Languages" subtitle="Native speakers and learners are matched together" />
+            <CardContent className="p-5 sm:p-6 space-y-5">
 
-          {/* ── Languages & Age Card ── */}
-          <Card className="rounded-2xl sm:rounded-3xl border-border/60 shadow-lg overflow-hidden">
-            <div className="bg-primary/5 px-5 py-3 sm:px-8 sm:py-4 border-b border-border/50 flex items-center gap-2">
-              <Languages className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
-              <div>
-                <h2 className="text-lg sm:text-xl font-bold font-display">Languages & Age</h2>
-                <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
-                  Used to match you with compatible language exchange partners
-                </p>
-              </div>
-            </div>
-            <CardContent className="p-5 sm:p-8 space-y-7">
-
-              {/* ── Native language ── */}
-              <div className="space-y-2">
+              {/* Native */}
+              <div className="space-y-1.5">
                 <Label className="text-sm font-medium">Native language</Label>
                 <div className="relative">
                   <select
@@ -698,7 +932,7 @@ export default function Profile() {
                       setNativeLanguage(val);
                       setLearningLanguages(prev => prev.filter(l => l.code !== val));
                     }}
-                    className="w-full h-9 sm:h-10 rounded-xl border border-border bg-background px-3 pr-8 text-sm appearance-none focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    className="w-full h-9 rounded-xl border border-border bg-background px-3 pr-8 text-sm appearance-none focus:outline-none focus:ring-2 focus:ring-primary/30"
                   >
                     <option value="">— Select your native language —</option>
                     {LANGUAGES.map(l => (
@@ -709,14 +943,14 @@ export default function Profile() {
                 </div>
                 {nativeLang && (
                   <p className="text-xs text-muted-foreground pl-1">
-                    You will appear as a native {nativeLang.label} speaker to learners
+                    You appear as a native <strong>{nativeLang.label}</strong> speaker to learners
                   </p>
                 )}
               </div>
 
-              <div className="border-t border-border/50" />
+              <div className="border-t border-border/40" />
 
-              {/* ── Learning languages ── */}
+              {/* Learning */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <Label className="text-sm font-medium">Languages I want to practise</Label>
@@ -727,8 +961,7 @@ export default function Profile() {
                       disabled={!nativeLanguage}
                       className="flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                     >
-                      <Plus className="w-3.5 h-3.5" />
-                      Add language
+                      <Plus className="w-3.5 h-3.5" /> Add language
                     </button>
                   )}
                 </div>
@@ -736,15 +969,15 @@ export default function Profile() {
                   <p className="text-sm text-muted-foreground italic">Select your native language first</p>
                 )}
                 {learningLanguages.length === 0 && nativeLanguage && (
-                  <p className="text-sm text-muted-foreground italic">No languages added yet — click "Add language" above</p>
+                  <p className="text-sm text-muted-foreground italic">No languages added yet</p>
                 )}
-                <div className="space-y-3">
+                <div className="space-y-2.5">
                   {learningLanguages.map((entry, idx) => (
                     <motion.div
                       key={idx}
-                      initial={{ opacity: 0, y: -6 }}
+                      initial={{ opacity: 0, y: -4 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-3 rounded-xl border border-border/60 bg-muted/30"
+                      className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-3 rounded-xl border border-border/60 bg-muted/20"
                     >
                       <div className="relative flex-1 min-w-0">
                         <select
@@ -773,11 +1006,13 @@ export default function Profile() {
                         </select>
                         <div className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">▾</div>
                       </div>
+                      <span className={`hidden sm:inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold shrink-0 ${PROFICIENCY_COLORS[entry.proficiency]}`}>
+                        {entry.proficiency}
+                      </span>
                       <button
                         type="button"
                         onClick={() => removeLearningLanguage(idx)}
-                        className="shrink-0 text-muted-foreground hover:text-destructive transition-colors"
-                        title="Remove"
+                        className="self-end sm:self-center p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -785,213 +1020,107 @@ export default function Profile() {
                   ))}
                 </div>
               </div>
-
-              <div className="border-t border-border/50" />
-
-              {/* ── Age section ── */}
-              <div className="space-y-6">
-                <div>
-                  <h3 className="text-sm font-semibold mb-1">Age preferences</h3>
-                  <p className="text-xs text-muted-foreground">
-                    Help us show you partners in the right age range — and let them find you.
-                  </p>
-                </div>
-
-                {/* Own age group pin */}
-                <div className="bg-muted/30 rounded-2xl p-4 border border-border/60">
-                  <AgeGroupPin
-                    value={myAgeGroup}
-                    onChange={setMyAgeGroup}
-                  />
-                </div>
-
-                {/* Preferred age range */}
-                <div className="bg-muted/30 rounded-2xl p-4 border border-border/60">
-                  <AgeRangeSlider
-                    minIdx={preferredAgeMin}
-                    maxIdx={preferredAgeMax}
-                    onChange={(min, max) => { setPreferredAgeMin(min); setPreferredAgeMax(max); }}
-                    label="Preferred age range of partners"
-                  />
-                </div>
-
-                {/* Summary note */}
-                {myAgeGroup && (
-                  <p className="text-xs text-muted-foreground pl-1">
-                    You're in the <strong>{AGE_GROUPS.find(a => a.value === myAgeGroup)?.label}</strong> group
-                    and open to meeting people aged{" "}
-                    <strong>
-                      {preferredAgeMin === 0 && preferredAgeMax === 3
-                        ? "any age"
-                        : `${AGE_GROUPS[preferredAgeMin].label} – ${AGE_GROUPS[preferredAgeMax].label}`}
-                    </strong>.
-                  </p>
-                )}
-              </div>
             </CardContent>
           </Card>
 
-          {/* ── Location Card ── */}
-          <Card className="rounded-2xl sm:rounded-3xl border-border/60 shadow-lg overflow-hidden">
-            <div className="bg-primary/5 px-5 py-3 sm:px-8 sm:py-4 border-b border-border/50 flex items-center gap-2">
-              <MapPin className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
-              <div>
-                <h2 className="text-lg sm:text-xl font-bold font-display">Your Location</h2>
-                <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">Used to suggest nearby meetup spots</p>
-              </div>
-            </div>
-            <CardContent className="p-5 sm:p-8 space-y-4">
+          {/* ── Meeting style & Age ── */}
+          <Card className="rounded-2xl border-border/60 shadow-sm overflow-hidden">
+            <SectionHeading icon={Users} title="Meeting Style & Age" subtitle="Helps us suggest the right partners and events" />
+            <CardContent className="p-5 sm:p-6 space-y-6">
+
+              {/* Meeting style toggle chips */}
               <div className="space-y-2">
-                <Label className="text-sm font-medium">Closest Moscow metro station</Label>
-                <div className="relative" ref={stationRef}>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      placeholder="Type to search stations…"
-                      value={stationSearch || metroStation}
-                      onFocus={() => { setStationSearch(""); setStationDropdownOpen(true); }}
-                      onChange={e => { setStationSearch(e.target.value); setStationDropdownOpen(true); }}
-                      className="w-full h-9 sm:h-10 rounded-xl border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-                    />
-                    {metroStation && !stationDropdownOpen && (
-                      <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
-                        {(() => {
-                          const s = ALL_STATIONS.find(x => x.station === metroStation);
-                          return s ? (
-                            <span className="text-xs font-semibold px-2 py-0.5 rounded-full text-white" style={{ background: s.color }}>
-                              {s.line.split("—")[0].trim()}
-                            </span>
-                          ) : null;
-                        })()}
-                      </div>
-                    )}
-                  </div>
-                  {stationDropdownOpen && (
-                    <div className="absolute z-50 mt-1 w-full max-h-64 overflow-y-auto rounded-xl border border-border bg-background shadow-xl">
-                      {stationSearch.trim().length > 0 ? (
-                        filteredStations.length > 0 ? (
-                          filteredStations.map(({ station, line, color }) => (
-                            <button
-                              key={station + line}
-                              type="button"
-                              className="w-full text-left px-4 py-2.5 text-sm hover:bg-muted/60 flex items-center gap-3 transition-colors"
-                              onMouseDown={() => { setMetroStation(station); setStationSearch(""); setStationDropdownOpen(false); }}
-                            >
-                              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: color }} />
-                              <span className="flex-1 font-medium">{station}</span>
-                              <span className="text-xs text-muted-foreground truncate max-w-[160px]">{line}</span>
-                            </button>
-                          ))
-                        ) : (
-                          <p className="px-4 py-3 text-sm text-muted-foreground">No stations found</p>
-                        )
-                      ) : (
-                        METRO_LINES.map(lineGroup => (
-                          <div key={lineGroup.line}>
-                            <div
-                              className="px-4 py-1.5 text-xs font-semibold sticky top-0 bg-background/95 backdrop-blur-sm border-b border-border/30 flex items-center gap-2"
-                              style={{ color: lineGroup.color }}
-                            >
-                              <span className="w-2 h-2 rounded-full" style={{ background: lineGroup.color }} />
-                              {lineGroup.line}
-                            </div>
-                            {lineGroup.stations.map(station => (
-                              <button
-                                key={station}
-                                type="button"
-                                className={`w-full text-left px-4 py-2 text-sm hover:bg-muted/60 flex items-center gap-3 transition-colors ${metroStation === station ? "bg-primary/10 text-primary font-medium" : ""}`}
-                                onMouseDown={() => { setMetroStation(station); setStationSearch(""); setStationDropdownOpen(false); }}
-                              >
-                                <span className="w-1.5 h-1.5 rounded-full shrink-0 opacity-60" style={{ background: lineGroup.color }} />
-                                {station}
-                              </button>
-                            ))}
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  )}
+                <Label className="text-sm font-medium">How do you like to meet?</Label>
+                <div className="flex flex-wrap gap-2">
+                  {MEETING_TYPES.map(mt => {
+                    const active = meetingTypes.includes(mt.value);
+                    return (
+                      <button
+                        key={mt.value}
+                        type="button"
+                        onClick={() => toggleMeetingType(mt.value)}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-full border text-sm font-medium transition-all ${
+                          active
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "bg-background border-border text-muted-foreground hover:border-primary/40 hover:text-foreground"
+                        }`}
+                      >
+                        <span>{mt.emoji}</span> {mt.label}
+                      </button>
+                    );
+                  })}
                 </div>
-                {metroStation && (
-                  <div className="flex items-center gap-2 pt-1">
-                    {(() => {
-                      const s = ALL_STATIONS.find(x => x.station === metroStation);
-                      return (
-                        <>
-                          <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: s?.color ?? "#888" }} />
-                          <span className="text-sm font-medium">{metroStation}</span>
-                          {s && <span className="text-xs text-muted-foreground">· {s.line}</span>}
-                          <button
-                            type="button"
-                            onClick={() => { setMetroStation(""); setStationSearch(""); }}
-                            className="ml-auto text-xs text-muted-foreground hover:text-destructive transition-colors"
-                          >
-                            Clear
-                          </button>
-                        </>
-                      );
-                    })()}
-                  </div>
-                )}
               </div>
+
+              <div className="border-t border-border/40" />
+
+              {/* Age sliders */}
+              <AgeGroupPin value={myAgeGroup} onChange={setMyAgeGroup} />
+              {myAgeGroup && (
+                <p className="text-xs text-muted-foreground -mt-3 pl-1">
+                  You're in the <strong>{AGE_GROUPS.find(a => a.value === myAgeGroup)?.label}</strong> group
+                </p>
+              )}
+              <AgeRangeSlider
+                label="Preferred partner age range"
+                minIdx={preferredAgeMin}
+                maxIdx={preferredAgeMax}
+                onChange={(min, max) => { setPreferredAgeMin(min); setPreferredAgeMax(max); }}
+              />
             </CardContent>
           </Card>
 
-          {/* ── Interests Card ── */}
-          <Card className="rounded-2xl sm:rounded-3xl border-border/60 shadow-lg overflow-hidden">
-            <div className="bg-primary/5 px-5 py-3 sm:px-8 sm:py-4 border-b border-border/50">
-              <h2 className="text-lg sm:text-xl font-bold font-display">Your Interests</h2>
-              <p className="text-xs sm:text-sm text-muted-foreground mt-1">Select categories for notifications</p>
-            </div>
-            <CardContent className="p-5 sm:p-8">
-              <div className="flex flex-wrap gap-2 sm:gap-3">
+          {/* ── Interests ── */}
+          <Card className="rounded-2xl border-border/60 shadow-sm overflow-hidden">
+            <SectionHeading
+              icon={Bell}
+              title="Interests"
+              subtitle="Choose topics — you'll get notified about matching events"
+            />
+            <CardContent className="p-5 sm:p-6">
+              <div className="flex flex-wrap gap-2">
                 {EVENT_CATEGORIES.map(cat => {
                   const active = interests.includes(cat.value);
                   return (
                     <button
                       key={cat.value}
                       onClick={() => toggleInterest(cat.value)}
-                      className={`flex items-center gap-1.5 sm:gap-2 px-3 py-1.5 sm:px-4 sm:py-2 rounded-full border text-xs sm:text-sm font-medium transition-all ${
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs sm:text-sm font-medium transition-all ${
                         active
                           ? "bg-primary text-primary-foreground border-primary shadow-sm"
                           : "border-border text-muted-foreground hover:border-primary/50 hover:text-primary"
                       }`}
                     >
-                      <span style={{ fontSize: 14 }}>{CATEGORY_ICONS[cat.value]}</span>
+                      <span style={{ fontSize: 13 }}>{cat.icon}</span>
                       <span>{cat.label}</span>
                     </button>
                   );
                 })}
+                {/* Language exchange as a special interest */}
                 <button
                   onClick={() => toggleInterest("language_exchange")}
-                  className={`flex items-center gap-1.5 sm:gap-2 px-3 py-1.5 sm:px-4 sm:py-2 rounded-full border text-xs sm:text-sm font-medium transition-all ${
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs sm:text-sm font-medium transition-all ${
                     interests.includes("language_exchange")
                       ? "bg-primary text-primary-foreground border-primary shadow-sm"
                       : "border-border text-muted-foreground hover:border-primary/50 hover:text-primary"
                   }`}
                 >
-                  <span style={{ fontSize: 14 }}>🗣️</span>
+                  <span style={{ fontSize: 13 }}>🗣️</span>
                   <span>Language Exchange</span>
                 </button>
               </div>
               {interests.length === 0 && (
-                <p className="text-xs sm:text-sm text-muted-foreground mt-4">
+                <p className="text-xs text-muted-foreground mt-3">
                   Select at least one interest to receive targeted notifications.
                 </p>
               )}
             </CardContent>
           </Card>
 
-          {/* ── Availability Grid ── */}
-          <Card className="rounded-2xl sm:rounded-3xl border-border/60 shadow-lg overflow-hidden">
-            <div className="bg-primary/5 px-5 py-3 sm:px-8 sm:py-4 border-b border-border/50 flex items-center gap-2">
-              <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
-              <div>
-                <h2 className="text-lg sm:text-xl font-bold font-display">Weekly Availability</h2>
-                <p className="text-xs sm:text-sm text-muted-foreground">Click or drag to mark when you're free</p>
-              </div>
-            </div>
-            <CardContent className="p-5 sm:p-6 overflow-x-auto">
+          {/* ── Availability ── */}
+          <Card className="rounded-2xl border-border/60 shadow-sm overflow-hidden">
+            <SectionHeading icon={Calendar} title="Weekly Availability" subtitle="Click or drag to mark when you're free to meet" />
+            <CardContent className="p-4 sm:p-6 overflow-x-auto">
               <div className="min-w-[520px]">
                 <div className="grid grid-cols-8 gap-1 mb-1">
                   <div />
@@ -1000,7 +1129,7 @@ export default function Profile() {
                   ))}
                 </div>
                 {HOURS.map(hour => (
-                  <div key={hour} className="grid grid-cols-8 gap-1 mb-1">
+                  <div key={hour} className="grid grid-cols-8 gap-1 mb-0.5">
                     <div className="text-xs text-muted-foreground text-right pr-2 flex items-center justify-end">
                       {String(hour).padStart(2, "0")}:00
                     </div>
@@ -1011,7 +1140,7 @@ export default function Profile() {
                           key={day}
                           onMouseDown={() => handleSlotMouseDown(day, hour)}
                           onMouseEnter={() => handleSlotMouseEnter(day, hour)}
-                          className={`h-6 sm:h-7 rounded cursor-pointer select-none transition-colors ${
+                          className={`h-6 rounded cursor-pointer select-none transition-colors ${
                             active
                               ? "bg-primary/80 hover:bg-primary"
                               : "bg-muted hover:bg-primary/20 border border-border"
@@ -1021,18 +1150,64 @@ export default function Profile() {
                     })}
                   </div>
                 ))}
-                <p className="text-xs text-muted-foreground mt-3">
+                <p className="text-xs text-muted-foreground mt-2">
                   {slots.length} slot{slots.length !== 1 ? "s" : ""} selected
                 </p>
               </div>
             </CardContent>
           </Card>
 
-          {/* ── Save Button ── */}
+          {/* ── Telegram ── */}
+          {!isTelegramMiniApp() && (
+            <Card className="rounded-2xl border-border/60 shadow-sm overflow-hidden">
+              <SectionHeading icon={Bell} title="Telegram Notifications" subtitle="Get event alerts and RSVP updates directly in Telegram" />
+              <CardContent className="p-5 sm:p-6">
+                <TelegramConnect
+                  connected={!!user.telegramId}
+                  onUnlinked={() => queryClient.invalidateQueries({ queryKey: ["auth-user"] })}
+                />
+              </CardContent>
+            </Card>
+          )}
+
+          {/* ── Public preview toggle ── */}
+          <button
+            type="button"
+            onClick={() => setShowPreview(o => !o)}
+            className="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-medium text-primary hover:text-primary/80 transition-colors"
+          >
+            <Eye className="w-4 h-4" />
+            {showPreview ? "Hide preview" : "Preview my Language Exchange card"}
+          </button>
+
+          <AnimatePresence>
+            {showPreview && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden"
+              >
+                <PublicPreviewCard
+                  displayName={displayName}
+                  avatarUrl={currentAvatar}
+                  bio={bio}
+                  city={city}
+                  ageGroup={myAgeGroup}
+                  native={nativeLanguage ? [nativeLanguage] : []}
+                  learning={learningLanguages}
+                  interests={interests}
+                  meetingTypes={meetingTypes}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* ── Save ── */}
           <Button
             onClick={saveAll}
             disabled={saving || uploadingAvatar}
-            className="w-full h-12 sm:h-14 text-base sm:text-lg rounded-xl sm:rounded-2xl shadow-xl shadow-primary/20 hover:shadow-primary/30 hover:-translate-y-0.5 transition-all"
+            className="w-full h-12 sm:h-14 text-base font-semibold rounded-2xl shadow-lg shadow-primary/20 hover:shadow-primary/30 hover:-translate-y-0.5 transition-all"
           >
             {uploadingAvatar ? "Uploading photo…" : saving ? "Saving…" : saved ? "✓ Saved!" : "Save Profile"}
           </Button>
