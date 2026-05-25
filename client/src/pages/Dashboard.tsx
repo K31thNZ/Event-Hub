@@ -608,13 +608,13 @@ function AdminPanel() {
         <>
           <div className="flex items-center justify-between mb-1">
             <span className="text-sm text-muted-foreground">Published &amp; pending events</span>
-            <a
+            <Link
               href="/admin/events"
               className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
             >
               <ShieldCheck className="w-3.5 h-3.5" />
               Open Event Review panel →
-            </a>
+            </Link>
           </div>
           <div className="space-y-2">
             {filteredEvents.length === 0 && <div className="text-center py-16 text-muted-foreground">No events found</div>}
