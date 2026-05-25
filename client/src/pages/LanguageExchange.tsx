@@ -1,32 +1,57 @@
 // client/src/pages/LanguageExchange.tsx
-import React, { useState, useMemo, useRef, useCallback } from "react";
+// Replaced mock data with live API data from meh-auth GET /api/language-exchange/users.
+// City filter now derived dynamically from actual user data.
+// "Connect" button wires to Telegram DM or falls back to copy username.
+// AgeRangeSlider deduplicated — same implementation kept locally (shared component
+// extraction tracked as a follow-up).
+
+import React, { useState, useMemo, useRef, useCallback, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Languages, Users, User, CalendarDays, MapPin, Filter, X } from "lucide-react";
+import { Languages, Users, User, CalendarDays, MapPin, Filter, X, RefreshCw } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { LANGUAGES, CITIES, EVENT_CATEGORIES } from "@/lib/constants";
+import { LANGUAGES, EVENT_CATEGORIES } from "@/lib/constants";
 import LanguageUserCard from "@/components/language/LanguageUserCard";
+
+const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? "https://auth.expatevents.org";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type AgeGroup = "18-25" | "26-35" | "36-45" | "46+";
+type AgeGroup    = "18-25" | "26-35" | "36-45" | "46+";
 type MeetingType = "1on1" | "small_group" | "social";
 type ProficiencyLevel = "A1" | "A2" | "B1" | "B2" | "C1" | "C2";
 
-interface LearningLanguage { code: string; proficiency: ProficiencyLevel; }
-interface LanguageUser {
-  id: string; full_name: string; avatar_url: string; city: string;
-  age_group: AgeGroup; native: string[]; learning: LearningLanguage[];
-  interests: string[]; meeting_types: MeetingType[]; bio: string;
+export interface LearningLanguage { code: string; proficiency: ProficiencyLevel; }
+export interface LanguageUser {
+  id:            string | number;
+  full_name:     string;
+  avatar_url:    string;
+  city:          string;
+  age_group:     AgeGroup | string;
+  native:        string[];
+  learning:      LearningLanguage[];
+  interests:     string[];
+  meeting_types: MeetingType[] | string[];
+  bio:           string;
+  telegram_username?: string | null;
 }
+
 interface Filters {
-  language: string;
-  city: string;
-  ageMin: number;   // index into AGE_GROUPS (0–3)
-  ageMax: number;   // index into AGE_GROUPS (0–3)
-  interest: string;
+  language:     string;
+  city:         string;
+  ageMin:       number;   // index 0–3 into AGE_GROUPS
+  ageMax:       number;
+  interest:     string;
   meeting_type: MeetingType | "all";
+}
+
+interface ApiResponse {
+  data:   LanguageUser[];
+  total:  number;
+  limit:  number;
+  offset: number;
 }
 
 // ── Age group constants ───────────────────────────────────────────────────────
@@ -48,23 +73,7 @@ const MEETING_TYPES: { value: MeetingType; label: string; icon: React.ElementTyp
 
 const INTEREST_CATEGORIES = EVENT_CATEGORIES.filter(c => c.value !== "language");
 
-// ── Mock data ─────────────────────────────────────────────────────────────────
-
-const MOCK_USERS: LanguageUser[] = [
-  { id: "1", full_name: "Anna K.", avatar_url: "https://i.pravatar.cc/150?img=47", city: "Moscow", age_group: "26-35", native: ["ru"], learning: [{ code: "en", proficiency: "B2" }, { code: "de", proficiency: "A2" }], interests: ["culture", "music", "wellness"], meeting_types: ["1on1", "small_group"], bio: "Love discussing books, films and culture." },
-  { id: "2", full_name: "James T.", avatar_url: "https://i.pravatar.cc/150?img=11", city: "London", age_group: "26-35", native: ["en"], learning: [{ code: "ru", proficiency: "B1" }, { code: "es", proficiency: "A1" }], interests: ["tech", "outdoor", "games"], meeting_types: ["1on1", "social"], bio: "Software dev learning Russian for travel." },
-  { id: "3", full_name: "Mei Lin", avatar_url: "https://i.pravatar.cc/150?img=32", city: "Singapore", age_group: "18-25", native: ["zh"], learning: [{ code: "en", proficiency: "C1" }, { code: "fr", proficiency: "B1" }], interests: ["food", "culture", "business"], meeting_types: ["small_group", "social"], bio: "Foodie and language nerd based in Singapore." },
-  { id: "4", full_name: "Carlos M.", avatar_url: "https://i.pravatar.cc/150?img=15", city: "New York", age_group: "36-45", native: ["es", "pt"], learning: [{ code: "en", proficiency: "C2" }, { code: "ja", proficiency: "A2" }], interests: ["music", "sports", "networking"], meeting_types: ["1on1"], bio: "Musician open to tandem practice." },
-  { id: "5", full_name: "Yuki S.", avatar_url: "https://i.pravatar.cc/150?img=44", city: "Dubai", age_group: "18-25", native: ["ja"], learning: [{ code: "en", proficiency: "B2" }, { code: "ar", proficiency: "A1" }], interests: ["wellness", "outdoor", "culture"], meeting_types: ["1on1", "small_group", "social"], bio: "Yoga teacher exploring Arabic and English." },
-  { id: "6", full_name: "Fatima R.", avatar_url: "https://i.pravatar.cc/150?img=25", city: "Dubai", age_group: "26-35", native: ["ar"], learning: [{ code: "en", proficiency: "C1" }, { code: "fr", proficiency: "B2" }], interests: ["business", "networking", "family"], meeting_types: ["small_group", "social"], bio: "Finance professional and trilingual parent." },
-  { id: "7", full_name: "Lucas B.", avatar_url: "https://i.pravatar.cc/150?img=52", city: "Sydney", age_group: "36-45", native: ["fr"], learning: [{ code: "en", proficiency: "C2" }, { code: "zh", proficiency: "A2" }], interests: ["food", "outdoor", "games"], meeting_types: ["social", "small_group"], bio: "Chef and avid hiker who loves to connect." },
-  { id: "8", full_name: "Elena V.", avatar_url: "https://i.pravatar.cc/150?img=23", city: "Moscow", age_group: "46+", native: ["ru", "uk"], learning: [{ code: "en", proficiency: "B1" }, { code: "de", proficiency: "A2" }], interests: ["culture", "volunteering", "wellness"], meeting_types: ["1on1"], bio: "Retired teacher, loves classical music and art." },
-  { id: "9", full_name: "Priya N.", avatar_url: "https://i.pravatar.cc/150?img=40", city: "Singapore", age_group: "26-35", native: ["hi", "en"], learning: [{ code: "ja", proficiency: "B1" }, { code: "de", proficiency: "A1" }], interests: ["tech", "business", "music"], meeting_types: ["1on1", "social"], bio: "Product manager by day, language learner by night." },
-];
-
-// ── Dual-handle discrete range slider ────────────────────────────────────────
-// Operates on indices 0–3 mapping to AGE_GROUPS.
-// Both handles snap to the 4 stops. Min handle cannot exceed max and vice versa.
+// ── Dual-handle discrete age range slider ────────────────────────────────────
 
 interface AgeRangeSliderProps {
   minIdx: number;
@@ -73,39 +82,30 @@ interface AgeRangeSliderProps {
 }
 
 function AgeRangeSlider({ minIdx, maxIdx, onChange }: AgeRangeSliderProps) {
-  const trackRef      = useRef<HTMLDivElement>(null);
-  const dragging      = useRef<"min" | "max" | null>(null);
-  const STOPS         = AGE_GROUPS.length - 1; // 3
+  const trackRef = useRef<HTMLDivElement>(null);
+  const dragging = useRef<"min" | "max" | null>(null);
+  const STOPS    = AGE_GROUPS.length - 1; // 3
 
-  // Convert a client X position → nearest stop index
   const xToIdx = useCallback((clientX: number): number => {
     if (!trackRef.current) return 0;
     const { left, width } = trackRef.current.getBoundingClientRect();
-    const pct  = Math.max(0, Math.min(1, (clientX - left) / width));
-    return Math.round(pct * STOPS);
+    return Math.round(Math.max(0, Math.min(1, (clientX - left) / width)) * STOPS);
   }, [STOPS]);
 
   const onPointerDown = (handle: "min" | "max") => (e: React.PointerEvent) => {
     e.currentTarget.setPointerCapture(e.pointerId);
     dragging.current = handle;
   };
-
   const onPointerMove = (e: React.PointerEvent) => {
     if (!dragging.current) return;
     const idx = xToIdx(e.clientX);
-    if (dragging.current === "min") {
-      onChange(Math.min(idx, maxIdx), maxIdx);
-    } else {
-      onChange(minIdx, Math.max(idx, minIdx));
-    }
+    if (dragging.current === "min") onChange(Math.min(idx, maxIdx), maxIdx);
+    else                             onChange(minIdx, Math.max(idx, minIdx));
   };
-
   const onPointerUp = () => { dragging.current = null; };
 
-  // Percentage positions for the filled track and handles
-  const minPct = (minIdx / STOPS) * 100;
-  const maxPct = (maxIdx / STOPS) * 100;
-
+  const minPct      = (minIdx / STOPS) * 100;
+  const maxPct      = (maxIdx / STOPS) * 100;
   const isFullRange = minIdx === 0 && maxIdx === STOPS;
 
   return (
@@ -113,18 +113,11 @@ function AgeRangeSlider({ minIdx, maxIdx, onChange }: AgeRangeSliderProps) {
       <div className="flex items-center justify-between">
         <span className="text-xs font-medium text-muted-foreground">Age range</span>
         <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full transition-all ${
-          isFullRange
-            ? "bg-muted text-muted-foreground"
-            : "bg-primary/10 text-primary"
+          isFullRange ? "bg-muted text-muted-foreground" : "bg-primary/10 text-primary"
         }`}>
-          {isFullRange
-            ? "Any age"
-            : `${AGE_GROUPS[minIdx].label} – ${AGE_GROUPS[maxIdx].label}`
-          }
+          {isFullRange ? "Any age" : `${AGE_GROUPS[minIdx].label} – ${AGE_GROUPS[maxIdx].label}`}
         </span>
       </div>
-
-      {/* Track */}
       <div
         ref={trackRef}
         className="relative h-6 flex items-center select-none"
@@ -132,50 +125,32 @@ function AgeRangeSlider({ minIdx, maxIdx, onChange }: AgeRangeSliderProps) {
         onPointerUp={onPointerUp}
         onPointerLeave={onPointerUp}
       >
-        {/* Background rail */}
         <div className="absolute inset-x-0 h-1.5 rounded-full bg-border" />
-
-        {/* Active fill between handles */}
         <div
           className="absolute h-1.5 rounded-full bg-primary transition-all"
           style={{ left: `${minPct}%`, width: `${maxPct - minPct}%` }}
         />
-
-        {/* Stop tick marks */}
         {AGE_GROUPS.map((_, i) => (
-          <div
-            key={i}
-            className="absolute w-1 h-1 rounded-full bg-border -translate-x-0.5"
-            style={{ left: `${(i / STOPS) * 100}%` }}
-          />
+          <div key={i} className="absolute w-1 h-1 rounded-full bg-border -translate-x-0.5"
+            style={{ left: `${(i / STOPS) * 100}%` }} />
         ))}
-
-        {/* Min handle */}
         <div
-          className={`absolute w-5 h-5 rounded-full border-2 border-primary bg-background shadow-md cursor-grab active:cursor-grabbing -translate-x-1/2 transition-transform hover:scale-110 z-10 ${
-            minIdx === maxIdx ? "z-20" : ""
-          }`}
+          className={`absolute w-5 h-5 rounded-full border-2 border-primary bg-background shadow-md cursor-grab active:cursor-grabbing -translate-x-1/2 transition-transform hover:scale-110 z-10 ${minIdx === maxIdx ? "z-20" : ""}`}
           style={{ left: `${minPct}%` }}
           onPointerDown={onPointerDown("min")}
         />
-
-        {/* Max handle */}
         <div
           className="absolute w-5 h-5 rounded-full border-2 border-primary bg-background shadow-md cursor-grab active:cursor-grabbing -translate-x-1/2 transition-transform hover:scale-110 z-10"
           style={{ left: `${maxPct}%` }}
           onPointerDown={onPointerDown("max")}
         />
       </div>
-
-      {/* Labels beneath stop positions */}
       <div className="relative h-4">
         {AGE_GROUPS.map((g, i) => (
           <span
             key={i}
             className={`absolute text-[10px] -translate-x-1/2 font-medium transition-colors ${
-              i >= minIdx && i <= maxIdx
-                ? "text-primary"
-                : "text-muted-foreground"
+              i >= minIdx && i <= maxIdx ? "text-primary" : "text-muted-foreground"
             }`}
             style={{ left: `${(i / STOPS) * 100}%` }}
           >
@@ -206,7 +181,46 @@ export default function LanguageExchange() {
   const clearFilters = () =>
     setFilters({ language: "all", city: "all", ageMin: 0, ageMax: 3, interest: "all", meeting_type: "all" });
 
-  // Count non-default filters for the badge
+  // ── Live data fetch ─────────────────────────────────────────────────────────
+  const { data: apiData, isLoading, isError, refetch } = useQuery<ApiResponse>({
+    queryKey: ["language-exchange-users"],
+    queryFn: async () => {
+      const res = await fetch(`${AUTH_URL}/api/language-exchange/users?limit=200`, {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to load partners");
+      return res.json() as Promise<ApiResponse>;
+    },
+    staleTime: 1000 * 60 * 5, // 5 min cache
+  });
+
+  const allUsers: LanguageUser[] = apiData?.data ?? [];
+
+  // ── Dynamic city list from actual data ────────────────────────────────────
+  const cities = useMemo(() => {
+    const set = new Set<string>();
+    allUsers.forEach(u => { if (u.city) set.add(u.city); });
+    return [...set].sort();
+  }, [allUsers]);
+
+  // ── Client-side filtering ─────────────────────────────────────────────────
+  // The API does server-side filtering too, but we pass all 200 records and
+  // filter client-side for instant UX without a new network request per filter change.
+  const filtered = useMemo<LanguageUser[]>(() => allUsers.filter(u => {
+    if (filters.language !== "all") {
+      const allLangs = [...u.native, ...u.learning.map(l => l.code)];
+      if (!allLangs.includes(filters.language)) return false;
+    }
+    if (filters.city !== "all" && u.city !== filters.city) return false;
+
+    const userAgeIdx = AGE_GROUPS.findIndex(a => a.value === u.age_group);
+    if (userAgeIdx >= 0 && (userAgeIdx < filters.ageMin || userAgeIdx > filters.ageMax)) return false;
+
+    if (filters.interest !== "all" && !u.interests.includes(filters.interest)) return false;
+    if (filters.meeting_type !== "all" && !u.meeting_types.includes(filters.meeting_type)) return false;
+    return true;
+  }), [allUsers, filters]);
+
   const activeCount =
     (filters.language     !== "all" ? 1 : 0) +
     (filters.city         !== "all" ? 1 : 0) +
@@ -214,23 +228,9 @@ export default function LanguageExchange() {
     (filters.interest     !== "all" ? 1 : 0) +
     (filters.meeting_type !== "all" ? 1 : 0);
 
-  const filtered = useMemo<LanguageUser[]>(() => MOCK_USERS.filter(u => {
-    if (filters.language !== "all") {
-      const all = [...u.native, ...u.learning.map(l => l.code)];
-      if (!all.includes(filters.language)) return false;
-    }
-    if (filters.city !== "all" && u.city !== filters.city) return false;
-
-    // Age group range filter
-    const userAgeIdx = AGE_GROUPS.findIndex(a => a.value === u.age_group);
-    if (userAgeIdx < filters.ageMin || userAgeIdx > filters.ageMax) return false;
-
-    if (filters.interest     !== "all" && !u.interests.includes(filters.interest)) return false;
-    if (filters.meeting_type !== "all" && !u.meeting_types.includes(filters.meeting_type as MeetingType)) return false;
-    return true;
-  }), [filters]);
-
   const isFullAgeRange = filters.ageMin === 0 && filters.ageMax === 3;
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
@@ -295,8 +295,8 @@ export default function LanguageExchange() {
             className="overflow-hidden"
           >
             <div className="mb-6 p-4 sm:p-5 bg-muted/40 rounded-2xl border border-border space-y-5">
-              {/* Row 1: dropdowns */}
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {/* Language */}
                 <div>
                   <p className="text-xs font-medium text-muted-foreground mb-1.5">Language</p>
                   <Select value={filters.language} onValueChange={v => setFilter("language", v)}>
@@ -309,16 +309,18 @@ export default function LanguageExchange() {
                     </SelectContent>
                   </Select>
                 </div>
+                {/* City — derived from live data */}
                 <div>
                   <p className="text-xs font-medium text-muted-foreground mb-1.5">City</p>
                   <Select value={filters.city} onValueChange={v => setFilter("city", v)}>
                     <SelectTrigger className="h-9 bg-background text-sm"><SelectValue placeholder="Any" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">Any city</SelectItem>
-                      {CITIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                      {cities.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
+                {/* Interest */}
                 <div className="col-span-2 sm:col-span-1">
                   <p className="text-xs font-medium text-muted-foreground mb-1.5">Interest</p>
                   <Select value={filters.interest} onValueChange={v => setFilter("interest", v)}>
@@ -332,8 +334,7 @@ export default function LanguageExchange() {
                   </Select>
                 </div>
               </div>
-
-              {/* Row 2: age range slider */}
+              {/* Age range slider */}
               <div className="px-1">
                 <AgeRangeSlider
                   minIdx={filters.ageMin}
@@ -366,9 +367,7 @@ export default function LanguageExchange() {
           {!isFullAgeRange && (
             <Badge variant="secondary" className="gap-1 pr-1">
               {AGE_GROUPS[filters.ageMin].label} – {AGE_GROUPS[filters.ageMax].label}
-              <button onClick={() => setFilters(f => ({ ...f, ageMin: 0, ageMax: 3 }))}>
-                <X className="w-3 h-3" />
-              </button>
+              <button onClick={() => setFilters(f => ({ ...f, ageMin: 0, ageMax: 3 }))}><X className="w-3 h-3" /></button>
             </Badge>
           )}
           {filters.interest !== "all" && (
@@ -390,36 +389,78 @@ export default function LanguageExchange() {
         </div>
       )}
 
-      {/* Results count */}
-      <p className="text-sm text-muted-foreground mb-4">
-        {filtered.length} partner{filtered.length !== 1 ? "s" : ""} found
-      </p>
+      {/* Loading state */}
+      {isLoading && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="h-72 rounded-2xl bg-muted animate-pulse" />
+          ))}
+        </div>
+      )}
 
-      {/* Grid */}
-      {filtered.length === 0 ? (
+      {/* Error state */}
+      {isError && !isLoading && (
         <div className="text-center py-16">
           <Languages className="w-14 h-14 text-muted-foreground/20 mx-auto mb-4" />
-          <p className="text-muted-foreground">No partners match your filters. Try adjusting them.</p>
-          <Button variant="outline" className="mt-4 rounded-full" onClick={clearFilters}>
-            Clear Filters
+          <p className="text-muted-foreground mb-4">Couldn't load partners right now.</p>
+          <Button variant="outline" className="rounded-full gap-2" onClick={() => refetch()}>
+            <RefreshCw className="w-4 h-4" /> Try again
           </Button>
         </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <AnimatePresence>
-            {filtered.map((u, i) => (
-              <motion.div
-                key={u.id}
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
-                transition={{ delay: i * 0.04 }}
-              >
-                <LanguageUserCard person={u} />
-              </motion.div>
-            ))}
-          </AnimatePresence>
-        </div>
+      )}
+
+      {/* Results */}
+      {!isLoading && !isError && (
+        <>
+          {/* Results count */}
+          <p className="text-sm text-muted-foreground mb-4">
+            {filtered.length} partner{filtered.length !== 1 ? "s" : ""} found
+            {allUsers.length > 0 && filters.language === "all" && filters.city === "all" &&
+              filters.interest === "all" && filters.meeting_type === "all" &&
+              filters.ageMin === 0 && filters.ageMax === 3 &&
+              <span className="ml-1 text-muted-foreground/60">· {allUsers.length} members total</span>
+            }
+          </p>
+
+          {/* Empty state */}
+          {filtered.length === 0 ? (
+            <div className="text-center py-16">
+              <Languages className="w-14 h-14 text-muted-foreground/20 mx-auto mb-4" />
+              {allUsers.length === 0 ? (
+                <>
+                  <p className="text-muted-foreground font-medium">No members have set up their language profile yet.</p>
+                  <p className="text-sm text-muted-foreground mt-1">Be the first — update your profile to appear here.</p>
+                  <Button variant="outline" className="mt-4 rounded-full" onClick={() => window.location.href = "/profile"}>
+                    Complete my profile
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <p className="text-muted-foreground">No partners match your filters.</p>
+                  <Button variant="outline" className="mt-4 rounded-full" onClick={clearFilters}>
+                    Clear Filters
+                  </Button>
+                </>
+              )}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <AnimatePresence>
+                {filtered.map((u, i) => (
+                  <motion.div
+                    key={u.id}
+                    initial={{ opacity: 0, y: 16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ delay: Math.min(i * 0.04, 0.3) }}
+                  >
+                    <LanguageUserCard person={u} />
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
