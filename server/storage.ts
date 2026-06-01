@@ -33,6 +33,7 @@ async function notifyNewEvent(event: EventWithTickets): Promise<void> {
         date:         event.date,
         venueCity:    event.venueCity,
         venueAddress: event.venueAddress,
+        locationName: event.locationName ?? undefined,
         description:  event.description,
         imageUrl:     event.imageUrl ?? undefined,
         organizerId:  event.organizerId ?? undefined,

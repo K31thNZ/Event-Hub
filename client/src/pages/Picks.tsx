@@ -130,7 +130,7 @@ export default function Picks() {
                     </span>
                     <span className="flex items-center gap-1.5">
                       <MapPin className="w-4 h-4 text-primary/70" />
-                      {event.venueAddress}, {event.venueCity}
+                      {event.locationName || event.venueAddress}, {event.venueCity}
                     </span>
                   </div>
 

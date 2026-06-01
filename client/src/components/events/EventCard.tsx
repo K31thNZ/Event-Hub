@@ -112,7 +112,7 @@ export function EventCard({
           <div className="flex items-center text-muted-foreground text-sm mb-4">
             <MapPin className="w-4 h-4 mr-1 flex-shrink-0" />
             <span className="truncate">
-              {event.venueCity} • {event.venueAddress}
+              {event.venueCity}{(event.locationName || event.venueAddress) ? ` • ${event.locationName || event.venueAddress}` : ""}
             </span>
           </div>
 

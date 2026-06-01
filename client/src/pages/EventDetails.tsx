@@ -173,7 +173,7 @@ export default function EventDetails() {
                     <MapPin className="w-4 h-4 text-primary" />
                   </div>
                   <div>
-                    <p className="font-semibold text-foreground">{event.venueAddress}</p>
+                    <p className="font-semibold text-foreground">{event.locationName || event.venueAddress}</p>
                     <p className="text-sm">{event.venueCity}</p>
                   </div>
                 </div>
@@ -217,7 +217,7 @@ export default function EventDetails() {
                   <div className="flex items-start gap-3">
                     <MapPin className="w-4 h-4 text-primary mt-0.5 shrink-0" />
                     <div>
-                      <p className="font-semibold text-foreground">{event.venueAddress}</p>
+                      <p className="font-semibold text-foreground">{event.locationName || event.venueAddress}</p>
                       <p>{event.venueCity}</p>
                     </div>
                   </div>
