@@ -1,9 +1,9 @@
-import { useParams, useLocation } from "wouter";
+import { useParams, useLocation, Link } from "wouter";
 import { useEvent } from "@/hooks/use-events";
 import { useCreateOrder } from "@/hooks/use-orders";
 import { useAuth } from "@/hooks/use-auth";
 import { format } from "date-fns";
-import { Calendar, Clock, MapPin, Ticket, Plus, Minus, ArrowRight, CheckCircle2, Timer } from "lucide-react";
+import { Calendar, Clock, MapPin, Map, Ticket, Plus, Minus, ArrowRight, CheckCircle2, Timer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -172,9 +172,17 @@ export default function EventDetails() {
                   <div className="w-10 h-10 rounded-full bg-primary/5 flex items-center justify-center">
                     <MapPin className="w-4 h-4 text-primary" />
                   </div>
-                  <div>
+                  <div className="flex-1">
                     <p className="font-semibold text-foreground">{event.locationName || event.venueAddress}</p>
                     <p className="text-sm">{event.venueCity}</p>
+                    {(event as any).lat && (event as any).lng && (
+                      <Link href={`/live-map?eventId=${event.id}`}>
+                        <button className="mt-0.5 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
+                          <Map className="w-3.5 h-3.5" />
+                          Show on map
+                        </button>
+                      </Link>
+                    )}
                   </div>
                 </div>
               </div>
@@ -219,6 +227,14 @@ export default function EventDetails() {
                     <div>
                       <p className="font-semibold text-foreground">{event.locationName || event.venueAddress}</p>
                       <p>{event.venueCity}</p>
+                      {(event as any).lat && (event as any).lng && (
+                        <Link href={`/live-map?eventId=${event.id}`}>
+                          <button className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
+                            <Map className="w-3.5 h-3.5" />
+                            Show on map
+                          </button>
+                        </Link>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-start gap-3">

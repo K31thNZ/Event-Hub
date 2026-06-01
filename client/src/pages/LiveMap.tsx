@@ -3,7 +3,7 @@ import { useEvents } from "@/hooks/use-events";
 import { useSparks, type Spark } from "@/hooks/use-sparks";
 import { type EventWithTickets } from "@shared/schema";
 import { format, addDays, isPast } from "date-fns";
-import { Link } from "wouter";
+import { Link, useSearch } from "wouter";
 import {
   MapPin, ArrowLeft, Ticket, Filter, X, Wifi,
   ChevronLeft, ChevronRight, Zap, Clock, Users,
@@ -91,6 +91,14 @@ export default function LiveMap() {
 
   // Time filter (default = this whole week)
   const [timeFilter, setTimeFilter] = useState<TimeFilter>("week");
+
+  // Focus a specific event on load via ?eventId=X in the URL
+  const searchStr = useSearch();
+  const focusEventId = useMemo(() => {
+    const p = new URLSearchParams(searchStr);
+    const v = p.get("eventId");
+    return v ? Number(v) : null;
+  }, [searchStr]);
   // Week offset for manual shift when timeFilter === "week" (0 = current week)
   const [weekOffset, setWeekOffset] = useState(0);
 
@@ -142,6 +150,19 @@ export default function LiveMap() {
   const usedCategories = [
     ...new Set(windowedEvents.map(e => e.category).filter(Boolean)),
   ] as string[];
+
+  // ── Auto-focus event from URL param ─────────────────────────────────────
+  useEffect(() => {
+    if (!mapRef.current || !focusEventId || !allEvents) return;
+    const target = (allEvents as any[]).find((e: any) => e.id === focusEventId);
+    if (!target) return;
+    let lat = Number(target.lat);
+    let lng = Number(target.lng);
+    if (!lat || !lng) return;
+    if (Math.abs(lat) > 90 && Math.abs(lng) <= 90) [lat, lng] = [lng, lat];
+    mapRef.current.setCenter([lat, lng], 16, { duration: 500 });
+    setSelected({ kind: "event", data: target as EventWithTickets });
+  }, [focusEventId, allEvents, mapRef.current]);
 
   // ── Spark filtering ────────────────────────────────────────────────────────
 

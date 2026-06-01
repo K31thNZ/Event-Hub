@@ -139,6 +139,7 @@ export class DatabaseStorage implements IStorage {
         date:         new Date(eventData.date),
         venueAddress: eventData.venueAddress,
         venueCity:    eventData.venueCity,
+        locationName: eventData.locationName ?? null,
         lat:          eventData.lat ?? null,
         lng:          eventData.lng ?? null,
         imageUrl:     eventData.imageUrl ?? null,
