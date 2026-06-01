@@ -389,6 +389,49 @@ export async function registerRoutes(
     }
   });
 
+
+  // ── Resend event notification ──────────────────────────────────────────────
+  app.post("/api/events/:id/resend-notification", requireAuth, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid event ID" });
+      const event = await storage.getEvent(id);
+      if (!event) return res.status(404).json({ message: "Event not found" });
+      const isOrganizer = event.organizerId === Number(req.user.id);
+      const isAdmin = req.user.role === "admin";
+      if (!isOrganizer && !isAdmin) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+      const authUrl = process.env.AUTH_SERVICE_URL ?? "https://auth.expatevents.org";
+      const secret  = process.env.SERVICE_SECRET;
+      const notifyRes = await fetch(`${authUrl}/api/notify/event`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-service-secret": secret ?? "" },
+        body: JSON.stringify({
+          id:           event.id,
+          title:        event.title,
+          category:     event.category,
+          date:         event.date,
+          venueCity:    event.venueCity,
+          venueAddress: event.venueAddress,
+          locationName: event.locationName ?? undefined,
+          description:  event.description,
+          imageUrl:     event.imageUrl ?? undefined,
+          organizerId:  event.organizerId ?? undefined,
+        }),
+      });
+      if (!notifyRes.ok) {
+        const body = await notifyRes.text();
+        return res.status(502).json({ message: `Notification service error: ${body}` });
+      }
+      const data = await notifyRes.json();
+      res.json({ ok: true, sent: data.sent, inApp: data.inApp });
+    } catch (err: any) {
+      console.error("[POST /api/events/:id/resend-notification]", err);
+      res.status(500).json({ message: err.message ?? "Failed to resend notification" });
+    }
+  });
+
   // ── Orders ─────────────────────────────────────────────────────────
   app.get(api.orders.myOrders.path, requireAuth, async (req: any, res) => {
     try {

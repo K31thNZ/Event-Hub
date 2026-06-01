@@ -25,12 +25,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   Ticket, CalendarDays, PlusCircle, Pencil, Trash2, Plus, Eye, EyeOff,
   ShieldCheck, Sparkles, UsersRound, KeyRound, Search, ChevronDown, Check,
-  Archive, Users, CalendarCheck, LayoutGrid, RefreshCw, Zap,
+  Archive, Users, CalendarCheck, LayoutGrid, RefreshCw, Zap, Upload, X, MapPin, Send,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient as qc } from "@/lib/queryClient";
 import { useSparks } from "@/hooks/use-sparks";
 import type { Spark } from "@/hooks/use-sparks";
+import { MapLibreLocationPicker } from "@/components/ui/MapLibreLocationPicker";
 
 const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? "https://auth.expatevents.org";
 
@@ -45,6 +46,16 @@ const ROLE_BADGE: Record<Role, { label: string; className: string }> = {
   admin:   { label: "Admin",   className: "bg-red-100    text-red-800    dark:bg-red-900/40   dark:text-red-200" },
 };
 
+// ── Image upload helper (shared with edit) ────────────────────────────────────
+async function uploadEventImage(file: File): Promise<string> {
+  const fd = new FormData();
+  fd.append("file", file);
+  const res = await fetch("/api/upload/event-image", { method: "POST", body: fd, credentials: "include" });
+  if (!res.ok) throw new Error("Upload failed");
+  const { url } = await res.json();
+  return url;
+}
+
 // ── Edit event sheet ──────────────────────────────────────────────────────────
 
 const editEventSchema = z.object({
@@ -55,7 +66,10 @@ const editEventSchema = z.object({
   date:         z.string().min(1),
   venueAddress: z.string().min(3),
   venueCity:    z.string().min(2),
-  imageUrl:     z.string().url().optional().or(z.literal("")),
+  locationName: z.string().optional().nullable(),
+  lat:          z.number().optional().nullable(),
+  lng:          z.number().optional().nullable(),
+  imageUrl:     z.string().optional().nullable(),
   published:    z.boolean(),
   ticketTypes:  z.array(z.object({
     name: z.string().min(1), price: z.coerce.number().min(0),
@@ -69,6 +83,10 @@ function EditEventSheet({ event, open, onClose, adminMode = false }: {
 }) {
   const updateEvent = useUpdateEvent();
   const { toast } = useToast();
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [showMap, setShowMap] = useState(false);
+
   const form = useForm<EditFormValues>({
     resolver: zodResolver(editEventSchema),
     values: event ? {
@@ -76,7 +94,10 @@ function EditEventSheet({ event, open, onClose, adminMode = false }: {
       category2: event.category2 ?? null,
       date: format(new Date(event.date), "yyyy-MM-dd'T'HH:mm"),
       venueAddress: event.venueAddress, venueCity: event.venueCity,
-      imageUrl: event.imageUrl ?? "", published: event.published,
+      locationName: (event as any).locationName ?? null,
+      lat: (event as any).lat ?? null,
+      lng: (event as any).lng ?? null,
+      imageUrl: (event as any).imageUrl ?? null, published: event.published,
       ticketTypes: event.ticketTypes.map(t => ({
         name: t.name, price: t.price, quantity: t.quantity, maxPerOrder: t.maxPerOrder,
       })),
@@ -84,6 +105,21 @@ function EditEventSheet({ event, open, onClose, adminMode = false }: {
   });
   const { fields, append, remove } = useFieldArray({ control: form.control, name: "ticketTypes" });
   const watchedCategory = useWatch({ control: form.control, name: "category" });
+  const watchedImageUrl = form.watch("imageUrl");
+  const watchedLat = form.watch("lat");
+  const watchedLng = form.watch("lng");
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { setUploadError("Image must be under 5 MB"); return; }
+    setUploading(true); setUploadError(null);
+    try {
+      const url = await uploadEventImage(file);
+      form.setValue("imageUrl", url, { shouldDirty: true });
+    } catch { setUploadError("Upload failed. Try again."); }
+    finally { setUploading(false); }
+  };
 
   const onSubmit = async (data: EditFormValues) => {
     if (!event) return;
@@ -94,7 +130,7 @@ function EditEventSheet({ event, open, onClose, adminMode = false }: {
       } else {
         await updateEvent.mutateAsync({ id: event.id, data });
       }
-      toast({ title: "Event updated" });
+      toast({ title: "Event updated ✓" });
       onClose();
     } catch (err: any) {
       toast({ title: "Failed", description: err.message, variant: "destructive" });
@@ -109,8 +145,12 @@ function EditEventSheet({ event, open, onClose, adminMode = false }: {
           <SheetDescription>Make changes and save to update the event.</SheetDescription>
         </SheetHeader>
         <form onSubmit={form.handleSubmit(onSubmit as any)} className="space-y-5">
+
+          {/* ── Title & Description ── */}
           <div className="space-y-1.5"><Label>Title</Label><Input {...form.register("title")} className="h-11 rounded-xl" /></div>
           <div className="space-y-1.5"><Label>Description</Label><Textarea {...form.register("description")} className="rounded-xl min-h-[100px]" /></div>
+
+          {/* ── Category & Date ── */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label>Category</Label>
@@ -125,6 +165,8 @@ function EditEventSheet({ event, open, onClose, adminMode = false }: {
             </div>
             <div className="space-y-1.5"><Label>Date & Time</Label><Input {...form.register("date")} type="datetime-local" className="h-11 rounded-xl" /></div>
           </div>
+
+          {/* ── Second Category ── */}
           {watchedCategory && (
             <div className="space-y-1.5">
               <Label>Second Category <span className="text-muted-foreground font-normal text-xs">(optional)</span></Label>
@@ -139,11 +181,87 @@ function EditEventSheet({ event, open, onClose, adminMode = false }: {
               )} />
             </div>
           )}
+
+          {/* ── Venue Name ── */}
+          <div className="space-y-1.5">
+            <Label>Venue / Location Name <span className="text-muted-foreground font-normal text-xs">(optional — shown instead of address)</span></Label>
+            <Input {...form.register("locationName")} className="h-11 rounded-xl" placeholder="e.g. Artplay, Bunker 42, The Hat Bar" />
+          </div>
+
+          {/* ── Address & City ── */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5"><Label>Venue Address</Label><Input {...form.register("venueAddress")} className="h-11 rounded-xl" /></div>
             <div className="space-y-1.5"><Label>City</Label><Input {...form.register("venueCity")} className="h-11 rounded-xl" /></div>
           </div>
-          <div className="space-y-1.5"><Label>Cover Image URL</Label><Input {...form.register("imageUrl")} className="h-11 rounded-xl" placeholder="https://…" /></div>
+
+          {/* ── Map coordinates picker ── */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label>Map Pin <span className="text-muted-foreground font-normal text-xs">(for the Live Map)</span></Label>
+              <Button type="button" variant="outline" size="sm" className="rounded-full gap-1.5 text-xs" onClick={() => setShowMap(v => !v)}>
+                <MapPin className="w-3.5 h-3.5" />
+                {showMap ? "Hide map" : (watchedLat && watchedLng ? "Edit pin" : "Set pin")}
+              </Button>
+            </div>
+            {watchedLat && watchedLng && !showMap && (
+              <p className="text-xs text-muted-foreground">📍 {Number(watchedLat).toFixed(5)}, {Number(watchedLng).toFixed(5)}</p>
+            )}
+            {showMap && (
+              <div className="rounded-xl overflow-hidden border border-border h-64">
+                <MapLibreLocationPicker
+                  address={form.getValues("venueAddress")}
+                  city={form.getValues("venueCity")}
+                  lat={watchedLat ?? undefined}
+                  lng={watchedLng ?? undefined}
+                  onLocationPicked={loc => {
+                    form.setValue("lat", loc.lat, { shouldDirty: true });
+                    form.setValue("lng", loc.lng, { shouldDirty: true });
+                    if (!form.getValues("venueAddress") || form.getValues("venueAddress") === "") {
+                      form.setValue("venueAddress", loc.address, { shouldDirty: true });
+                    }
+                    if (!form.getValues("venueCity") || form.getValues("venueCity") === "") {
+                      form.setValue("venueCity", loc.city, { shouldDirty: true });
+                    }
+                  }}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* ── Cover Image ── */}
+          <div className="space-y-3">
+            <Label>Cover Image</Label>
+            {watchedImageUrl ? (
+              <div className="relative rounded-xl overflow-hidden border border-border aspect-video w-full bg-muted">
+                <img src={watchedImageUrl} alt="Cover" className="w-full h-full object-cover" />
+                <button
+                  type="button"
+                  onClick={() => form.setValue("imageUrl", null, { shouldDirty: true })}
+                  className="absolute top-2 right-2 bg-black/60 text-white p-1.5 rounded-full hover:bg-black/80 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              <label className="flex flex-col items-center justify-center w-full h-36 rounded-xl border-2 border-dashed border-border bg-muted/40 cursor-pointer hover:bg-muted/60 transition-colors group">
+                <div className="flex flex-col items-center justify-center gap-1">
+                  {uploading ? (
+                    <div className="animate-spin w-7 h-7 border-4 border-primary border-t-transparent rounded-full" />
+                  ) : (
+                    <>
+                      <Upload className="w-8 h-8 text-muted-foreground group-hover:text-primary transition-colors" />
+                      <p className="text-sm text-muted-foreground"><span className="font-semibold">Click to upload</span> or drag & drop</p>
+                      <p className="text-xs text-muted-foreground">PNG, JPG, WEBP up to 5 MB</p>
+                    </>
+                  )}
+                </div>
+                <input type="file" className="hidden" accept="image/jpeg,image/png,image/webp,image/gif" onChange={handleImageUpload} disabled={uploading} />
+              </label>
+            )}
+            {uploadError && <p className="text-destructive text-xs">{uploadError}</p>}
+          </div>
+
+          {/* ── Visibility ── */}
           <div className="space-y-1.5">
             <Label>Visibility</Label>
             <Controller control={form.control} name="published" render={({ field }) => (
@@ -153,6 +271,8 @@ function EditEventSheet({ event, open, onClose, adminMode = false }: {
               </div>
             )} />
           </div>
+
+          {/* ── Ticket Types ── */}
           <div className="space-y-3">
             <div className="flex justify-between items-center">
               <Label>Ticket Types</Label>
@@ -174,6 +294,8 @@ function EditEventSheet({ event, open, onClose, adminMode = false }: {
               </div>
             ))}
           </div>
+
+          {/* ── Actions ── */}
           <div className="flex gap-3 pt-2">
             <Button type="button" variant="outline" className="flex-1 rounded-xl" onClick={onClose}>Cancel</Button>
             <Button type="submit" disabled={updateEvent.isPending} className="flex-1 rounded-xl">
@@ -189,6 +311,20 @@ function EditEventSheet({ event, open, onClose, adminMode = false }: {
 // ── Event row ─────────────────────────────────────────────────────────────────
 
 function EventRow({ event, onEdit, onDelete }: { event: EventWithTickets; onEdit: (e: EventWithTickets) => void; onDelete: (e: EventWithTickets) => void }) {
+  const { toast } = useToast();
+  const [resending, setResending] = useState(false);
+
+  const handleResend = async () => {
+    setResending(true);
+    try {
+      const res = await apiRequest("POST", `/api/events/${event.id}/resend-notification`);
+      const data = await res.json();
+      toast({ title: "Notification sent", description: `Reached ${data.sent ?? 0} Telegram user${data.sent === 1 ? "" : "s"}.` });
+    } catch (err: any) {
+      toast({ title: "Failed to resend", description: err.message, variant: "destructive" });
+    } finally { setResending(false); }
+  };
+
   return (
     <div className="flex items-center gap-4 bg-card border border-border rounded-2xl px-5 py-4 hover:shadow-md transition-shadow">
       {event.imageUrl && <img src={event.imageUrl} alt={event.title} className="hidden sm:block w-16 h-16 rounded-xl object-cover shrink-0" />}
@@ -199,7 +335,11 @@ function EventRow({ event, onEdit, onDelete }: { event: EventWithTickets; onEdit
         </div>
         <p className="text-sm text-muted-foreground mt-0.5">{format(new Date(event.date), "MMM d, yyyy · h:mm a")} · {event.venueCity}</p>
       </div>
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+        <Button variant="outline" size="sm" onClick={handleResend} disabled={resending} className="rounded-lg gap-1.5 text-xs" title="Resend Telegram notification">
+          <Send className="w-3.5 h-3.5" />
+          {resending ? "Sending…" : "Notify"}
+        </Button>
         <Button variant="outline" size="sm" onClick={() => onEdit(event)} className="rounded-lg gap-1.5"><Pencil className="w-3.5 h-3.5" /> Edit</Button>
         <Button variant="outline" size="sm" onClick={() => onDelete(event)} className="rounded-lg gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/10"><Trash2 className="w-3.5 h-3.5" /> Delete</Button>
       </div>
