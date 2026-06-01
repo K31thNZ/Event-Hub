@@ -199,7 +199,7 @@ const KeithCV: React.FC = () => {
           }}>
             Native English speaker (New Zealand) with 10+ years in Moscow delivering
             engaging, results-driven English programmes. Specialist in game-based and
-            experiential learning for adult professionals — combining language fluency,
+            experiential learning for adult professionals. I combinine language fluency,
             soft skills development, and team dynamics in a single format.
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: isMobile ? 10 : 18 }}>
@@ -207,7 +207,7 @@ const KeithCV: React.FC = () => {
               { icon: "📞", text: "+7 985 255-44-70" },
               { icon: "✉️", text: "storeykeith@gmail.com" },
               { icon: "📍", text: "Moscow (Akademicheskaya)" },
-              { icon: "📱", text: "@keith_nz" },
+              { icon: "📱", text: "Telegram @keith_nz" },
             ].map(({ icon, text }) => (
               <div key={text} style={{
                 display: "flex",
@@ -248,11 +248,11 @@ const KeithCV: React.FC = () => {
                 lineHeight: 1.6,
               }}>
                 I design and facilitate <strong>game-based English training sessions</strong> for
-                corporate teams — using social deduction games, negotiation scenarios, and
+                corporate teams, using social deduction games, negotiation scenarios, and
                 structured speaking formats to develop real communication skills. Every session
                 includes a debrief that connects gameplay to workplace situations: negotiation,
                 reading people, decision-making under pressure, and presenting ideas clearly. I
-                deliver measurable soft skill outcomes alongside English fluency — with written
+                deliver measurable soft skill outcomes alongside English fluency, with written
                 progress reports for HR and L&D teams.
               </div>
             </div>
@@ -267,9 +267,9 @@ const KeithCV: React.FC = () => {
                 company="Independent / Various venues, Moscow"
                 bullets={[
                   <>Designed and hosted <strong>weekly topical speaking clubs</strong> for adult professionals (15–20 participants per session)</>,
-                  <>Built structured discussion formats around specific vocabulary sets and real-world business scenarios — adapted from the Big Wig Language Centre model</>,
+                  <>Built structured discussion formats around specific vocabulary sets and real-world business scenarios, adapted from proven conversational models</>,
                   <>Strong <strong>return attendance rate</strong>: majority of participants were regulars, demonstrating sustained engagement</>,
-                  <>Facilitated <strong>Mafia and Blood on the Clocktower</strong> events — social deduction games requiring active English use, persuasion, and reading body language</>,
+                  <>Facilitated <strong>Mafia and Blood on the Clocktower</strong> events, social deduction games requiring active English use, persuasion, and reading body language</>,
                   <>Managed group dynamics, kept sessions in English, and ran post-game debriefs connecting gameplay to communication skills</>,
                 ]}
               />
@@ -292,7 +292,7 @@ const KeithCV: React.FC = () => {
                 bullets={[
                   <>Organised and led <strong>English-language immersive quest events</strong> for adult groups</>,
                   <>Managed logistics, participant briefings, and post-event debriefs entirely in English</>,
-                  <>Developed facilitation skills for high-energy, time-pressured group scenarios — directly applicable to corporate team building formats</>,
+                  <>Developed facilitation skills for high-energy, time-pressured group scenarios, directly applicable to corporate team building formats</>,
                 ]}
               />
 
@@ -313,7 +313,7 @@ const KeithCV: React.FC = () => {
                 company="Park Kultury Nursery / Sunschool / Luzhki / Win Win Kids / Discovery"
                 bullets={[
                   <>10 years delivering structured English language programmes across multiple institutions</>,
-                  <>Programme coordination at Luzhki — scheduling, curriculum design, staff communication</>,
+                  <>Programme coordination at Luzhki, scheduling, curriculum design, staff communication</>,
                   <>Consistent use of game-based, activity-led learning to drive engagement and retention</>,
                 ]}
               />
@@ -382,4 +382,4 @@ const KeithCV: React.FC = () => {
   );
 };
 
-export default KeithCV;
+export default Keith;
