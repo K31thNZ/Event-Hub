@@ -5,6 +5,7 @@ import { z } from "zod";
 import { useQuery } from "@tanstack/react-query";
 import { useCreateEvent } from "@/hooks/use-events";
 import { useAuth } from "@/hooks/use-auth";
+import { localToUtc } from "@/lib/date-utils";
 import { useLocation, useParams } from "wouter";
 import { getQueryFn } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
@@ -522,7 +523,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
     if (!user) return;
     setSubmitError(null);
     try {
-      const utcDate = moscowToUtc(data.dateStr, data.time);
+      const utcDate = localToUtc(data.dateStr, data.time, user?.city ?? data.venueCity ?? "Moscow");
       const result  = await createEvent.mutateAsync({
         ...data,
         date:            utcDate,

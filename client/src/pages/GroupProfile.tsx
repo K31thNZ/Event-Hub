@@ -2,7 +2,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, Link } from "wouter";
 import { getQueryFn, apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
-import { format } from "date-fns";
+import { formatEventCompact } from "@/lib/date-utils";
 import { motion } from "framer-motion";
 import { Users, Lock, Globe, Calendar, MapPin, Settings, ArrowRight, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -229,7 +229,7 @@ export default function GroupProfile() {
                           <div className="flex flex-wrap gap-3 mt-2 text-sm text-muted-foreground">
                             <span className="flex items-center gap-1">
                               <Calendar className="w-3.5 h-3.5 text-primary/70" />
-                              {format(new Date(event.date), "EEE, MMM d · h:mm a")}
+                              {formatEventCompact(event.date, event.venueCity)}
                             </span>
                             <span className="flex items-center gap-1">
                               <MapPin className="w-3.5 h-3.5 text-primary/70" />

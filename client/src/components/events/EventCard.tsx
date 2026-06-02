@@ -1,6 +1,6 @@
 import { Link } from "wouter";
 import { type EventWithTickets } from "@shared/schema";
-import { format } from "date-fns";
+import { formatEventDay, formatEventMonth, formatEventDateTime } from "@/lib/date-utils";
 import { MapPin, Ticket, Trash2, Users } from "lucide-react";
 import { motion } from "framer-motion";
 import { useAuth } from "@/hooks/use-auth";
@@ -77,10 +77,10 @@ export function EventCard({
           {/* Date Badge */}
           <div className="absolute top-4 left-4 bg-background/95 backdrop-blur-md px-3 py-2 rounded-xl text-center shadow-lg border border-white/10">
             <div className="text-primary font-display font-bold text-xl leading-none">
-              {format(new Date(event.date), "dd")}
+              {formatEventDay(event.date, user?.city ?? event.venueCity)}
             </div>
             <div className="text-xs uppercase font-bold tracking-wider text-muted-foreground mt-1">
-              {format(new Date(event.date), "MMM")}
+              {formatEventMonth(event.date, user?.city ?? event.venueCity)}
             </div>
           </div>
 

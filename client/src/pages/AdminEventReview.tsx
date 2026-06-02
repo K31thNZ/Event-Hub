@@ -19,6 +19,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Link } from "wouter";
 import { format, formatDistanceToNow } from "date-fns";
+import { formatEventDate, formatEventTime, formatEventDateTime } from "@/lib/date-utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { EVENT_CATEGORIES, EVENT_CATEGORY_VALUES } from "@shared/categories";
 import { useAuth } from "@/hooks/use-auth";

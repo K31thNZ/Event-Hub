@@ -20,6 +20,8 @@ export interface User {
   yandexId?: string | null;
   // Convenience flag — true when user has the admin role
   isAdmin?: boolean;
+  // Profile city — used for timezone display
+  city?: string | null;
 }
 
 async function fetchUser(): Promise<User | null> {

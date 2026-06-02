@@ -76,3 +76,55 @@ export const EVENT_CATEGORIES = [
   { value: "volunteering", label: "Volunteering", icon: "🙌" },
   { value: "other", label: "Other", icon: "📌" },
 ];
+
+// City → IANA timezone map (covers all CITIES entries + common event cities)
+export const CITY_TIMEZONES: Record<string, string> = {
+  "Moscow":       "Europe/Moscow",
+  "London":       "Europe/London",
+  "New York":     "America/New_York",
+  "Singapore":    "Asia/Singapore",
+  "Dubai":        "Asia/Dubai",
+  "Sydney":       "Australia/Sydney",
+  "Berlin":       "Europe/Berlin",
+  "Paris":        "Europe/Paris",
+  "Tokyo":        "Asia/Tokyo",
+  "Shanghai":     "Asia/Shanghai",
+  // extras that may appear in event venueCity
+  "Saint Petersburg": "Europe/Moscow",
+  "St Petersburg":    "Europe/Moscow",
+  "Novosibirsk":      "Asia/Novosibirsk",
+  "Yekaterinburg":    "Asia/Yekaterinburg",
+  "Amsterdam":        "Europe/Amsterdam",
+  "Rome":             "Europe/Rome",
+  "Madrid":           "Europe/Madrid",
+  "Istanbul":         "Europe/Istanbul",
+  "Bangkok":          "Asia/Bangkok",
+  "Hong Kong":        "Asia/Hong_Kong",
+  "Seoul":            "Asia/Seoul",
+  "Mumbai":           "Asia/Kolkata",
+  "Delhi":            "Asia/Kolkata",
+  "Riyadh":           "Asia/Riyadh",
+  "Doha":             "Asia/Qatar",
+  "Cairo":            "Africa/Cairo",
+  "Nairobi":          "Africa/Nairobi",
+  "Lagos":            "Africa/Lagos",
+  "São Paulo":        "America/Sao_Paulo",
+  "Toronto":          "America/Toronto",
+  "Los Angeles":      "America/Los_Angeles",
+  "Chicago":          "America/Chicago",
+  "Mexico City":      "America/Mexico_City",
+  "Buenos Aires":     "America/Argentina/Buenos_Aires",
+};
+
+/**
+ * Returns the IANA timezone string for a given city name.
+ * Falls back to the event's venueCity, then to UTC.
+ */
+export function cityToTimezone(city?: string | null): string {
+  if (!city) return "UTC";
+  // Case-insensitive lookup
+  const key = Object.keys(CITY_TIMEZONES).find(
+    k => k.toLowerCase() === city.toLowerCase()
+  );
+  return key ? CITY_TIMEZONES[key] : "UTC";
+}
