@@ -31,7 +31,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient as qc } from "@/lib/queryClient";
 import { useSparks } from "@/hooks/use-sparks";
 import type { Spark } from "@/hooks/use-sparks";
-import { MapLibreLocationPicker } from "@/components/ui/MapLibreLocationPicker";
+import { YandexMapPicker } from "@/components/ui/YandexMapPicker";
 
 const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? "https://auth.expatevents.org";
 
@@ -208,7 +208,7 @@ function EditEventSheet({ event, open, onClose, adminMode = false }: {
             )}
             {showMap && (
               <div className="rounded-xl overflow-hidden border border-border h-64">
-                <MapLibreLocationPicker
+                <YandexMapPicker
                   address={form.getValues("venueAddress")}
                   city={form.getValues("venueCity")}
                   lat={watchedLat ?? undefined}
@@ -216,12 +216,9 @@ function EditEventSheet({ event, open, onClose, adminMode = false }: {
                   onLocationPicked={loc => {
                     form.setValue("lat", loc.lat, { shouldDirty: true });
                     form.setValue("lng", loc.lng, { shouldDirty: true });
-                    if (!form.getValues("venueAddress") || form.getValues("venueAddress") === "") {
-                      form.setValue("venueAddress", loc.address, { shouldDirty: true });
-                    }
-                    if (!form.getValues("venueCity") || form.getValues("venueCity") === "") {
-                      form.setValue("venueCity", loc.city, { shouldDirty: true });
-                    }
+                    if (loc.address) form.setValue("venueAddress", loc.address, { shouldDirty: true });
+                    if (loc.city)    form.setValue("venueCity", loc.city,    { shouldDirty: true });
+                    if (loc.locationName) form.setValue("locationName", loc.locationName, { shouldDirty: true });
                   }}
                 />
               </div>
