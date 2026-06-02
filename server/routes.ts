@@ -36,7 +36,7 @@ export async function registerRoutes(
   registerRecommendationRoutes(app);
 
 
-  // ── Sitemap ────────────────────────────────────────────────────────────
+  // ── Sitemap ──────────────────────────────────────────────────────────
   // Server-rendered XML sitemap — covers all published events and groups.
   // Bots and Google see real URLs; regenerated on every request (cheap query).
   const SITE_URL = (process.env.APP_URL ?? "https://expatevents.org").replace(/\/$/, "");
@@ -232,9 +232,9 @@ export async function registerRoutes(
 
   // ── Current user admin status (derived from meh-auth role) ───────
   // NOTE: Admin status comes from req.user.role, NOT a local DB table.
-  app.get("/api/me", requireAuth, async (req: any, res) => {
+  app.get("/api/me", requireAuth, async (req, res) => {
     try {
-      res.json({ isAdmin: req.user.role === "admin" });
+      res.json({ isAdmin: req.user?.role === "admin" });
     } catch (err) {
       console.error("[/api/me]", err);
       res.json({ isAdmin: false });
@@ -252,7 +252,7 @@ export async function registerRoutes(
   });
 
   // Proxy: generate a Telegram link token via meh-auth
-  app.post("/api/telegram/link", requireAuth, async (req: any, res) => {
+  app.post("/api/telegram/link", requireAuth, async (req, res) => {
     try {
       const response = await fetch(`${AUTH_SERVICE_URL}/api/telegram/link`, {
         method: "POST",
@@ -262,6 +262,17 @@ export async function registerRoutes(
           ...(SERVICE_SECRET ? { "x-service-secret": SERVICE_SECRET } : {}),
         },
       });
+      
+      // Check if response is successful before trying to parse JSON
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("[/api/telegram/link] Error response:", errorText);
+        return res.status(response.status).json({ 
+          message: "Failed to generate Telegram link",
+          error: errorText 
+        });
+      }
+
       const body = await response.json();
       res.status(response.status).json(body);
     } catch (err: any) {
@@ -271,7 +282,7 @@ export async function registerRoutes(
   });
 
   // Proxy: unlink Telegram via meh-auth
-  app.post("/api/telegram/unlink", requireAuth, async (req: any, res) => {
+  app.post("/api/telegram/unlink", requireAuth, async (req, res) => {
     try {
       const response = await fetch(`${AUTH_SERVICE_URL}/api/telegram/unlink`, {
         method: "POST",
@@ -281,6 +292,17 @@ export async function registerRoutes(
           ...(SERVICE_SECRET ? { "x-service-secret": SERVICE_SECRET } : {}),
         },
       });
+      
+      // Check if response is successful before trying to parse JSON
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("[/api/telegram/unlink] Error response:", errorText);
+        return res.status(response.status).json({ 
+          message: "Failed to unlink Telegram account",
+          error: errorText 
+        });
+      }
+
       const body = await response.json();
       res.status(response.status).json(body);
     } catch (err: any) {
@@ -305,9 +327,9 @@ export async function registerRoutes(
     }
   });
 
-  app.get(api.events.myEvents.path, requireAuth, async (req: any, res) => {
+  app.get(api.events.myEvents.path, requireAuth, async (req, res) => {
     try {
-      const events = await storage.getEventsByOrganizer(Number(req.user.id));
+      const events = await storage.getEventsByOrganizer(Number(req.user?.id));
       res.json(events);
     } catch (err) {
       console.error("[GET /api/events/me]", err);
@@ -328,7 +350,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post(api.events.create.path, requireAuth, async (req: any, res) => {
+  app.post(api.events.create.path, requireAuth, async (req, res) => {
     try {
       const parsed = api.events.create.input.safeParse(req.body);
       if (!parsed.success) {
@@ -338,7 +360,7 @@ export async function registerRoutes(
         });
       }
       // req.user.id is a number from meh-auth
-      const event = await storage.createEvent(Number(req.user.id), parsed.data);
+      const event = await storage.createEvent(Number(req.user?.id), parsed.data);
       res.status(201).json(event);
     } catch (err: any) {
       console.error("[POST /api/events]", err);
@@ -346,15 +368,15 @@ export async function registerRoutes(
     }
   });
 
-  app.patch(api.events.update.path, requireAuth, async (req: any, res) => {
+  app.patch(api.events.update.path, requireAuth, async (req, res) => {
     try {
       const id = parseInt(req.params.id, 10);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid event ID" });
       const existing = await storage.getEvent(id);
       if (!existing) return res.status(404).json({ message: "Event not found" });
       // Authorization: organizer or admin (role from meh-auth, no local DB lookup needed)
-      const isOrganizer = existing.organizerId === Number(req.user.id);
-      const isAdmin = req.user.role === "admin";
+      const isOrganizer = existing.organizerId === Number(req.user?.id);
+      const isAdmin = req.user?.role === "admin";
       if (!isOrganizer && !isAdmin) {
         return res.status(403).json({ message: "Not authorized to update this event" });
       }
@@ -370,14 +392,14 @@ export async function registerRoutes(
     }
   });
 
-  app.delete(api.events.delete.path, requireAuth, async (req: any, res) => {
+  app.delete(api.events.delete.path, requireAuth, async (req, res) => {
     try {
       const id = parseInt(req.params.id, 10);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid event ID" });
       const existing = await storage.getEvent(id);
       if (!existing) return res.status(404).json({ message: "Event not found" });
-      const isOrganizer = existing.organizerId === Number(req.user.id);
-      const isAdmin = req.user.role === "admin";
+      const isOrganizer = existing.organizerId === Number(req.user?.id);
+      const isAdmin = req.user?.role === "admin";
       if (!isOrganizer && !isAdmin) {
         return res.status(403).json({ message: "Not authorized to delete this event" });
       }
@@ -391,14 +413,14 @@ export async function registerRoutes(
 
 
   // ── Resend event notification ──────────────────────────────────────────────
-  app.post("/api/events/:id/resend-notification", requireAuth, async (req: any, res) => {
+  app.post("/api/events/:id/resend-notification", requireAuth, async (req, res) => {
     try {
       const id = parseInt(req.params.id, 10);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid event ID" });
       const event = await storage.getEvent(id);
       if (!event) return res.status(404).json({ message: "Event not found" });
-      const isOrganizer = event.organizerId === Number(req.user.id);
-      const isAdmin = req.user.role === "admin";
+      const isOrganizer = event.organizerId === Number(req.user?.id);
+      const isAdmin = req.user?.role === "admin";
       if (!isOrganizer && !isAdmin) {
         return res.status(403).json({ message: "Not authorized" });
       }
@@ -433,9 +455,9 @@ export async function registerRoutes(
   });
 
   // ── Orders ─────────────────────────────────────────────────────────
-  app.get(api.orders.myOrders.path, requireAuth, async (req: any, res) => {
+  app.get(api.orders.myOrders.path, requireAuth, async (req, res) => {
     try {
-      const orders = await storage.getOrdersByAttendee(Number(req.user.id));
+      const orders = await storage.getOrdersByAttendee(Number(req.user?.id));
       res.json(orders);
     } catch (err) {
       console.error("[GET /api/orders/me]", err);
@@ -443,14 +465,14 @@ export async function registerRoutes(
     }
   });
 
-  app.get(api.orders.get.path, requireAuth, async (req: any, res) => {
+  app.get(api.orders.get.path, requireAuth, async (req, res) => {
     try {
       const id = parseInt(req.params.id, 10);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid order ID" });
       const order = await storage.getOrder(id);
       if (!order) return res.status(404).json({ message: "Order not found" });
-      const isOwner = order.attendeeId === Number(req.user.id);
-      const isAdmin = req.user.role === "admin";
+      const isOwner = order.attendeeId === Number(req.user?.id);
+      const isAdmin = req.user?.role === "admin";
       if (!isOwner && !isAdmin) {
         return res.status(403).json({ message: "Not authorized to view this order" });
       }
@@ -461,7 +483,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post(api.orders.create.path, requireAuth, async (req: any, res) => {
+  app.post(api.orders.create.path, requireAuth, async (req, res) => {
     try {
       const parsed = api.orders.create.input.safeParse(req.body);
       if (!parsed.success) {
@@ -472,7 +494,7 @@ export async function registerRoutes(
       }
       const event = await storage.getEvent(parsed.data.eventId);
       if (!event) return res.status(404).json({ message: "Event not found" });
-      const order = await storage.createOrder(Number(req.user.id), parsed.data);
+      const order = await storage.createOrder(Number(req.user?.id), parsed.data);
       res.status(201).json(order);
     } catch (err: any) {
       console.error("[POST /api/orders]", err);
