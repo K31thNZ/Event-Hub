@@ -382,4 +382,4 @@ const KeithCV: React.FC = () => {
   );
 };
 
-export default Keith;
+export default KeithCV;
