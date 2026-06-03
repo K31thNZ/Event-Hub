@@ -1,5 +1,7 @@
 import { scheduleReminders } from "./reminder-scheduler";
 import express, { type Request, Response, NextFunction } from "express";
+import { db } from "./db";
+import { sql } from "drizzle-orm";
 import cors from "cors";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
@@ -72,7 +74,21 @@ app.use((req, res, next) => {
   next();
 });
 
+// ── Drop stale FK constraints on startup (idempotent) ────────────────────
+// rsvps.user_id references meh-auth IDs — no local users table exists.
+async function dropStaleConstraints() {
+  try {
+    await db.execute(
+      sql`ALTER TABLE rsvps DROP CONSTRAINT IF EXISTS rsvps_user_id_fkey`
+    );
+    console.log("[startup] rsvps_user_id_fkey dropped (or did not exist)");
+  } catch (e: any) {
+    console.warn("[startup] Could not drop stale FK:", e?.message);
+  }
+}
+
 (async () => {
+  await dropStaleConstraints();
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
