@@ -577,7 +577,7 @@ function ChangePasswordTab() {
 
 function AdminPanel() {
   const { toast } = useToast();
-  const [activeSection, setActiveSection] = useState<"users" | "events" | "groups" | "sparks">("users");
+  const [activeSection, setActiveSection] = useState<"users" | "events" | "groups" | "sparks" | "langex">("users");
   const [search, setSearch] = useState("");
 
   const { data: usersData, refetch: refetchUsers } = useQuery({
@@ -668,33 +668,66 @@ function AdminPanel() {
     } finally { setDeletingSpark(null); }
   };
 
+  // ── Language Exchange admin ───────────────────────────────────────────────
+  const MEH_AUTH_URL = import.meta.env.VITE_AUTH_URL ?? "https://auth.expatevents.org";
+
+  const { data: leUsers, refetch: refetchLeUsers } = useQuery<any[]>({
+    queryKey: ["/admin/le-users"],
+    queryFn: async () => {
+      const res = await fetch(`${MEH_AUTH_URL}/api/admin/language-exchange/users`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load LE users");
+      return res.json();
+    },
+    enabled: activeSection === "langex",
+  });
+
+  const toggleLeHidden = async (userId: number, currentlyHidden: boolean) => {
+    try {
+      const res = await fetch(`${MEH_AUTH_URL}/api/admin/language-exchange/users/${userId}/hidden`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hidden: !currentlyHidden }),
+      });
+      if (!res.ok) throw new Error("Failed to update");
+      toast({ title: currentlyHidden ? "Card visible" : "Card hidden", description: currentlyHidden ? "User is now visible in Language Exchange" : "User hidden from Language Exchange listing" });
+      refetchLeUsers();
+    } catch (err: any) {
+      toast({ title: "Failed", description: err.message, variant: "destructive" });
+    }
+  };
+
   const q = search.toLowerCase();
   const filteredUsers  = (usersData  ?? []).filter((u: any) => u.username?.toLowerCase().includes(q) || u.email?.toLowerCase().includes(q) || u.displayName?.toLowerCase().includes(q));
   const filteredEvents = (allEvents  ?? []).filter((e: any) => e.title?.toLowerCase().includes(q) || e.venueCity?.toLowerCase().includes(q));
   const filteredGroups = (allGroups  ?? []).filter((g: any) => g.name?.toLowerCase().includes(q) || g.description?.toLowerCase().includes(q));
   const filteredSparks = (adminSparks ?? []).filter((s: Spark) => s.title?.toLowerCase().includes(q) || s.activity?.toLowerCase().includes(q) || s.location?.toLowerCase().includes(q));
+  const filteredLeUsers = (leUsers ?? []).filter((u: any) => u.display_name?.toLowerCase().includes(q) || u.city?.toLowerCase().includes(q) || u.bio?.toLowerCase().includes(q) || u.native_language?.toLowerCase().includes(q));
   const sectionCounts  = {
     users: usersData?.length ?? "—",
     events: allEvents?.length ?? "—",
     groups: allGroups?.length ?? "—",
-    sparks: adminSparks?.length ?? "—"
+    sparks: adminSparks?.length ?? "—",
+    langex: leUsers?.length ?? "—",
   };
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap gap-3">
-        {(["users", "events", "groups", "sparks"] as const).map(section => {
+        {(["users", "events", "groups", "sparks", "langex"] as const).map(section => {
           const Icon = {
             users: Users,
             events: CalendarCheck,
             groups: LayoutGrid,
             sparks: Zap,
+            langex: UsersRound,
           }[section];
+          const label = { users: "Users", events: "Events", groups: "Groups", sparks: "Sparks", langex: "Lang Ex" }[section];
           return (
             <button key={section} onClick={() => { setActiveSection(section); setSearch(""); }}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-medium transition-all ${activeSection === section ? "bg-primary text-primary-foreground border-primary shadow-sm" : "border-border text-muted-foreground hover:border-primary/40 hover:text-primary"}`}>
               <Icon className="w-4 h-4" />
-              <span className="capitalize">{section}</span>
+              <span className="capitalize">{label ?? section}</span>
               <span className={`text-xs px-1.5 py-0.5 rounded-full ${activeSection === section ? "bg-white/20" : "bg-muted"}`}>{sectionCounts[section]}</span>
             </button>
           );
@@ -704,6 +737,7 @@ function AdminPanel() {
           if (activeSection === "events") refetchEvents();
           if (activeSection === "groups") refetchGroups();
           if (activeSection === "sparks") refetchSparks();
+          if (activeSection === "langex") refetchLeUsers();
         }}
           className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-3">
           <RefreshCw className="w-3.5 h-3.5" /> Refresh
@@ -873,6 +907,55 @@ function AdminPanel() {
             </AlertDialogContent>
           </AlertDialog>
         </>
+      )}
+
+      {activeSection === "langex" && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-sm text-muted-foreground">
+              Users with Language Exchange profiles · hidden cards are invisible to other members
+            </span>
+          </div>
+          {filteredLeUsers.length === 0 && (
+            <div className="text-center py-16 text-muted-foreground">No language exchange profiles found</div>
+          )}
+          {filteredLeUsers.map((u: any) => (
+            <div key={u.id} className={`flex items-center gap-4 rounded-2xl border px-5 py-3 transition-all ${u.le_hidden ? "bg-muted/40 border-border/50 opacity-60" : "bg-card border-border"}`}>
+              <Avatar className="h-10 w-10 shrink-0">
+                <AvatarImage src={u.avatar_url} />
+                <AvatarFallback className="bg-primary/10 text-primary text-sm">
+                  {(u.display_name ?? "?").substring(0, 2).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="font-medium text-sm truncate">{u.display_name}</p>
+                  {u.le_hidden && (
+                    <Badge variant="outline" className="text-xs text-orange-600 border-orange-300 bg-orange-50 dark:bg-orange-950/30">Hidden</Badge>
+                  )}
+                  {u.blocked && (
+                    <Badge variant="destructive" className="text-xs">Blocked</Badge>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground truncate">
+                  {[u.city, u.age_group, u.native_language ? `🗣 ${u.native_language}` : null].filter(Boolean).join(" · ")}
+                </p>
+                {u.bio && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1 italic">"{u.bio}"</p>}
+              </div>
+              <Button
+                variant={u.le_hidden ? "outline" : "ghost"}
+                size="sm"
+                className={`rounded-lg gap-1.5 shrink-0 ${u.le_hidden ? "border-green-400 text-green-700 hover:bg-green-50" : "text-orange-600 hover:bg-orange-50 hover:text-orange-700"}`}
+                onClick={() => toggleLeHidden(u.id, u.le_hidden)}
+              >
+                {u.le_hidden
+                  ? <><Eye className="w-3.5 h-3.5" /> Show</>
+                  : <><EyeOff className="w-3.5 h-3.5" /> Hide</>
+                }
+              </Button>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
