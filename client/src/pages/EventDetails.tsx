@@ -9,7 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -53,6 +54,69 @@ export default function EventDetails() {
   const [selectedTickets, setSelectedTickets] = useState<Record<number, number>>({});
   const [isTicketPanelOpen, setIsTicketPanelOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+
+  // ── RSVP state ──────────────────────────────────────────────────────────
+  const queryClient = useQueryClient();
+
+  const { data: rsvpData } = useQuery({
+    queryKey: ["rsvp-status", event?.id],
+    queryFn: async () => {
+      const res = await fetch(`/api/events/${event!.id}/rsvp`, { credentials: "include" });
+      if (!res.ok) return { status: null };
+      return res.json() as Promise<{ status: string | null }>;
+    },
+    enabled: !!event && isAuthenticated,
+  });
+
+  const { data: rsvpCounts } = useQuery({
+    queryKey: ["rsvp-counts", event?.id],
+    queryFn: async () => {
+      const res = await fetch(`/api/events/${event!.id}/rsvp-counts`);
+      if (!res.ok) return { going: 0, maybe: 0 };
+      return res.json() as Promise<{ going: number; maybe: number }>;
+    },
+    enabled: !!event,
+    refetchInterval: 60_000,
+  });
+
+  const rsvpMutation = useMutation({
+    mutationFn: async (status: "going" | "maybe" | "none") => {
+      const res = await fetch(`/api/events/${event!.id}/rsvp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) throw new Error("Failed to save RSVP");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(["rsvp-status", event?.id], { status: data.status });
+      queryClient.setQueryData(["rsvp-counts", event?.id], data.counts);
+    },
+  });
+
+  const handleRsvp = useCallback((status: "going" | "maybe") => {
+    if (!isAuthenticated) { login(); return; }
+    const current = rsvpData?.status;
+    // Toggle off if already selected
+    rsvpMutation.mutate(current === status ? "none" : status);
+  }, [isAuthenticated, login, rsvpData, rsvpMutation]);
+
+  const myStatus = rsvpData?.status ?? null;
+
+  // Auto-RSVP if URL contains ?rsvp=going or ?rsvp=maybe (from inline keyboard buttons)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const autoRsvp = params.get("rsvp");
+    if ((autoRsvp === "going" || autoRsvp === "maybe") && isAuthenticated && !myStatus) {
+      handleRsvp(autoRsvp as "going" | "maybe");
+      // Clean the URL param without reload
+      const url = new URL(window.location.href);
+      url.searchParams.delete("rsvp");
+      window.history.replaceState({}, "", url.toString());
+    }
+  }, [isAuthenticated, myStatus]);
 
   // ── Determine if event is already finished ─────────────────────────────
   const isPast = event ? new Date(event.date) < new Date() : false;
@@ -252,6 +316,55 @@ export default function EventDetails() {
                   </div>
                 </div>
 
+                {/* ── RSVP Buttons ─────────────────────────────── */}
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Are you going?</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => handleRsvp("going")}
+                      disabled={rsvpMutation.isPending}
+                      className={[
+                        "flex flex-col items-center gap-1.5 py-3 px-2 rounded-2xl border-2 text-sm font-semibold transition-all",
+                        myStatus === "going"
+                          ? "bg-green-500 border-green-500 text-white shadow-lg shadow-green-500/30 scale-[1.02]"
+                          : "border-border bg-background hover:border-green-400 hover:bg-green-50 dark:hover:bg-green-950/30 text-foreground",
+                      ].join(" ")}
+                    >
+                      <span className="text-2xl">✅</span>
+                      <span>{myStatus === "going" ? "You're going!" : "I'm going"}</span>
+                      {(rsvpCounts?.going ?? 0) > 0 && (
+                        <span className={["text-xs", myStatus === "going" ? "text-green-100" : "text-muted-foreground"].join(" ")}>
+                          {rsvpCounts!.going} going
+                        </span>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => handleRsvp("maybe")}
+                      disabled={rsvpMutation.isPending}
+                      className={[
+                        "flex flex-col items-center gap-1.5 py-3 px-2 rounded-2xl border-2 text-sm font-semibold transition-all",
+                        myStatus === "maybe"
+                          ? "bg-yellow-400 border-yellow-400 text-yellow-900 shadow-lg shadow-yellow-400/30 scale-[1.02]"
+                          : "border-border bg-background hover:border-yellow-400 hover:bg-yellow-50 dark:hover:bg-yellow-950/30 text-foreground",
+                      ].join(" ")}
+                    >
+                      <span className="text-2xl">🤔</span>
+                      <span>{myStatus === "maybe" ? "Interested!" : "Interested"}</span>
+                      {(rsvpCounts?.maybe ?? 0) > 0 && (
+                        <span className={["text-xs", myStatus === "maybe" ? "text-yellow-800" : "text-muted-foreground"].join(" ")}>
+                          {rsvpCounts!.maybe} interested
+                        </span>
+                      )}
+                    </button>
+                  </div>
+                  {!isAuthenticated && (
+                    <p className="text-xs text-center text-muted-foreground">
+                      <button onClick={login} className="text-primary underline underline-offset-2">Sign in</button> to RSVP
+                    </p>
+                  )}
+                </div>
+
+                {/* ── Ticket Button ─────────────────────────────── */}
                 {!isAuthenticated ? (
                   <Button
                     onClick={login}

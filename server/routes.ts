@@ -13,8 +13,8 @@ import { api, buildUrl } from "@shared/routes";
 import { requireAuth, getUser } from "./auth-client";
 import { z } from "zod";
 import { db } from "./db";
-import { sql, desc, gt } from "drizzle-orm";
-import { events, groups } from "@shared/schema";
+import { sql, desc, gt, eq, and } from "drizzle-orm";
+import { events, groups, rsvps } from "@shared/schema";
 import uploadRouter from "./routes/upload";
 
 // NOTE: No local users table in Event-Hub DB.
@@ -451,6 +451,94 @@ export async function registerRoutes(
     } catch (err: any) {
       console.error("[POST /api/events/:id/resend-notification]", err);
       res.status(500).json({ message: err.message ?? "Failed to resend notification" });
+    }
+  });
+
+
+  // ── Web RSVP (authenticated users from mini-app / website) ─────────────
+  app.post("/api/events/:id/rsvp", requireAuth, async (req, res) => {
+    try {
+      const eventId = parseInt(req.params.id, 10);
+      if (isNaN(eventId)) return res.status(400).json({ error: "Invalid event ID" });
+      const { status } = req.body;
+      if (!status || !["going", "maybe", "none"].includes(status)) {
+        return res.status(400).json({ error: "status must be going | maybe | none" });
+      }
+      const userId = Number(req.user?.id);
+      if (!userId) return res.status(401).json({ error: "Not authenticated" });
+
+      if (status === "none") {
+        await db.delete(rsvps).where(
+          and(eq(rsvps.eventId, eventId), eq(rsvps.userId, userId))
+        );
+      } else {
+        await db
+          .insert(rsvps)
+          .values({ userId, eventId, status, source: "web", updatedAt: new Date() })
+          .onConflictDoUpdate({
+            target: [rsvps.eventId, rsvps.userId],
+            set:    { status, source: "web", updatedAt: new Date() },
+          });
+      }
+
+      // Fetch live counts
+      const countRows = await db.execute(
+        sql`SELECT status, COUNT(*)::int AS count FROM rsvps
+            WHERE event_id = ${eventId} GROUP BY status`
+      );
+      const counts: Record<string, number> = {};
+      for (const row of (countRows as any).rows ?? countRows) {
+        counts[(row as any).status] = Number((row as any).count);
+      }
+
+      // Notify bot service (fire & forget)
+      const authUrl = process.env.AUTH_SERVICE_URL ?? "https://auth.expatevents.org";
+      const secret  = process.env.SERVICE_SECRET ?? "";
+      fetch(`${authUrl}/api/notify/rsvp`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json", "x-service-secret": secret },
+        body:    JSON.stringify({ eventId, userId, status, going: counts["going"] ?? 0, maybe: counts["maybe"] ?? 0 }),
+      }).catch(() => {});
+
+      res.json({ ok: true, status, counts: { going: counts["going"] ?? 0, maybe: counts["maybe"] ?? 0 } });
+    } catch (err: any) {
+      console.error("[POST /api/events/:id/rsvp]", err);
+      res.status(500).json({ error: err.message ?? "Failed to save RSVP" });
+    }
+  });
+
+  // ── GET current user RSVP status ─────────────────────────────────────────
+  app.get("/api/events/:id/rsvp", requireAuth, async (req, res) => {
+    try {
+      const eventId = parseInt(req.params.id, 10);
+      if (isNaN(eventId)) return res.status(400).json({ error: "Invalid event ID" });
+      const userId = Number(req.user?.id);
+      const [row] = await db
+        .select({ status: rsvps.status })
+        .from(rsvps)
+        .where(and(eq(rsvps.eventId, eventId), eq(rsvps.userId, userId)));
+      res.json({ status: row?.status ?? null });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── GET RSVP counts for an event (public) ────────────────────────────────
+  app.get("/api/events/:id/rsvp-counts", async (req, res) => {
+    try {
+      const eventId = parseInt(req.params.id, 10);
+      if (isNaN(eventId)) return res.status(400).json({ error: "Invalid event ID" });
+      const countRows = await db.execute(
+        sql`SELECT status, COUNT(*)::int AS count FROM rsvps
+            WHERE event_id = ${eventId} GROUP BY status`
+      );
+      const counts: Record<string, number> = {};
+      for (const row of (countRows as any).rows ?? countRows) {
+        counts[(row as any).status] = Number((row as any).count);
+      }
+      res.json({ going: counts["going"] ?? 0, maybe: counts["maybe"] ?? 0 });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   });
 

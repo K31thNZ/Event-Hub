@@ -3,6 +3,7 @@ import Spark from "@/pages/Spark";
 import LiveMap from "@/pages/LiveMap";
 import AdminEventReview from "@/pages/AdminEventReview";
 import { Switch, Route, useLocation } from "wouter";
+import { useEffect } from "react";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -45,7 +46,27 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
 }
 
 function Router() {
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
+
+  // Handle Telegram mini-app startapp deep-link: ?startapp=event_ID
+  // Telegram passes startapp as a hash or search param depending on client version.
+  // We normalise both and redirect to the correct event page.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    const startapp = params.get("startapp") ?? hashParams.get("startapp") ?? 
+                     (window as any).Telegram?.WebApp?.initDataUnsafe?.start_param;
+    if (startapp) {
+      const m = String(startapp).match(/^event_(\d+)$/);
+      if (m) {
+        const rsvp = params.get("rsvp") ?? hashParams.get("rsvp");
+        const path = `/events/${m[1]}${rsvp ? `?rsvp=${rsvp}` : ""}`;
+        if (!location.startsWith(`/events/${m[1]}`)) {
+          setLocation(path);
+        }
+      }
+    }
+  }, []);
 
   if (location === "/pitch") {
     return <PitchDeck />;
