@@ -5,6 +5,7 @@ const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? "https://meh-auth.onrender.com
 export interface User {
   id: number;
   username: string;
+  /** "free" | "premium" | "admin" */
   role: string;
   displayName?: string;
   avatarUrl?: string;
@@ -14,14 +15,20 @@ export interface User {
   isExpatMember: boolean;
   isGamesMember: boolean;
   dice: number;
-  hasPassword?: boolean; // added by meh-auth sanitize()
-  // OAuth provider IDs — present when user signed up via OAuth
+  hasPassword?: boolean;
+  // OAuth provider IDs
   googleId?: string | null;
   yandexId?: string | null;
-  // Convenience flag — true when user has the admin role
+  // Convenience flag
   isAdmin?: boolean;
-  // Profile city — used for timezone display
+  // Profile fields
   city?: string | null;
+  bio?: string | null;
+  // Language exchange / match profile
+  meetingTypes?: string[];
+  nativeLanguage?: string | null;
+  learningLanguages?: { code: string; proficiency: string }[];
+  myAgeGroup?: string | null;
 }
 
 async function fetchUser(): Promise<User | null> {
@@ -53,9 +60,6 @@ export function useAuth() {
 
   async function logout() {
     try {
-      // Wait for the session to be cleared on the server before navigating away.
-      // Without await, the browser may redirect before the cookie is invalidated,
-      // leaving the user appearing logged in on the next page load.
       await fetch(`${AUTH_URL}/api/auth/logout`, {
         method: "POST",
         credentials: "include",
