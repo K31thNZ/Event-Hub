@@ -26,6 +26,7 @@ import PitchDeck from "./pages/PitchDeck";
 import DeepTalk from "@/pages/DeepTalk";
 import { useTelegramMiniAppAuth } from "@/hooks/use-telegram-miniapp-auth";
 import LanguageExchange from "@/pages/LanguageExchange";
+import PublicProfile from "@/pages/PublicProfile";
 
 const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? "https://auth.expatevents.org";
 
@@ -100,6 +101,7 @@ function Router() {
           <Route path="/profile">
             <ProtectedRoute component={Profile} />
           </Route>
+          <Route path="/profile/:userId" component={PublicProfile} />
 
           {/* Events */}
           <Route path="/create-event">

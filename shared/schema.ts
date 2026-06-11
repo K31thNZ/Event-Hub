@@ -170,6 +170,7 @@ export const rsvps = pgTable("rsvps", {
   sourceChatId:    integer("source_chat_id"),
   sourceChatTitle: text("source_chat_title"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  attended:  boolean("attended").notNull().default(false), // set by organiser to confirm attendance
 }, (table) => ({
   // Unique RSVP per (event, user) — also serves as the primary lookup index
   uniq:     uniqueIndex("rsvps_event_user").on(table.eventId, table.userId),
@@ -179,12 +180,33 @@ export const rsvps = pgTable("rsvps", {
   eventStatusIdx: index("rsvps_event_status_idx").on(table.eventId, table.status),
 }));
 
+
+// ── Event Reviews ─────────────────────────────────────────────────────────
+// Left by attendees who RSVPd or were confirmed-attended by the organiser.
+export const eventReviews = pgTable("event_reviews", {
+  id:          serial("id").primaryKey(),
+  eventId:     integer("event_id")
+    .notNull()
+    .references(() => events.id, { onDelete: "cascade" }),
+  userId:      integer("user_id").notNull(),   // meh-auth user id, no FK
+  rating:      integer("rating").notNull(),    // 1–5
+  comment:     text("comment"),
+  displayName: text("display_name"),           // denormalised at write time
+  avatarUrl:   text("avatar_url"),             // denormalised at write time
+  createdAt:   timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  uniq:      uniqueIndex("event_reviews_event_user_unique").on(table.eventId, table.userId),
+  eventIdx:  index("event_reviews_event_idx").on(table.eventId),
+  userIdx:   index("event_reviews_user_idx").on(table.userId),
+}));
+
 // ── Relations ─────────────────────────────────────────────────────────────
 export const eventsRelations = relations(events, ({ one, many }) => ({
   group:       one(groups, { fields: [events.groupId],     references: [groups.id] }),
   ticketTypes: many(ticketTypes),
   orders:      many(orders),
   rsvps:       many(rsvps),
+  reviews:     many(eventReviews),
 }));
 
 export const ticketTypesRelations = relations(ticketTypes, ({ one }) => ({
@@ -212,6 +234,10 @@ export const groupMembersRelations = relations(groupMembers, ({ one }) => ({
 
 export const rsvpsRelations = relations(rsvps, ({ one }) => ({
   event: one(events, { fields: [rsvps.eventId], references: [events.id] }),
+}));
+
+export const eventReviewsRelations = relations(eventReviews, ({ one }) => ({
+  event: one(events, { fields: [eventReviews.eventId], references: [events.id] }),
 }));
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -317,6 +343,8 @@ export const insertRsvpSchema = createInsertSchema(rsvps, {
 // ── Types ─────────────────────────────────────────────────────────────────
 export type Event        = typeof events.$inferSelect;
 export type TicketType   = typeof ticketTypes.$inferSelect;
+export type EventReview  = typeof eventReviews.$inferSelect;
+export type Rsvp         = typeof rsvps.$inferSelect;
 export type Order        = typeof orders.$inferSelect;
 export type OrderTicket  = typeof orderTickets.$inferSelect;
 export type CuratorPick  = typeof curatorPicks.$inferSelect;

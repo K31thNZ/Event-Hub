@@ -3,7 +3,7 @@ import { useEvent } from "@/hooks/use-events";
 import { useCreateOrder } from "@/hooks/use-orders";
 import { useAuth } from "@/hooks/use-auth";
 import { formatEventDate, formatEventTime } from "@/lib/date-utils";
-import { Calendar, Clock, MapPin, Map, Ticket, Plus, Minus, ArrowRight, CheckCircle2, Timer } from "lucide-react";
+import { Calendar, Clock, MapPin, Map, Ticket, Plus, Minus, ArrowRight, CheckCircle2, Timer, Users, Star, CheckCheck, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,6 +15,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { motion } from "framer-motion";
+import AttendeesAndReviews from "@/components/events/AttendeesAndReviews";
 
 // ── Countdown hook ────────────────────────────────────────────────────────
 function useCountdown(targetDate: Date) {
@@ -528,7 +529,18 @@ export default function EventDetails() {
         </SheetContent>
       </Sheet>
 
-      {/* ── Legal disclaimer ───────────────────────────────────────────── */}
+
+      {/* ══════════════════════════════════════════════════════════════════ */}
+      {/* ── Attendees & Reviews ──────────────────────────────────────────── */}
+      {/* ══════════════════════════════════════════════════════════════════ */}
+      <AttendeesAndReviews
+        event={event}
+        currentUser={user ?? null}
+        isAuthenticated={isAuthenticated}
+        myRsvpStatus={myStatus}
+      />
+
+            {/* ── Legal disclaimer ───────────────────────────────────────────── */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 mt-8 border-t border-border/50">
         <p className="text-center text-xs text-muted-foreground/70 leading-relaxed">
           ExpatEvents provides the infrastructure to organise activities. The voluntary organisers

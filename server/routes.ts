@@ -14,7 +14,8 @@ import { requireAuth, getUser } from "./auth-client";
 import { z } from "zod";
 import { db } from "./db";
 import { sql, desc, gt, eq, and } from "drizzle-orm";
-import { events, groups, rsvps } from "@shared/schema";
+import { events, groups, rsvps, eventReviews } from "@shared/schema";
+import { inArray } from "drizzle-orm";
 import uploadRouter from "./routes/upload";
 
 // NOTE: No local users table in Event-Hub DB.
@@ -587,6 +588,226 @@ export async function registerRoutes(
     } catch (err: any) {
       console.error("[POST /api/orders]", err);
       res.status(500).json({ message: err.message ?? "Failed to create order" });
+    }
+  });
+
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // ── Attendees & Reviews ────────────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════════════════
+
+  // GET /api/events/:id/attendees
+  // Returns RSVPs enriched with display data from meh-auth.
+  // Visible to anyone (counts), full list to organiser or admin.
+  app.get("/api/events/:id/attendees", async (req, res) => {
+    try {
+      const eventId = parseInt(req.params.id, 10);
+      if (isNaN(eventId)) return res.status(400).json({ error: "Invalid event ID" });
+
+      const event = await storage.getEvent(eventId);
+      if (!event) return res.status(404).json({ error: "Event not found" });
+
+      const reqUserId = (req as any).user?.id ? Number((req as any).user.id) : null;
+      const isOrganizer = reqUserId === event.organizerId;
+      const isAdmin = (req as any).user?.role === "admin";
+
+      // Fetch all RSVPs for this event
+      const rsvpRows = await db
+        .select()
+        .from(rsvps)
+        .where(eq(rsvps.eventId, eventId));
+
+      if (rsvpRows.length === 0) {
+        return res.json({ going: [], maybe: [], attendedCount: 0 });
+      }
+
+      // Enrich with meh-auth user data
+      const userIds = [...new Set(rsvpRows.map(r => r.userId))];
+      let userMap: Record<number, { id: number; displayName: string | null; avatarUrl: string | null; username: string }> = {};
+
+      try {
+        const secret = process.env.SERVICE_SECRET ?? process.env.EXPAT_API_SECRET ?? "";
+        const authRes = await fetch(`${AUTH_SERVICE_URL}/api/admin/users/batch`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-service-secret": secret },
+          body: JSON.stringify({ ids: userIds }),
+        });
+        if (authRes.ok) {
+          const users = await authRes.json() as any[];
+          for (const u of users) userMap[u.id] = u;
+        }
+      } catch { /* enrichment failure is non-fatal — show anonymised list */ }
+
+      // Build enriched attendee objects
+      const enrich = (r: typeof rsvpRows[0]) => ({
+        userId:      r.userId,
+        status:      r.status,
+        attended:    r.attended,
+        displayName: userMap[r.userId]?.displayName ?? userMap[r.userId]?.username ?? "Member",
+        avatarUrl:   userMap[r.userId]?.avatarUrl ?? null,
+        // Only expose userId link to organiser/admin (privacy)
+        profileLink: (isOrganizer || isAdmin) ? `/profile/${r.userId}` : null,
+      });
+
+      const going = rsvpRows.filter(r => r.status === "going").map(enrich);
+      const maybe = rsvpRows.filter(r => r.status === "maybe").map(enrich);
+      const attendedCount = rsvpRows.filter(r => r.attended).length;
+
+      res.json({ going, maybe, attendedCount });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/events/:id/attendees/:userId/attended
+  // Organiser marks a specific RSVP as attended=true/false.
+  app.post("/api/events/:id/attendees/:userId/attended", requireAuth, async (req, res) => {
+    try {
+      const eventId  = parseInt(req.params.id, 10);
+      const targetId = parseInt(req.params.userId, 10);
+      if (isNaN(eventId) || isNaN(targetId)) return res.status(400).json({ error: "Invalid ID" });
+
+      const event = await storage.getEvent(eventId);
+      if (!event) return res.status(404).json({ error: "Event not found" });
+
+      const reqUserId = Number((req as any).user?.id);
+      const isOrganizer = reqUserId === event.organizerId;
+      const isAdmin = (req as any).user?.role === "admin";
+      if (!isOrganizer && !isAdmin) return res.status(403).json({ error: "Only the organiser can mark attendance" });
+
+      const { attended } = req.body as { attended: boolean };
+      if (typeof attended !== "boolean") return res.status(400).json({ error: "attended must be boolean" });
+
+      await db
+        .update(rsvps)
+        .set({ attended })
+        .where(and(eq(rsvps.eventId, eventId), eq(rsvps.userId, targetId)));
+
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/events/:id/reviews
+  // Public — returns all reviews with rating, comment, display name, avatar.
+  app.get("/api/events/:id/reviews", async (req, res) => {
+    try {
+      const eventId = parseInt(req.params.id, 10);
+      if (isNaN(eventId)) return res.status(400).json({ error: "Invalid event ID" });
+
+      const reviews = await db
+        .select()
+        .from(eventReviews)
+        .where(eq(eventReviews.eventId, eventId))
+        .orderBy(desc(eventReviews.createdAt));
+
+      const avgRating = reviews.length
+        ? Math.round((reviews.reduce((s, r) => s + r.rating, 0) / reviews.length) * 10) / 10
+        : null;
+
+      res.json({ reviews, avgRating, count: reviews.length });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/events/:id/reviews
+  // Submit or update a review. Caller must have RSVPd (going or maybe) or been marked attended.
+  app.post("/api/events/:id/reviews", requireAuth, async (req, res) => {
+    try {
+      const eventId = parseInt(req.params.id, 10);
+      if (isNaN(eventId)) return res.status(400).json({ error: "Invalid event ID" });
+
+      const userId = Number((req as any).user?.id);
+      const { rating, comment } = req.body as { rating: number; comment?: string };
+
+      if (!rating || rating < 1 || rating > 5) {
+        return res.status(400).json({ error: "rating must be 1–5" });
+      }
+
+      // Check that this user actually RSVPd or was marked attended
+      const [rsvpRow] = await db
+        .select()
+        .from(rsvps)
+        .where(and(eq(rsvps.eventId, eventId), eq(rsvps.userId, userId)));
+
+      if (!rsvpRow) {
+        return res.status(403).json({ error: "You must have RSVPd to leave a review" });
+      }
+
+      // Fetch display name + avatar from meh-auth
+      let displayName: string | null = null;
+      let avatarUrl: string | null = null;
+      try {
+        const secret = process.env.SERVICE_SECRET ?? process.env.EXPAT_API_SECRET ?? "";
+        const authRes = await fetch(`${AUTH_SERVICE_URL}/api/admin/users/batch`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-service-secret": secret },
+          body: JSON.stringify({ ids: [userId] }),
+        });
+        if (authRes.ok) {
+          const [u] = await authRes.json() as any[];
+          displayName = u?.displayName ?? u?.username ?? null;
+          avatarUrl   = u?.avatarUrl ?? null;
+        }
+      } catch {}
+
+      const [review] = await db
+        .insert(eventReviews)
+        .values({ eventId, userId, rating, comment: comment?.trim() || null, displayName, avatarUrl })
+        .onConflictDoUpdate({
+          target: [eventReviews.eventId, eventReviews.userId],
+          set: { rating, comment: comment?.trim() || null, displayName, avatarUrl },
+        })
+        .returning();
+
+      res.status(201).json(review);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/users/:userId/public
+  // Returns safe public fields for any meh-auth user, proxied to meh-auth.
+  app.get("/api/users/:userId/public", async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId, 10);
+      if (isNaN(userId)) return res.status(400).json({ error: "Invalid user ID" });
+
+      // Proxy to meh-auth using service secret
+      const secret = process.env.SERVICE_SECRET ?? process.env.EXPAT_API_SECRET ?? "";
+      const authRes = await fetch(`${AUTH_SERVICE_URL}/api/users/${userId}/public`, {
+        headers: { "x-service-secret": secret },
+      });
+
+      if (authRes.status === 404) return res.status(404).json({ error: "User not found" });
+      if (!authRes.ok) return res.status(502).json({ error: "Auth service unavailable" });
+
+      const data = await authRes.json();
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/users/:userId/events
+  // Returns public events organised by a given user (for profile page).
+  app.get("/api/users/:userId/events", async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId, 10);
+      if (isNaN(userId)) return res.status(400).json({ error: "Invalid user ID" });
+
+      const userEvents = await db
+        .select()
+        .from(events)
+        .where(and(eq(events.organizerId, userId), eq(events.published, true)))
+        .orderBy(desc(events.date))
+        .limit(12);
+
+      res.json(userEvents);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   });
 
