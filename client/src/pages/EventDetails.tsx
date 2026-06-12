@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -74,14 +74,14 @@ export default function EventDetails() {
     queryFn: async () => {
       const res = await fetch(`/api/events/${event!.id}/rsvp-counts`);
       if (!res.ok) return { going: 0, maybe: 0 };
-      return res.json() as Promise<{ going: number; maybe: number }>;
+      return res.json() as Promise<{ going: number; maybe: number; no: number }>;
     },
     enabled: !!event,
-    refetchInterval: 60_000,
+    refetchInterval: 15_000, // A6 fix: reduced from 60s so bot RSVPs appear quickly
   });
 
   const rsvpMutation = useMutation({
-    mutationFn: async (status: "going" | "maybe" | "none") => {
+    mutationFn: async (status: "going" | "maybe" | "no" | "none") => {
       const res = await fetch(`/api/events/${event!.id}/rsvp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -93,11 +93,11 @@ export default function EventDetails() {
     },
     onSuccess: (data) => {
       queryClient.setQueryData(["rsvp-status", event?.id], { status: data.status });
-      queryClient.setQueryData(["rsvp-counts", event?.id], data.counts);
+      queryClient.setQueryData(["rsvp-counts", event?.id], { going: data.counts?.going ?? 0, maybe: data.counts?.maybe ?? 0, no: data.counts?.no ?? 0 });
     },
   });
 
-  const handleRsvp = useCallback((status: "going" | "maybe") => {
+  const handleRsvp = useCallback((status: "going" | "maybe" | "no") => {
     if (!isAuthenticated) { login(); return; }
     const current = rsvpData?.status;
     // Toggle off if already selected
@@ -106,18 +106,26 @@ export default function EventDetails() {
 
   const myStatus = rsvpData?.status ?? null;
 
-  // Auto-RSVP if URL contains ?rsvp=going or ?rsvp=maybe (from inline keyboard buttons)
+  // Auto-RSVP if URL contains ?rsvp=going|maybe (from mini-app inline keyboard buttons).
+  // A5 fix: use a ref so this fires at most once per page load, preventing double-writes
+  //         when myStatus flickers between null (loading) and a value.
+  const autoRsvpFiredRef = useRef(false);
   useEffect(() => {
+    if (autoRsvpFiredRef.current) return;
     const params = new URLSearchParams(window.location.search);
     const autoRsvp = params.get("rsvp");
-    if ((autoRsvp === "going" || autoRsvp === "maybe") && isAuthenticated && !myStatus) {
+    if ((autoRsvp === "going" || autoRsvp === "maybe") && isAuthenticated) {
+      // Wait until we know the real current status (query no longer loading)
+      if (rsvpData === undefined) return; // still loading — wait for next render
+      if (myStatus) return;               // already has a status — skip
+      autoRsvpFiredRef.current = true;
       handleRsvp(autoRsvp as "going" | "maybe");
       // Clean the URL param without reload
       const url = new URL(window.location.href);
       url.searchParams.delete("rsvp");
       window.history.replaceState({}, "", url.toString());
     }
-  }, [isAuthenticated, myStatus]);
+  }, [isAuthenticated, rsvpData, myStatus, handleRsvp]);
 
   // ── Determine if event is already finished ─────────────────────────────
   const isPast = event ? new Date(event.date) < new Date() : false;
@@ -320,7 +328,7 @@ export default function EventDetails() {
                 {/* ── RSVP Buttons ─────────────────────────────── */}
                 <div className="space-y-2">
                   <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Are you going?</p>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-3 gap-2">
                     <button
                       onClick={() => handleRsvp("going")}
                       disabled={rsvpMutation.isPending}
@@ -356,6 +364,20 @@ export default function EventDetails() {
                           {rsvpCounts!.maybe} interested
                         </span>
                       )}
+                    </button>
+                    {/* A1 fix: "Can't make it" — sets status to "no", previously missing from web UI */}
+                    <button
+                      onClick={() => handleRsvp("no")}
+                      disabled={rsvpMutation.isPending}
+                      className={[
+                        "flex flex-col items-center gap-1.5 py-3 px-2 rounded-2xl border-2 text-sm font-semibold transition-all",
+                        myStatus === "no"
+                          ? "bg-red-500 border-red-500 text-white shadow-lg shadow-red-500/30 scale-[1.02]"
+                          : "border-border bg-background hover:border-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 text-foreground",
+                      ].join(" ")}
+                    >
+                      <span className="text-2xl">❌</span>
+                      <span>{myStatus === "no" ? "Can't make it" : "Can't go"}</span>
                     </button>
                   </div>
                   {!isAuthenticated && (

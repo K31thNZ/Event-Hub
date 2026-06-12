@@ -462,7 +462,7 @@ export async function registerRoutes(
       const eventId = parseInt(req.params.id, 10);
       if (isNaN(eventId)) return res.status(400).json({ error: "Invalid event ID" });
       const { status } = req.body;
-      if (!status || !["going", "maybe", "none"].includes(status)) {
+      if (!status || !["going", "maybe", "no", "none"].includes(status)) {
         return res.status(400).json({ error: "status must be going | maybe | none" });
       }
       const userId = Number(req.user?.id);
@@ -492,16 +492,25 @@ export async function registerRoutes(
         counts[(row as any).status] = Number((row as any).count);
       }
 
-      // Notify bot service (fire & forget)
+      // A3 fix: fetch real ticket count so organiser notification shows correct number
       const authUrl = process.env.AUTH_SERVICE_URL ?? "https://auth.expatevents.org";
       const secret  = process.env.SERVICE_SECRET ?? "";
-      fetch(`${authUrl}/api/notify/rsvp`, {
-        method:  "POST",
-        headers: { "Content-Type": "application/json", "x-service-secret": secret },
-        body:    JSON.stringify({ eventId, userId, status, going: counts["going"] ?? 0, maybe: counts["maybe"] ?? 0 }),
-      }).catch(() => {});
+      (async () => {
+        let ticketCount = 0;
+        try {
+          const tcRows = await db.execute(
+            sql`SELECT COUNT(*)::int AS count FROM orders WHERE event_id = ${eventId} AND status = 'paid'`
+          );
+          ticketCount = Number(((tcRows as any).rows?.[0] ?? (tcRows as any)[0])?.count ?? 0);
+        } catch { /* non-fatal */ }
+        fetch(`${authUrl}/api/notify/rsvp`, {
+          method:  "POST",
+          headers: { "Content-Type": "application/json", "x-service-secret": secret },
+          body:    JSON.stringify({ eventId, userId, status, going: counts["going"] ?? 0, maybe: counts["maybe"] ?? 0, no: counts["no"] ?? 0, ticketCount }),
+        }).catch(() => {});
+      })();
 
-      res.json({ ok: true, status, counts: { going: counts["going"] ?? 0, maybe: counts["maybe"] ?? 0 } });
+      res.json({ ok: true, status, counts: { going: counts["going"] ?? 0, maybe: counts["maybe"] ?? 0, no: counts["no"] ?? 0 } });
     } catch (err: any) {
       console.error("[POST /api/events/:id/rsvp]", err);
       res.status(500).json({ error: err.message ?? "Failed to save RSVP" });
