@@ -1,0 +1,557 @@
+import { useParams, useLocation, Link } from "wouter";
+import { useEvent } from "@/hooks/use-events";
+import { useCreateOrder } from "@/hooks/use-orders";
+import { useAuth } from "@/hooks/use-auth";
+import { formatEventDate, formatEventTime } from "@/lib/date-utils";
+import { Calendar, Clock, MapPin, Map, Ticket, Plus, Minus, ArrowRight, CheckCircle2, Timer, Users, Star, CheckCheck, ChevronDown } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
+import { useState, useEffect, useCallback } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { motion } from "framer-motion";
+import AttendeesAndReviews from "@/components/events/AttendeesAndReviews";
+
+// ── Countdown hook ────────────────────────────────────────────────────────
+function useCountdown(targetDate: Date) {
+  const [timeLeft, setTimeLeft] = useState<string | null>(null);
+  useEffect(() => {
+    const tick = () => {
+      const diff = targetDate.getTime() - Date.now();
+      if (diff <= 0) { setTimeLeft("00:00:00"); return; }
+      if (diff > 10 * 60 * 60 * 1000) { setTimeLeft(null); return; }
+      const h = Math.floor(diff / 3_600_000);
+      const m = Math.floor((diff % 3_600_000) / 60_000);
+      const s = Math.floor((diff % 60_000) / 1_000);
+      setTimeLeft(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [targetDate]);
+  return timeLeft;
+}
+
+// ── Checkout schema ───────────────────────────────────────────────────────
+const checkoutSchema = z.object({
+  attendeeEmail: z.string().email("Please enter a valid email"),
+  notes: z.string().optional(),
+  ticketNames: z.record(z.string().min(1, "Name is required")),
+});
+type CheckoutForm = z.infer<typeof checkoutSchema>;
+
+export default function EventDetails() {
+  const { id } = useParams();
+  const [, setLocation] = useLocation();
+  const { data: event, isLoading } = useEvent(Number(id));
+  const { user, isAuthenticated, login } = useAuth();
+  const createOrder = useCreateOrder();
+
+  const [selectedTickets, setSelectedTickets] = useState<Record<number, number>>({});
+  const [isTicketPanelOpen, setIsTicketPanelOpen] = useState(false);
+  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+
+  // ── RSVP state ──────────────────────────────────────────────────────────
+  const queryClient = useQueryClient();
+
+  const { data: rsvpData } = useQuery({
+    queryKey: ["rsvp-status", event?.id],
+    queryFn: async () => {
+      const res = await fetch(`/api/events/${event!.id}/rsvp`, { credentials: "include" });
+      if (!res.ok) return { status: null };
+      return res.json() as Promise<{ status: string | null }>;
+    },
+    enabled: !!event && isAuthenticated,
+  });
+
+  const { data: rsvpCounts } = useQuery({
+    queryKey: ["rsvp-counts", event?.id],
+    queryFn: async () => {
+      const res = await fetch(`/api/events/${event!.id}/rsvp-counts`);
+      if (!res.ok) return { going: 0, maybe: 0 };
+      return res.json() as Promise<{ going: number; maybe: number }>;
+    },
+    enabled: !!event,
+    refetchInterval: 60_000,
+  });
+
+  const rsvpMutation = useMutation({
+    mutationFn: async (status: "going" | "maybe" | "none") => {
+      const res = await fetch(`/api/events/${event!.id}/rsvp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) throw new Error("Failed to save RSVP");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(["rsvp-status", event?.id], { status: data.status });
+      queryClient.setQueryData(["rsvp-counts", event?.id], data.counts);
+    },
+  });
+
+  const handleRsvp = useCallback((status: "going" | "maybe") => {
+    if (!isAuthenticated) { login(); return; }
+    const current = rsvpData?.status;
+    // Toggle off if already selected
+    rsvpMutation.mutate(current === status ? "none" : status);
+  }, [isAuthenticated, login, rsvpData, rsvpMutation]);
+
+  const myStatus = rsvpData?.status ?? null;
+
+  // Auto-RSVP if URL contains ?rsvp=going or ?rsvp=maybe (from inline keyboard buttons)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const autoRsvp = params.get("rsvp");
+    if ((autoRsvp === "going" || autoRsvp === "maybe") && isAuthenticated && !myStatus) {
+      handleRsvp(autoRsvp as "going" | "maybe");
+      // Clean the URL param without reload
+      const url = new URL(window.location.href);
+      url.searchParams.delete("rsvp");
+      window.history.replaceState({}, "", url.toString());
+    }
+  }, [isAuthenticated, myStatus]);
+
+  // ── Determine if event is already finished ─────────────────────────────
+  const isPast = event ? new Date(event.date) < new Date() : false;
+
+  const countdown = useCountdown(event ? new Date(event.date) : new Date(0));
+
+  const { register, handleSubmit, setValue, formState: { errors } } = useForm<CheckoutForm>({
+    resolver: zodResolver(checkoutSchema),
+    defaultValues: { ticketNames: {} },
+  });
+
+  useEffect(() => {
+    if (user?.email) setValue("attendeeEmail", user.email);
+  }, [user, setValue]);
+
+  if (isLoading) return (
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full" />
+    </div>
+  );
+
+  if (!event) return (
+    <div className="text-center py-32">
+      <h2 className="text-3xl font-display font-bold">Event not found</h2>
+    </div>
+  );
+
+  const fallbackImage = "https://images.unsplash.com/photo-1511795409834-ef04bbd61622?q=80&w=2000&auto=format&fit=crop";
+
+  const updateQuantity = (ticketId: number, delta: number, max: number) => {
+    const current = selectedTickets[ticketId] || 0;
+    const next = Math.max(0, Math.min(max, current + delta));
+    setSelectedTickets(prev => ({ ...prev, [ticketId]: next }));
+  };
+
+  const totalAmount = Object.entries(selectedTickets).reduce((sum, [tId, qty]) => {
+    const t = event.ticketTypes.find(x => x.id === Number(tId));
+    return sum + ((t?.price || 0) * qty);
+  }, 0);
+
+  const totalQty = Object.values(selectedTickets).reduce((a, b) => a + b, 0);
+
+  const ticketNameFields: { key: string; label: string }[] = [];
+  Object.entries(selectedTickets)
+    .filter(([, qty]) => qty > 0)
+    .forEach(([tId, qty]) => {
+      const t = event.ticketTypes.find(x => x.id === Number(tId));
+      for (let i = 0; i < qty; i++) {
+        ticketNameFields.push({
+          key: `${tId}_${i}`,
+          label: qty > 1 ? `${t?.name} — ticket ${i + 1}` : t?.name ?? "Ticket",
+        });
+      }
+    });
+
+  const onSubmitCheckout = async (data: CheckoutForm) => {
+    const primaryName = Object.values(data.ticketNames)[0] ?? "";
+    const payload = {
+      eventId: event.id,
+      attendeeName: primaryName,
+      attendeeEmail: data.attendeeEmail,
+      notes: data.notes,
+      tickets: Object.entries(selectedTickets)
+        .filter(([, qty]) => qty > 0)
+        .map(([tId, qty]) => ({ ticketTypeId: Number(tId), quantity: qty })),
+    };
+    try {
+      const order = await createOrder.mutateAsync(payload);
+      setIsCheckoutOpen(false);
+      setIsTicketPanelOpen(false);
+      setLocation(`/orders/${order.id}`);
+    } catch {
+      // error handled by mutation
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-background">
+
+      {/* Hero Banner */}
+      <div className="w-full h-48 md:h-64 relative">
+        <img src={event.imageUrl || fallbackImage} alt={event.title} className="w-full h-full object-cover" />
+        <div className="absolute inset-0 bg-gradient-to-t from-background to-transparent" />
+      </div>
+
+      {/* Main content */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
+        <div className="flex flex-col lg:flex-row gap-12">
+
+          {/* Left column */}
+          <div className="flex-1 space-y-8">
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+              className="bg-card rounded-3xl p-6 md:p-10 border border-border shadow-lg">
+
+              <div className="inline-flex px-4 py-1.5 rounded-full bg-primary/10 text-primary font-bold text-sm tracking-wider uppercase mb-6">
+                {event.category}
+              </div>
+
+              <h1 className="text-3xl md:text-5xl font-display font-bold text-foreground leading-tight mb-6">
+                {event.title}
+              </h1>
+
+              <div className="flex flex-wrap gap-6 text-muted-foreground border-t border-b border-border py-6 mb-8">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-primary/5 flex items-center justify-center">
+                    <Calendar className="w-4 h-4 text-primary" />
+                  </div>
+                  <p className="font-semibold text-foreground">{formatEventDate(event.date, event.venueCity)}</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-primary/5 flex items-center justify-center">
+                    <Clock className="w-4 h-4 text-primary" />
+                  </div>
+                  <p className="font-semibold text-foreground">{formatEventTime(event.date, event.venueCity)}</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-primary/5 flex items-center justify-center">
+                    <MapPin className="w-4 h-4 text-primary" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-semibold text-foreground">{event.locationName || event.venueAddress}</p>
+                    <p className="text-sm">{event.venueCity}</p>
+                    {(event as any).lat && (event as any).lng && (
+                      <Link href={`/live-map?eventId=${event.id}`}>
+                        <button className="mt-0.5 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
+                          <Map className="w-3.5 h-3.5" />
+                          Show on map
+                        </button>
+                      </Link>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-2xl font-display font-bold mb-4">About this event</h3>
+                <div className="prose prose-lg dark:prose-invert max-w-none text-muted-foreground whitespace-pre-wrap">
+                  {event.description}
+                </div>
+              </div>
+
+              {countdown && (
+                <div className="mt-8 flex items-center gap-3 bg-destructive/10 border border-destructive/20 text-destructive px-5 py-3 rounded-2xl">
+                  <Timer className="w-5 h-5 shrink-0" />
+                  <div>
+                    <p className="text-xs font-medium">Event starts in</p>
+                    <p className="font-mono font-bold text-xl tracking-widest">{countdown}</p>
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          </div>
+
+          {/* Sidebar – hidden completely for past events */}
+          {!isPast ? (
+            <div className="lg:w-[320px]">
+              <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.2 }}
+                className="sticky top-28 bg-card border border-border shadow-xl rounded-3xl p-6 space-y-5">
+
+                <h3 className="text-lg font-display font-bold text-foreground">Event Details</h3>
+
+                <div className="space-y-4 text-sm text-muted-foreground">
+                  <div className="flex items-start gap-3">
+                    <Calendar className="w-4 h-4 text-primary mt-0.5 shrink-0" />
+                    <div>
+                      <p className="font-semibold text-foreground">{formatEventDate(event.date, event.venueCity)}</p>
+                      <p>{formatEventTime(event.date, event.venueCity)}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <MapPin className="w-4 h-4 text-primary mt-0.5 shrink-0" />
+                    <div>
+                      <p className="font-semibold text-foreground">{event.locationName || event.venueAddress}</p>
+                      <p>{event.venueCity}</p>
+                      {(event as any).lat && (event as any).lng && (
+                        <Link href={`/live-map?eventId=${event.id}`}>
+                          <button className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
+                            <Map className="w-3.5 h-3.5" />
+                            Show on map
+                          </button>
+                        </Link>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <Ticket className="w-4 h-4 text-primary mt-0.5 shrink-0" />
+                    <div>
+                      <p className="font-semibold text-foreground">
+                        {event.ticketTypes.length} ticket type{event.ticketTypes.length !== 1 ? "s" : ""}
+                      </p>
+                      <p>
+                        from {Math.min(...event.ticketTypes.map(t => t.price)) === 0
+                          ? "Free"
+                          : `${Math.min(...event.ticketTypes.map(t => t.price))} ₽`}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── RSVP Buttons ─────────────────────────────── */}
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Are you going?</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => handleRsvp("going")}
+                      disabled={rsvpMutation.isPending}
+                      className={[
+                        "flex flex-col items-center gap-1.5 py-3 px-2 rounded-2xl border-2 text-sm font-semibold transition-all",
+                        myStatus === "going"
+                          ? "bg-green-500 border-green-500 text-white shadow-lg shadow-green-500/30 scale-[1.02]"
+                          : "border-border bg-background hover:border-green-400 hover:bg-green-50 dark:hover:bg-green-950/30 text-foreground",
+                      ].join(" ")}
+                    >
+                      <span className="text-2xl">✅</span>
+                      <span>{myStatus === "going" ? "You're going!" : "I'm going"}</span>
+                      {(rsvpCounts?.going ?? 0) > 0 && (
+                        <span className={["text-xs", myStatus === "going" ? "text-green-100" : "text-muted-foreground"].join(" ")}>
+                          {rsvpCounts!.going} going
+                        </span>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => handleRsvp("maybe")}
+                      disabled={rsvpMutation.isPending}
+                      className={[
+                        "flex flex-col items-center gap-1.5 py-3 px-2 rounded-2xl border-2 text-sm font-semibold transition-all",
+                        myStatus === "maybe"
+                          ? "bg-yellow-400 border-yellow-400 text-yellow-900 shadow-lg shadow-yellow-400/30 scale-[1.02]"
+                          : "border-border bg-background hover:border-yellow-400 hover:bg-yellow-50 dark:hover:bg-yellow-950/30 text-foreground",
+                      ].join(" ")}
+                    >
+                      <span className="text-2xl">🤔</span>
+                      <span>{myStatus === "maybe" ? "Interested!" : "Interested"}</span>
+                      {(rsvpCounts?.maybe ?? 0) > 0 && (
+                        <span className={["text-xs", myStatus === "maybe" ? "text-yellow-800" : "text-muted-foreground"].join(" ")}>
+                          {rsvpCounts!.maybe} interested
+                        </span>
+                      )}
+                    </button>
+                  </div>
+                  {!isAuthenticated && (
+                    <p className="text-xs text-center text-muted-foreground">
+                      <button onClick={login} className="text-primary underline underline-offset-2">Sign in</button> to RSVP
+                    </p>
+                  )}
+                </div>
+
+                {/* ── Ticket Button ─────────────────────────────── */}
+                {!isAuthenticated ? (
+                  <Button
+                    onClick={login}
+                    className="w-full rounded-xl shadow-lg shadow-primary/20"
+                  >
+                    Sign in to get tickets
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={() => setIsTicketPanelOpen(true)}
+                    className="w-full rounded-xl shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all hover:-translate-y-0.5 group"
+                  >
+                    <Ticket className="w-4 h-4 mr-2" />
+                    Get Tickets
+                    <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
+                  </Button>
+                )}
+              </motion.div>
+            </div>
+          ) : (
+            // Past event fallback card
+            <div className="lg:w-[320px]">
+              <div className="sticky top-28 bg-card border border-border shadow-xl rounded-3xl p-6 space-y-5 text-center">
+                <div className="w-16 h-16 mx-auto rounded-full bg-muted flex items-center justify-center">
+                  <Calendar className="w-8 h-8 text-muted-foreground" />
+                </div>
+                <h3 className="text-xl font-display font-bold">Event has ended</h3>
+                <p className="text-sm text-muted-foreground">
+                  This event took place on {formatEventDate(event.date, event.venueCity)}.
+                </p>
+              </div>
+            </div>
+          )}
+
+        </div>
+      </div>
+
+      {/* Ticket selector panel – only accessible when event is not past */}
+      <Sheet open={isTicketPanelOpen} onOpenChange={setIsTicketPanelOpen}>
+        <SheetContent className="w-full sm:max-w-md overflow-y-auto border-l-0 sm:rounded-l-3xl shadow-2xl">
+          <SheetHeader className="mb-6">
+            <SheetTitle className="font-display text-2xl flex items-center gap-2">
+              <Ticket className="w-5 h-5 text-primary" /> Select Tickets
+            </SheetTitle>
+            <SheetDescription>{event.title}</SheetDescription>
+          </SheetHeader>
+
+          <div className="space-y-4 mb-8">
+            {event.ticketTypes.map(ticket => {
+              const qty = selectedTickets[ticket.id] || 0;
+              return (
+                <div key={ticket.id} className="p-4 rounded-2xl border border-border bg-background flex flex-col gap-3">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="font-bold text-lg">{ticket.name}</p>
+                      <p className="text-primary font-semibold">
+                        {ticket.price > 0 ? `${ticket.price} ₽` : "Free"}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3 bg-muted rounded-full p-1 border border-border/50">
+                      <button
+                        className="w-8 h-8 rounded-full bg-background flex items-center justify-center shadow-sm hover:text-primary transition-colors disabled:opacity-50"
+                        onClick={() => updateQuantity(ticket.id, -1, ticket.maxPerOrder)}
+                        disabled={qty === 0}
+                      ><Minus className="w-4 h-4" /></button>
+                      <span className="w-4 text-center font-bold">{qty}</span>
+                      <button
+                        className="w-8 h-8 rounded-full bg-background flex items-center justify-center shadow-sm hover:text-primary transition-colors disabled:opacity-50"
+                        onClick={() => updateQuantity(ticket.id, 1, ticket.maxPerOrder)}
+                        disabled={qty >= ticket.maxPerOrder}
+                      ><Plus className="w-4 h-4" /></button>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground text-right">Max {ticket.maxPerOrder} per order</p>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="pt-5 border-t border-dashed border-border mb-6">
+            <div className="flex justify-between items-end">
+              <span className="text-muted-foreground">Total ({totalQty} ticket{totalQty !== 1 ? "s" : ""})</span>
+              <span className="text-3xl font-bold">{totalAmount} ₽</span>
+            </div>
+          </div>
+
+          <Button
+            onClick={() => { setIsTicketPanelOpen(false); setIsCheckoutOpen(true); }}
+            disabled={totalQty === 0}
+            className="w-full py-6 rounded-xl text-lg shadow-xl shadow-primary/20 hover:shadow-primary/30 transition-all hover:-translate-y-0.5 group"
+          >
+            Continue to Checkout
+            <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
+          </Button>
+        </SheetContent>
+      </Sheet>
+
+      {/* Checkout panel */}
+      <Sheet open={isCheckoutOpen} onOpenChange={setIsCheckoutOpen}>
+        <SheetContent className="w-full sm:max-w-md overflow-y-auto border-l-0 sm:rounded-l-3xl shadow-2xl">
+          <SheetHeader className="mb-8">
+            <SheetTitle className="font-display text-3xl">Secure Checkout</SheetTitle>
+            <SheetDescription>Please provide your details to complete the order.</SheetDescription>
+          </SheetHeader>
+
+          <div className="bg-primary/5 rounded-2xl p-5 mb-8 border border-primary/10">
+            <h4 className="font-semibold text-primary flex items-center gap-2 mb-3">
+              <CheckCircle2 className="w-4 h-4" /> Order Summary
+            </h4>
+            <div className="space-y-2 text-sm font-medium">
+              {Object.entries(selectedTickets).filter(([, q]) => q > 0).map(([id, q]) => {
+                const t = event.ticketTypes.find(x => x.id === Number(id));
+                return (
+                  <div key={id} className="flex justify-between">
+                    <span>{q}x {t?.name}</span>
+                    <span>{(t?.price || 0) * q} ₽</span>
+                  </div>
+                );
+              })}
+              <div className="pt-3 border-t border-primary/20 flex justify-between font-bold text-lg text-foreground">
+                <span>Total</span>
+                <span>{totalAmount} ₽</span>
+              </div>
+            </div>
+          </div>
+
+          <form onSubmit={handleSubmit(onSubmitCheckout)} className="space-y-5">
+            {ticketNameFields.length > 0 && (
+              <div className="space-y-4">
+                <Label className="text-base font-semibold">Name on the ticket</Label>
+                {ticketNameFields.map(({ key, label }) => (
+                  <div key={key} className="space-y-1.5">
+                    <Label className="text-sm text-muted-foreground">{label}</Label>
+                    <Input {...register(`ticketNames.${key}`)} className="h-12 rounded-xl bg-background" placeholder="Full name" />
+                    {errors.ticketNames?.[key] && (
+                      <p className="text-destructive text-sm">{errors.ticketNames[key]?.message as string}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label>Email Address</Label>
+              <Input {...register("attendeeEmail")} type="email" className="h-12 rounded-xl bg-background" placeholder="your@email.com" />
+              {errors.attendeeEmail?.message && <p className="text-destructive text-sm">{errors.attendeeEmail.message}</p>}
+            </div>
+
+            <div className="space-y-2">
+              <Label>Special Notes (Optional)</Label>
+              <Textarea {...register("notes")} className="resize-none rounded-xl bg-background" rows={3} placeholder="Dietary requirements, accessibility needs…" />
+            </div>
+
+            <Button type="submit" disabled={createOrder.isPending} className="w-full h-14 rounded-xl text-lg shadow-xl shadow-primary/20 mt-8">
+              {createOrder.isPending ? "Processing…" : `Pay ${totalAmount} ₽`}
+            </Button>
+            <p className="text-center text-xs text-muted-foreground mt-4">
+              This is a mock payment. No real charges will be made.
+            </p>
+          </form>
+        </SheetContent>
+      </Sheet>
+
+
+      {/* ══════════════════════════════════════════════════════════════════ */}
+      {/* ── Attendees & Reviews ──────────────────────────────────────────── */}
+      {/* ══════════════════════════════════════════════════════════════════ */}
+      <AttendeesAndReviews
+        event={event}
+        currentUser={user ?? null}
+        isAuthenticated={isAuthenticated}
+        myRsvpStatus={myStatus}
+      />
+
+            {/* ── Legal disclaimer ───────────────────────────────────────────── */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 mt-8 border-t border-border/50">
+        <p className="text-center text-xs text-muted-foreground/70 leading-relaxed">
+          ExpatEvents provides the infrastructure to organise activities. The voluntary organisers
+          do not represent ExpatEvents as vicarious agents. In the case of gross negligence by the
+          organisers, ExpatEvents therefore does not accept any legal responsibility for resulting
+          damages. Neither ExpatEvents nor the event organisers assume liability for any loss of or
+          damage to personal property, nor shall they be held responsible in the event of financial,
+          physical, or emotional damage.
+        </p>
+      </div>
+
+    </div>
+  );
+}

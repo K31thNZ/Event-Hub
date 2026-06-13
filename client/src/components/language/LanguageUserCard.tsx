@@ -13,6 +13,10 @@
 //   small_group / social  → available to all users when BOTH have that type set
 //   1on1                  → requires the current user to have role "premium"
 //                           (or "admin"); shown as a locked pill to free users
+//
+// Task 1 (Spec Batch 1): Compatibility hints — contextual chips computed from
+//   currentUser prop vs person props. No backend call needed.
+// Task 3 (Spec Batch 1): Partner availability shown in SparkDialog.
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -30,7 +34,8 @@ import {
 import { LANGUAGES } from "@/lib/constants";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import { format, isPast } from "date-fns";
+import { format, isPast, differenceInDays } from "date-fns";
+import type { User as CurrentUser } from "@/hooks/use-auth";
 
 const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? "https://auth.expatevents.org";
 
@@ -53,10 +58,14 @@ export interface LanguageUser {
   meeting_types:    string[];
   bio:              string;
   telegram_username?: string | null;
+  language_story?:  string | null;   // Task 6 – 140-char "how I started learning X"
+  last_seen_at?:    string | null;   // Task 4 – for stale-profile badge
+  is_event_regular?: boolean;        // Task 12 – attended ≥1 event
 }
 
 interface LanguageUserCardProps {
-  person: LanguageUser;
+  person:       LanguageUser;
+  currentUser?: CurrentUser | null;  // Task 1 – passed from LanguageExchange for hints
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -93,6 +102,44 @@ function getLangLabel(code: string): string {
 
 function isPremiumUser(role?: string): boolean {
   return role === "premium" || role === "admin";
+}
+
+// ── Task 1: Compatibility hints ───────────────────────────────────────────────
+// Computes contextual hints to show on each partner card.
+// All computation is client-side — no extra API call needed.
+
+interface CompatHint { icon: string; label: string; }
+
+function getCompatHints(person: LanguageUser, currentUser: CurrentUser | null | undefined): CompatHint[] {
+  if (!currentUser) return [];
+  const hints: CompatHint[] = [];
+
+  // 🔄 Mutual language — I speak what they're learning or vice versa
+  const myNative   = currentUser.nativeLanguage ? [currentUser.nativeLanguage] : [];
+  const myLearning = (currentUser.learningLanguages ?? []).map(l => l.code);
+  const theirNative   = person.native;
+  const theirLearning = person.learning.map(l => l.code);
+
+  const iSpeakWhatTheyLearn  = myNative.some(c => theirLearning.includes(c));
+  const theySpeakWhatILearn  = theirNative.some(c => myLearning.includes(c));
+  if (iSpeakWhatTheyLearn || theySpeakWhatILearn) {
+    hints.push({ icon: "🔄", label: "Mutual language" });
+  }
+
+  // 🎯 Shared interests
+  const sharedInterests = (currentUser.interests ?? []).filter(i => person.interests.includes(i));
+  if (sharedInterests.length >= 2) {
+    hints.push({ icon: "🎯", label: `${sharedInterests.length} shared interests` });
+  } else if (sharedInterests.length === 1) {
+    hints.push({ icon: "🎯", label: "1 shared interest" });
+  }
+
+  // 📍 Same city
+  if (currentUser.city && person.city && currentUser.city.toLowerCase() === person.city.toLowerCase()) {
+    hints.push({ icon: "📍", label: "Same city" });
+  }
+
+  return hints;
 }
 
 // ── Time slot builder (unchanged) ────────────────────────────────────────────
@@ -405,6 +452,30 @@ function SparkDialog({ person, open, onClose }: SparkDialogProps) {
 
   const timeOptions = buildTimeOptions();
 
+  // Task 3: fetch partner's availability slots for the heat-map
+  const { data: partnerAvail } = useQuery<{ slots: { day: number; hour: number }[] }>({
+    queryKey: ["partner-avail", person.id],
+    queryFn:  () =>
+      fetch(`${AUTH_URL}/api/language-exchange/users/${person.id}/availability`, {
+        credentials: "include",
+      }).then(r => r.json()),
+    enabled: open,
+    staleTime: 1000 * 60 * 10,
+  });
+  const partnerSlots = partnerAvail?.slots ?? [];
+  const hasPartnerSlots = partnerSlots.length > 0;
+
+  // Build a Set for O(1) lookup: "day-hour"
+  const partnerSlotSet = new Set(partnerSlots.map(s => `${s.day}-${s.hour}`));
+
+  const DAY_LABELS  = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+  const HOUR_LABELS = ["00", "03", "06", "09", "12", "15", "18", "21"];
+  // We show an 8×7 grid (8 3-hour blocks × 7 days)
+  // A cell is "active" if any of the 3 hours in that block is in the partner's slots
+  function isCellActive(day: number, blockStart: number) {
+    return [0,1,2].some(offset => partnerSlotSet.has(`${day}-${blockStart + offset}`));
+  }
+
   const toggle = (iso: string) => {
     setSelected(prev =>
       prev.includes(iso)
@@ -521,6 +592,39 @@ function SparkDialog({ person, open, onClose }: SparkDialogProps) {
               )}
             </div>
 
+            {/* Task 3: Partner availability heat-map */}
+            {hasPartnerSlots && (
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-2">
+                  {person.full_name.split(' ')[0]} is usually free:
+                </p>
+                <div className="grid gap-0.5" style={{ gridTemplateColumns: `auto repeat(7, 1fr)` }}>
+                  {/* Day headers */}
+                  <div />
+                  {DAY_LABELS.map(d => (
+                    <div key={d} className="text-center text-[9px] text-muted-foreground font-medium">{d}</div>
+                  ))}
+                  {/* Hour-block rows */}
+                  {HOUR_LABELS.map((label, hi) => (
+                    <>
+                      <div key={`lbl-${hi}`} className="text-[9px] text-muted-foreground pr-1 flex items-center">{label}</div>
+                      {[0,1,2,3,4,5,6].map(day => (
+                        <div
+                          key={`${day}-${hi}`}
+                          className={[
+                            "h-3 rounded-sm transition-colors",
+                            isCellActive(day, hi * 3)
+                              ? "bg-primary/70"
+                              : "bg-muted/40",
+                          ].join(" ")}
+                        />
+                      ))}
+                    </>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <DialogFooter className="gap-2 sm:gap-2 pt-1">
               <Button variant="outline" onClick={handleClose} disabled={sending} className="rounded-xl">Cancel</Button>
               <Button onClick={handleSend} disabled={sending} className="rounded-xl gap-2 flex-1">
@@ -591,7 +695,7 @@ function PremiumUpsellDialog({ open, onClose }: { open: boolean; onClose: () => 
 
 // ── LanguageUserCard ──────────────────────────────────────────────────────────
 
-export default function LanguageUserCard({ person }: LanguageUserCardProps) {
+export default function LanguageUserCard({ person, currentUser }: LanguageUserCardProps) {
   const { user }                              = useAuth();
   const [sparkOpen,         setSparkOpen]     = useState(false);
   const [suggestEventOpen,  setSuggestEventOpen] = useState(false);
@@ -599,6 +703,16 @@ export default function LanguageUserCard({ person }: LanguageUserCardProps) {
 
   const myMeetingTypes  = (user as any)?.meetingTypes ?? [];
   const isPremium       = isPremiumUser((user as any)?.role);
+
+  // Task 1: compatibility hints (uses prop currentUser so LanguageExchange can pass
+  // the already-fetched user without a second query inside the card)
+  const effectiveCurrentUser = currentUser ?? (user as any);
+  const compatHints = getCompatHints(person, effectiveCurrentUser);
+
+  // Task 4: stale-profile badge — last seen > 30 days ago
+  const isStale = person.last_seen_at
+    ? differenceInDays(new Date(), new Date(person.last_seen_at)) > 30
+    : false;
 
   // Shared meeting types between current user and this partner.
   // 1on1 is included in the list regardless of premium status so we can
@@ -652,6 +766,12 @@ export default function LanguageUserCard({ person }: LanguageUserCardProps) {
                 )}
               </div>
             </div>
+            {/* Task 12: Event Regular badge */}
+            {person.is_event_regular && (
+              <Badge variant="secondary" className="text-xs shrink-0 bg-green-50 text-green-700 border-green-200">
+                ✅ Event Regular
+              </Badge>
+            )}
           </div>
 
           {/* ── Bio ── */}
@@ -712,6 +832,30 @@ export default function LanguageUserCard({ person }: LanguageUserCardProps) {
                 )}
               </div>
             </div>
+          )}
+
+          {/* ── Task 1: Compatibility hints ── */}
+          {compatHints.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {compatHints.map(h => (
+                <span key={h.label}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-medium">
+                  {h.icon} {h.label}
+                </span>
+              ))}
+              {/* Task 4: stale profile hint */}
+              {isStale && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-muted/60 text-muted-foreground border border-border text-[11px]">
+                  ⏸ Last seen &gt; 1 month
+                </span>
+              )}
+            </div>
+          )}
+          {/* show stale badge even when no other hints */}
+          {compatHints.length === 0 && isStale && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-muted/60 text-muted-foreground border border-border text-[11px] self-start">
+              ⏸ Last seen &gt; 1 month
+            </span>
           )}
 
           {/* ── Meeting style ── */}

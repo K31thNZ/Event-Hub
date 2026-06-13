@@ -14,6 +14,7 @@ import { Languages, Users, User, CalendarDays, MapPin, Filter, X, RefreshCw } fr
 import { motion, AnimatePresence } from "framer-motion";
 import { LANGUAGES, EVENT_CATEGORIES } from "@/lib/constants";
 import LanguageUserCard from "@/components/language/LanguageUserCard";
+import { useAuth } from "@/hooks/use-auth";
 
 const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? "https://auth.expatevents.org";
 
@@ -36,6 +37,9 @@ export interface LanguageUser {
   meeting_types: MeetingType[] | string[];
   bio:           string;
   telegram_username?: string | null;
+  language_story?:   string | null;
+  last_seen_at?:     string | null;   // Task 4 – sorting + stale badge
+  is_event_regular?: boolean;
 }
 
 interface Filters {
@@ -194,6 +198,7 @@ export default function LanguageExchange() {
     staleTime: 1000 * 60 * 5, // 5 min cache
   });
 
+  const { user: currentUser } = useAuth();
   const allUsers: LanguageUser[] = apiData?.data ?? [];
 
   // ── Dynamic city list from actual data ────────────────────────────────────
@@ -220,6 +225,23 @@ export default function LanguageExchange() {
     if (filters.meeting_type !== "all" && !u.meeting_types.includes(filters.meeting_type)) return false;
     return true;
   }), [allUsers, filters]);
+
+  // Task 4: Sort — mutual language overlap first, then by last_seen_at descending.
+  // A user has mutual overlap if: I speak what they learn OR they speak what I learn.
+  const sorted = [...filtered].sort((a, b) => {
+    const myNative   = currentUser?.nativeLanguage ? [currentUser.nativeLanguage] : [];
+    const myLearning = (currentUser?.learningLanguages ?? []).map((l: any) => l.code);
+    const overlap = (u: LanguageUser) =>
+      myNative.some(c  => u.learning.map(l => l.code).includes(c)) ||
+      u.native.some(c  => myLearning.includes(c));
+    const aOverlap = overlap(a) ? 1 : 0;
+    const bOverlap = overlap(b) ? 1 : 0;
+    if (bOverlap !== aOverlap) return bOverlap - aOverlap;
+    // Then by last_seen_at descending (most recent first)
+    const aTime = a.last_seen_at ? new Date(a.last_seen_at).getTime() : 0;
+    const bTime = b.last_seen_at ? new Date(b.last_seen_at).getTime() : 0;
+    return bTime - aTime;
+  });
 
   const activeCount =
     (filters.language     !== "all" ? 1 : 0) +
@@ -446,7 +468,7 @@ export default function LanguageExchange() {
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <AnimatePresence>
-                {filtered.map((u, i) => (
+                {sorted.map((u, i) => (
                   <motion.div
                     key={u.id}
                     initial={{ opacity: 0, y: 16 }}
@@ -454,7 +476,7 @@ export default function LanguageExchange() {
                     exit={{ opacity: 0 }}
                     transition={{ delay: Math.min(i * 0.04, 0.3) }}
                   >
-                    <LanguageUserCard person={u} />
+                    <LanguageUserCard person={u} currentUser={currentUser} />
                   </motion.div>
                 ))}
               </AnimatePresence>
