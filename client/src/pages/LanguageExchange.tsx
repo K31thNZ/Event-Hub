@@ -14,6 +14,7 @@ import { Languages, Users, User, CalendarDays, MapPin, Filter, X, RefreshCw } fr
 import { motion, AnimatePresence } from "framer-motion";
 import { LANGUAGES, EVENT_CATEGORIES } from "@/lib/constants";
 import LanguageUserCard from "@/components/language/LanguageUserCard";
+import MomentsSection  from "@/components/language/MomentsSection";   // Task 11
 import { useAuth } from "@/hooks/use-auth";
 
 const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? "https://auth.expatevents.org";
@@ -410,6 +411,11 @@ export default function LanguageExchange() {
           </button>
         </div>
       )}
+
+      {/* Moments feed (Task 11) — shown above the partner grid */}
+      <div className="mb-8">
+        <MomentsSection />
+      </div>
 
       {/* Loading state */}
       {isLoading && (
