@@ -781,6 +781,14 @@ export default function LanguageUserCard({ person, currentUser }: LanguageUserCa
             </p>
           )}
 
+          {/* Task 6 — Language Story quote */}
+          {person.language_story && (
+            <p className="text-xs italic text-muted-foreground/80 flex items-start gap-1.5 leading-relaxed">
+              <span className="shrink-0 mt-0.5">🌱</span>
+              <span className="line-clamp-2">&ldquo;{person.language_story}&rdquo;</span>
+            </p>
+          )}
+
           {/* ── Native languages ── */}
           {person.native.length > 0 && (
             <div>

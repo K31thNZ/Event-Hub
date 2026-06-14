@@ -444,6 +444,7 @@ export default function Profile() {
   const [nameInput,     setNameInput]     = useState("");
   const [bio,           setBio]           = useState("");
   const [city,          setCity]          = useState("");
+  const [languageStory, setLanguageStory] = useState("");  // Task 6
 
   const [interests,        setInterests]        = useState<string[]>([]);
   const [meetingTypes,     setMeetingTypes]      = useState<string[]>([]);
@@ -495,6 +496,7 @@ export default function Profile() {
         bio?:               string;
         city?:              string;
         meetingTypes?:      string[];
+        languageStory?:     string;     // Task 6
       }) => {
         if (data.nativeLanguage)              setNativeLanguage(data.nativeLanguage);
         if (data.learningLanguages)           setLearningLanguages(data.learningLanguages);
@@ -505,6 +507,7 @@ export default function Profile() {
         if (data.bio)                         setBio(data.bio);
         if (data.city)                        setCity(data.city);
         if (data.meetingTypes)                setMeetingTypes(data.meetingTypes);
+        if (data.languageStory)               setLanguageStory(data.languageStory);  // Task 6
       })
       .catch(() => {});
   }, [user]);
@@ -660,9 +663,10 @@ export default function Profile() {
             myAgeGroup:        myAgeGroup        || undefined,
             preferredAgeMin,
             preferredAgeMax,
-            bio:               bio.trim()        || undefined,
-            city:              city.trim()        || undefined,
+            bio:               bio.trim()          || undefined,
+            city:              city.trim()          || undefined,
             meetingTypes:      meetingTypes.length ? meetingTypes : undefined,
+            languageStory:     languageStory.trim().slice(0, 140) || undefined,  // Task 6
           }),
         }),
       ]);
@@ -808,6 +812,13 @@ export default function Profile() {
           <Card className="rounded-2xl border-border/60 shadow-sm overflow-hidden">
             <SectionHeading icon={User} title="About You" subtitle="This is the first thing people read on your language exchange card" />
             <CardContent className="p-5 sm:p-6 space-y-4">
+              {/* Task 7 — Bio empty nudge */}
+              {bio.trim().length < 20 && (
+                <div className="flex items-start gap-2 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+                  <span className="shrink-0">✏️</span>
+                  <span>Add a bio — partners are 3× more likely to respond when they can read about you.</span>
+                </div>
+              )}
               <div className="space-y-1.5">
                 <Label className="text-sm font-medium">Bio</Label>
                 <Textarea
@@ -820,6 +831,29 @@ export default function Profile() {
                 <div className="flex justify-end">
                   <span className={`text-xs ${bio.length > 240 ? "text-amber-500" : "text-muted-foreground"}`}>
                     {bio.length}/280
+                  </span>
+                </div>
+              </div>
+
+              {/* Task 6 — Language Story field */}
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium flex items-center gap-1.5">
+                  🌱 Language Story
+                  <span className="text-xs font-normal text-muted-foreground">(optional)</span>
+                </Label>
+                <Textarea
+                  value={languageStory}
+                  onChange={e => setLanguageStory(e.target.value.slice(0, 140))}
+                  placeholder="How did you start learning your target language? (up to 140 chars)"
+                  className="rounded-xl min-h-[64px] resize-none text-sm"
+                  maxLength={140}
+                />
+                <div className="flex items-center justify-between">
+                  {languageStory.trim().length === 0
+                    ? <span className="text-xs text-muted-foreground/70 italic">Add your language story →</span>
+                    : <span />}
+                  <span className={`text-xs ${languageStory.length > 120 ? "text-amber-500" : "text-muted-foreground"}`}>
+                    {languageStory.length}/140
                   </span>
                 </div>
               </div>
@@ -1121,6 +1155,13 @@ export default function Profile() {
           <Card className="rounded-2xl border-border/60 shadow-sm overflow-hidden">
             <SectionHeading icon={Calendar} title="Weekly Availability" subtitle="Click or drag to mark when you're free to meet" />
             <CardContent className="p-4 sm:p-6 overflow-x-auto">
+              {/* Task 7 — availability nudge */}
+              {slots.length === 0 && (
+                <div className="flex items-start gap-2 rounded-xl bg-sky-50 border border-sky-200 px-3 py-2 text-xs text-sky-800 mb-3">
+                  <span className="shrink-0">⏰</span>
+                  <span>Set your availability to get more relevant sparks — partners can see when you're free before reaching out.</span>
+                </div>
+              )}
               <div className="min-w-[520px]">
                 <div className="grid grid-cols-8 gap-1 mb-1">
                   <div />

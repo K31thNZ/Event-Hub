@@ -37,6 +37,7 @@ interface PublicUser {
   telegramUsername: string | null;
   isExpatMember: boolean;
   isGamesMember: boolean;
+  language_story: string | null;   // Task 6
 }
 
 interface EventItem {
@@ -96,6 +97,56 @@ function ProfileSkeleton() {
   );
 }
 
+// ── Availability heat-map helpers (Task 8) ──────────────────────────────────
+
+const AVAIL_DAY_LABELS  = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+const AVAIL_HOUR_LABELS = ["00", "03", "06", "09", "12", "15", "18", "21"];
+
+function AvailHeatMap({ slots, name }: { slots: { day: number; hour: number }[]; name: string }) {
+  if (slots.length === 0) return null;
+
+  const slotSet = new Set(slots.map(s => `${s.day}-${s.hour}`));
+
+  // Collapse 24 hours into 8 blocks of 3 hours each
+  function isCellActive(day: number, blockStart: number) {
+    return [0, 1, 2].some(offset => slotSet.has(`${day}-${blockStart + offset}`));
+  }
+
+  return (
+    <div>
+      <p className="text-xs font-medium text-muted-foreground mb-2">
+        {name} is usually free:
+      </p>
+      <div
+        className="grid gap-0.5"
+        style={{ gridTemplateColumns: `auto repeat(7, 1fr)` }}
+      >
+        {/* Day header row */}
+        <div />
+        {AVAIL_DAY_LABELS.map(d => (
+          <div key={d} className="text-center text-[9px] text-muted-foreground font-medium">{d}</div>
+        ))}
+
+        {/* One row per 3-hour block */}
+        {AVAIL_HOUR_LABELS.map((label, hi) => (
+          <>
+            <div key={`lbl-${hi}`} className="text-[9px] text-muted-foreground pr-1 flex items-center">{label}</div>
+            {[0, 1, 2, 3, 4, 5, 6].map(day => (
+              <div
+                key={`${day}-${hi}`}
+                className={[
+                  "h-3 rounded-sm transition-colors",
+                  isCellActive(day, hi * 3) ? "bg-primary/70" : "bg-muted/40",
+                ].join(" ")}
+              />
+            ))}
+          </>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function PublicProfile() {
@@ -128,6 +179,18 @@ export default function PublicProfile() {
     },
     enabled: !isNaN(numericId),
   });
+
+  // Task 8 — fetch this user's availability slots from meh-auth
+  const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? "";
+  const { data: availData } = useQuery<{ slots: { day: number; hour: number }[] }>({
+    queryKey: ["public-avail", numericId],
+    queryFn: () =>
+      fetch(`${AUTH_URL}/api/language-exchange/users/${numericId}/availability`)
+        .then(r => (r.ok ? r.json() : { slots: [] })),
+    enabled: !isNaN(numericId),
+    staleTime: 1000 * 60 * 10,
+  });
+  const availSlots = availData?.slots ?? [];
 
   if (isNaN(numericId)) {
     return (
@@ -224,11 +287,19 @@ export default function PublicProfile() {
 
         <div className="space-y-5">
 
-          {/* ── Bio ── */}
-          {profile.bio && (
+          {/* ── Bio + Language Story (Task 6) ── */}
+          {(profile.bio || profile.language_story) && (
             <Card className="rounded-2xl border-border/60 shadow-sm">
-              <CardContent className="p-5">
-                <p className="text-sm leading-relaxed text-foreground/90">{profile.bio}</p>
+              <CardContent className="p-5 space-y-3">
+                {profile.bio && (
+                  <p className="text-sm leading-relaxed text-foreground/90">{profile.bio}</p>
+                )}
+                {profile.language_story && (
+                  <p className="text-xs italic text-muted-foreground/80 flex items-start gap-1.5 leading-relaxed border-t border-border/50 pt-3">
+                    <span className="shrink-0 mt-0.5">🌱</span>
+                    <span>&ldquo;{profile.language_story}&rdquo;</span>
+                  </p>
+                )}
               </CardContent>
             </Card>
           )}
@@ -313,6 +384,22 @@ export default function PublicProfile() {
                 </Card>
               )}
             </div>
+          )}
+
+          {/* ── Availability heat-map (Task 8) ── */}
+          {availSlots.length > 0 && (
+            <Card className="rounded-2xl border-border/60 shadow-sm">
+              <CardContent className="p-5">
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="text-base">📅</span>
+                  <span className="font-semibold text-sm">Availability</span>
+                </div>
+                <AvailHeatMap
+                  slots={availSlots}
+                  name={displayName.split(" ")[0]}
+                />
+              </CardContent>
+            </Card>
           )}
 
           {/* ── Connect CTA (not shown on own profile) ── */}
