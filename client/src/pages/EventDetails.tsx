@@ -387,24 +387,8 @@ export default function EventDetails() {
                   )}
                 </div>
 
-                {/* ── Ticket Button ─────────────────────────────── */}
-                {!isAuthenticated ? (
-                  <Button
-                    onClick={login}
-                    className="w-full rounded-xl shadow-lg shadow-primary/20"
-                  >
-                    Sign in to get tickets
-                  </Button>
-                ) : (
-                  <Button
-                    onClick={() => setIsTicketPanelOpen(true)}
-                    className="w-full rounded-xl shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all hover:-translate-y-0.5 group"
-                  >
-                    <Ticket className="w-4 h-4 mr-2" />
-                    Get Tickets
-                    <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
-                  </Button>
-                )}
+                {/* ── Ticket Button — hidden until ticketing is live ── */}
+                {/* TODO: re-enable once ticketing is ready */}
               </motion.div>
             </div>
           ) : (

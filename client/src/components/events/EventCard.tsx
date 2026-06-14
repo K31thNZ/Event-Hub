@@ -116,38 +116,18 @@ export function EventCard({
             </span>
           </div>
 
-          <div className="mt-auto pt-4 border-t border-border flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-                <Ticket className="w-4 h-4 text-primary" />
-              </div>
-              <div className="text-sm">
-                <span className="text-muted-foreground block text-xs">
-                  Starting from
-                </span>
-                <span className="font-bold text-foreground">
-                  {minPrice > 0 ? `${minPrice} ₽` : "Free"}
-                </span>
-              </div>
+          {/* RSVP counts */}
+          {rsvpCounts && (
+            <div className="mt-auto pt-4 border-t border-border flex items-center gap-2 text-xs text-muted-foreground">
+              <Users className="w-3.5 h-3.5" />
+              <span title="Going" className="font-medium text-green-600 dark:text-green-400">
+                ✅ {rsvpCounts.going} going
+              </span>
+              <span title="Interested" className="font-medium text-amber-600 dark:text-amber-400">
+                · 🤔 {rsvpCounts.maybe} interested
+              </span>
             </div>
-
-            {/* RSVP counts – always visible, placed next to ticket info */}
-            {rsvpCounts && (
-              <div className="flex items-center gap-2 text-xs text-muted-foreground ml-auto mr-2">
-                <Users className="w-3.5 h-3.5" />
-                <span title="Going" className="font-medium text-green-600 dark:text-green-400">
-                  ✅ {rsvpCounts.going}
-                </span>
-                <span title="Interested" className="font-medium text-amber-600 dark:text-amber-400">
-                  🤔 {rsvpCounts.maybe}
-                </span>
-              </div>
-            )}
-
-            <div className="bg-foreground text-background px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap">
-              Get Tickets
-            </div>
-          </div>
+          )}
         </div>
       </motion.div>
     </Link>
