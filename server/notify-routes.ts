@@ -318,4 +318,27 @@ export function registerNotifyRoutes(app: Express) {
       res.status(500).json({ error: "Failed to fetch RSVP status" });
     }
   });
+
+  // ── GET /api/bot/events/attended-count ───────────────────────────────────
+  // Task 12 (Spec Batch 3): Returns how many events a user has been confirmed
+  // as attended. Called by meh-auth to determine the "Event Regular" badge.
+  // Protected by x-bot-secret (same EXPAT_API_SECRET used by other bot routes).
+  // Query params: userId (integer, required).
+  app.get("/api/bot/events/attended-count", (req: any, res: any) => {
+    if (!validateBotSecret(req, res)) return;
+
+    const userId = parseInt(req.query.userId as string, 10);
+    if (isNaN(userId)) return res.status(400).json({ error: "userId is required" });
+
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(rsvps)
+      .where(and(eq(rsvps.userId, userId), eq(rsvps.attended, true)))
+      .then(([row]) => res.json({ count: row?.count ?? 0 }))
+      .catch((err: any) => {
+        console.error("[bot] attended-count error:", err.message);
+        res.status(500).json({ error: "Failed to fetch attended count" });
+      });
+  });
+
 }

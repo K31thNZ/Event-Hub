@@ -38,6 +38,7 @@ interface PublicUser {
   isExpatMember: boolean;
   isGamesMember: boolean;
   language_story: string | null;   // Task 6
+  is_event_regular?: boolean;       // Task 12
 }
 
 interface EventItem {
@@ -281,6 +282,9 @@ export default function PublicProfile() {
             <div className="flex gap-1.5 flex-wrap mt-1.5">
               {profile.isExpatMember && <Badge variant="secondary" className="text-xs">ExpatEvents</Badge>}
               {profile.isGamesMember && <Badge variant="secondary" className="text-xs">Games in English</Badge>}
+              {profile.is_event_regular && (
+                <Badge variant="secondary" className="text-xs bg-green-50 text-green-700 border-green-200">✅ Event Regular</Badge>
+              )}
             </div>
           </div>
         </div>
