@@ -3,7 +3,7 @@ import { useEvent } from "@/hooks/use-events";
 import { useCreateOrder } from "@/hooks/use-orders";
 import { useAuth } from "@/hooks/use-auth";
 import { formatEventDate, formatEventTime } from "@/lib/date-utils";
-import { Calendar, Clock, MapPin, Map, Ticket, Plus, Minus, ArrowRight, CheckCircle2, Timer, Users, Star, CheckCheck, ChevronDown } from "lucide-react";
+import { Calendar, Clock, MapPin, Map, Ticket, Plus, Minus, ArrowRight, CheckCircle2, Timer, Users, Star, CheckCheck, ChevronDown, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -77,7 +77,7 @@ export default function EventDetails() {
       return res.json() as Promise<{ going: number; maybe: number; no: number }>;
     },
     enabled: !!event,
-    refetchInterval: 15_000, // A6 fix: reduced from 60s so bot RSVPs appear quickly
+    refetchInterval: 15_000,
   });
 
   const rsvpMutation = useMutation({
@@ -100,27 +100,22 @@ export default function EventDetails() {
   const handleRsvp = useCallback((status: "going" | "maybe" | "no") => {
     if (!isAuthenticated) { login(); return; }
     const current = rsvpData?.status;
-    // Toggle off if already selected
     rsvpMutation.mutate(current === status ? "none" : status);
   }, [isAuthenticated, login, rsvpData, rsvpMutation]);
 
   const myStatus = rsvpData?.status ?? null;
 
   // Auto-RSVP if URL contains ?rsvp=going|maybe (from mini-app inline keyboard buttons).
-  // A5 fix: use a ref so this fires at most once per page load, preventing double-writes
-  //         when myStatus flickers between null (loading) and a value.
   const autoRsvpFiredRef = useRef(false);
   useEffect(() => {
     if (autoRsvpFiredRef.current) return;
     const params = new URLSearchParams(window.location.search);
     const autoRsvp = params.get("rsvp");
     if ((autoRsvp === "going" || autoRsvp === "maybe") && isAuthenticated) {
-      // Wait until we know the real current status (query no longer loading)
-      if (rsvpData === undefined) return; // still loading — wait for next render
-      if (myStatus) return;               // already has a status — skip
+      if (rsvpData === undefined) return;
+      if (myStatus) return;
       autoRsvpFiredRef.current = true;
       handleRsvp(autoRsvp as "going" | "maybe");
-      // Clean the URL param without reload
       const url = new URL(window.location.href);
       url.searchParams.delete("rsvp");
       window.history.replaceState({}, "", url.toString());
@@ -202,6 +197,16 @@ export default function EventDetails() {
     }
   };
 
+  // ── Strip the inline "📍 More info: <url>" line from description ────────
+  // source_url is stored separately; we render a proper button instead.
+  const cleanDescription = (event.description ?? "").replace(
+    /\n\n📍 More info: https?:\/\/\S+/g,
+    ""
+  ).trim();
+
+  const sourceUrl = (event as any).sourceUrl as string | undefined;
+  const hasLocation = !!(event as any).lat && !!(event as any).lng;
+
   return (
     <div className="min-h-screen bg-background">
 
@@ -263,8 +268,21 @@ export default function EventDetails() {
               <div>
                 <h3 className="text-2xl font-display font-bold mb-4">About this event</h3>
                 <div className="prose prose-lg dark:prose-invert max-w-none text-muted-foreground whitespace-pre-wrap">
-                  {event.description}
+                  {cleanDescription}
                 </div>
+
+                {/* "More info" button — shown only when no map location is available */}
+                {!hasLocation && sourceUrl && (
+                  <a
+                    href={sourceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-6 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary/10 text-primary font-semibold text-sm hover:bg-primary/20 transition-colors"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    More info & venue
+                  </a>
+                )}
               </div>
 
               {countdown && (
@@ -546,7 +564,7 @@ export default function EventDetails() {
         myRsvpStatus={myStatus}
       />
 
-            {/* ── Legal disclaimer ───────────────────────────────────────────── */}
+      {/* ── Legal disclaimer ───────────────────────────────────────────── */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 mt-8 border-t border-border/50">
         <p className="text-center text-xs text-muted-foreground/70 leading-relaxed">
           ExpatEvents provides the infrastructure to organise activities. The voluntary organisers
