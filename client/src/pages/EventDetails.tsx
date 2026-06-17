@@ -328,19 +328,8 @@ export default function EventDetails() {
                       )}
                     </div>
                   </div>
-                  <div className="flex items-start gap-3">
-                    <Ticket className="w-4 h-4 text-primary mt-0.5 shrink-0" />
-                    <div>
-                      <p className="font-semibold text-foreground">
-                        {event.ticketTypes.length} ticket type{event.ticketTypes.length !== 1 ? "s" : ""}
-                      </p>
-                      <p>
-                        from {Math.min(...event.ticketTypes.map(t => t.price)) === 0
-                          ? "Free"
-                          : `${Math.min(...event.ticketTypes.map(t => t.price))} ₽`}
-                      </p>
-                    </div>
-                  </div>
+                  {/* Ticket types info — hidden until ticketing is live */}
+                  {/* TODO: restore when ticketing is ready */}
                 </div>
 
                 {/* ── RSVP Buttons ─────────────────────────────── */}

@@ -102,6 +102,13 @@ export function EventCard({
               {event.category}
             </div>
           </div>
+
+          {/* Free tag — bottom right of image */}
+          {event.ticketTypes.length > 0 && minPrice === 0 && (
+            <div className="absolute bottom-4 right-4 bg-green-500 text-white text-xs font-bold px-2.5 py-1 rounded-full shadow-md">
+              FREE
+            </div>
+          )}
         </div>
 
         <div className="p-6 flex-1 flex flex-col">
