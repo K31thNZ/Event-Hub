@@ -3,6 +3,8 @@ import Spark from "@/pages/Spark";
 import LiveMap from "@/pages/LiveMap";
 import AdminEventReview from "@/pages/AdminEventReview";
 import { Switch, Route, useLocation } from "wouter";
+import Guides from "./pages/Guides";
+import GuideArticle from "./pages/GuideArticle";
 import { useEffect } from "react";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -108,6 +110,8 @@ function Router() {
             <ProtectedRoute component={CreateEvent} />
           </Route>
           <Route path="/events/:id" component={EventDetails} />
+          <Route path="/guides/:slug" component={GuideArticle} />
+          <Route path="/guides" component={Guides} />
 
           {/* Orders */}
           <Route path="/orders/:id">

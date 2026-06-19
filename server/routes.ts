@@ -820,6 +820,47 @@ export async function registerRoutes(
     }
   });
 
+
+  // ── Guides (Knowledge Base) ───────────────────────────────────────────────
+  // Guides are stored in Base44 Guide entity and proxied here so the React
+  // client doesn't need to know the Base44 API directly.
+
+  const BASE44_API = "https://api.base44.com/api/apps/6a06ce7352395d8df4f59e54/entities";
+  const BASE44_TOKEN = process.env.BASE44_SERVICE_TOKEN ?? "";
+
+  async function fetchGuides(query: Record<string, unknown> = {}) {
+    const body = JSON.stringify({ query, sort: "-pinned", limit: 100 });
+    const r = await fetch(`${BASE44_API}/Guide/list`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${BASE44_TOKEN}` },
+      body,
+    });
+    if (!r.ok) throw new Error(`Base44 Guide list failed: ${r.status}`);
+    return r.json();
+  }
+
+  // GET /api/guides — list all published guides
+  app.get("/api/guides", async (_req, res) => {
+    try {
+      const data = await fetchGuides({ is_published: true });
+      res.json(Array.isArray(data) ? data : data.items ?? []);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/guides/:slug — single guide by slug
+  app.get("/api/guides/:slug", async (req, res) => {
+    try {
+      const data = await fetchGuides({ slug: req.params.slug, is_published: true });
+      const items = Array.isArray(data) ? data : data.items ?? [];
+      if (!items.length) return res.status(404).json({ error: "Guide not found" });
+      res.json(items[0]);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // ── Start background jobs ──────────────────────────────────────────
   scheduleTicketReminders();
 

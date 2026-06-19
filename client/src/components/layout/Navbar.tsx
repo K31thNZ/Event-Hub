@@ -1,5 +1,5 @@
 import { Link } from "wouter";
-import { Users, Zap, MapPin } from "lucide-react";
+import { Users, Zap, MapPin, BookOpen } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -61,6 +61,12 @@ export function Navbar() {
           <Link href="/live-map" className="flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors">
             <MapPin className="w-4 h-4" />
             Live Map
+          </Link>
+
+          {/* Guides */}
+          <Link href="/guides" className="flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors">
+            <BookOpen className="w-4 h-4" />
+            Guides
           </Link>
 
           <Link href="/groups" className="flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors">
@@ -187,6 +193,10 @@ export function Navbar() {
               {/* Live Map */}
               <Link href="/live-map" onClick={() => setMobileMenuOpen(false)} className="text-lg font-semibold flex items-center gap-2">
                 <MapPin className="w-5 h-5 text-primary" /> Live Map
+              </Link>
+              <Link href="/guides" onClick={() => setMobileMenuOpen(false)} className="text-lg font-semibold flex items-center gap-2">
+                <BookOpen className="w-5 h-5 text-primary" />
+                Guides
               </Link>
 
               <Link href="/groups" onClick={() => setMobileMenuOpen(false)} className="text-lg font-semibold flex items-center gap-2">
