@@ -39,21 +39,21 @@ function getMinPrice(event: EventWithTickets): string {
 // ── Colours ───────────────────────────────────────────────────────────────────
 
 const CATEGORY_DOT: Record<string, string> = {
-  social:     "hsl(0 72% 51%)",
-  culture:    "hsl(270 60% 55%)",
-  education:  "hsl(213 94% 55%)",
-  language:   "hsl(158 64% 44%)",
-  sports:     "hsl(34 100% 50%)",
-  networking: "hsl(340 80% 55%)",
-  music:      "hsl(290 70% 55%)",
-  food:       "hsl(25 90% 50%)",
-  wellness:   "hsl(175 60% 45%)",
-  tech:       "hsl(200 80% 50%)",
-  outdoor:    "hsl(85 65% 42%)",
-  other:      "hsl(220 15% 55%)",
+  social:     "hsl(346 80% 52%)",
+  culture:    "hsl(346 80% 52%)",
+  education:  "hsl(346 80% 52%)",
+  language:   "hsl(346 80% 52%)",
+  sports:     "hsl(346 80% 52%)",
+  networking: "hsl(346 80% 52%)",
+  music:      "hsl(346 80% 52%)",
+  food:       "hsl(346 80% 52%)",
+  wellness:   "hsl(346 80% 52%)",
+  tech:       "hsl(346 80% 52%)",
+  outdoor:    "hsl(346 80% 52%)",
+  other:      "hsl(346 80% 52%)",
 };
 
-const SPARK_COLOR = "hsl(265 80% 58%)";
+const SPARK_COLOR = "hsl(346 80% 52%)";
 
 function dotColor(category?: string | null): string {
   return CATEGORY_DOT[category ?? "other"] ?? CATEGORY_DOT.other;
