@@ -3,7 +3,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 import cors from "cors";
-import { registerRoutes } from "./routes";
+import { registerRoutes, fetchGuides } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 
@@ -106,7 +106,7 @@ async function dropStaleConstraints() {
 
   // Static file serving / Vite dev server — always last
   if (process.env.NODE_ENV === "production") {
-    serveStatic(app);
+    serveStatic(app, fetchGuides);
   } else {
     const { setupVite } = await import("./vite");
     await setupVite(httpServer, app);
