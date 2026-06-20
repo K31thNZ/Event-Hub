@@ -29,6 +29,7 @@ import DeepTalk from "@/pages/DeepTalk";
 import { useTelegramMiniAppAuth } from "@/hooks/use-telegram-miniapp-auth";
 import LanguageExchange from "@/pages/LanguageExchange";
 import PublicProfile from "@/pages/PublicProfile";
+import { ErrorBoundary } from "@/components/ui/error-boundary";
 
 const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? "https://auth.expatevents.org";
 
@@ -91,6 +92,7 @@ function Router() {
   }
 
   return (
+    <ErrorBoundary label="this page">
     <div className="min-h-screen flex flex-col bg-background font-sans">
       <Navbar />
       <main className="flex-1 flex flex-col">
@@ -148,6 +150,7 @@ function Router() {
         </Switch>
       </main>
     </div>
+    </ErrorBoundary>
   );
 }
 
@@ -164,14 +167,18 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <Toaster />
-        <AuthGate>
-          <Router />
-        </AuthGate>
-      </TooltipProvider>
-    </QueryClientProvider>
+    // Top-level boundary — catches anything the page-level ones miss
+    // (e.g. errors in Providers, Toaster, AuthGate itself)
+    <ErrorBoundary label="the app">
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <Toaster />
+          <AuthGate>
+            <Router />
+          </AuthGate>
+        </TooltipProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 
