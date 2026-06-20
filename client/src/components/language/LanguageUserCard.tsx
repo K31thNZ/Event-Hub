@@ -358,7 +358,7 @@ function SuggestEventDialog({ person, sharedTypes, open, onClose }: SuggestEvent
                       {/* Event image or category placeholder */}
                       <div className="h-12 w-12 rounded-lg overflow-hidden shrink-0 bg-muted flex items-center justify-center">
                         {event.imageUrl
-                          ? <img src={event.imageUrl} alt="" className="w-full h-full object-cover" />
+                          ? <img src={event.imageUrl} alt="" loading="lazy" className="w-full h-full object-cover" />
                           : <CalendarDays className="w-5 h-5 text-muted-foreground" />
                         }
                       </div>
