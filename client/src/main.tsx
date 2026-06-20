@@ -1,3 +1,6 @@
+// ── Sentry — must be the very first import ─────────────────────────────────
+import "./lib/sentry";
+
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./index.css";
