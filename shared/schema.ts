@@ -109,6 +109,9 @@ export const orders = pgTable("orders", {
   attendeeEmail: text("attendee_email").notNull(),
   notes:         text("notes"),
   createdAt:     timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  // Tracks when (if ever) a Telegram reminder was sent for this order.
+  // NULL = not yet sent. Persisted so reminder dedup survives server restarts.
+  reminderSentAt: timestamp("reminder_sent_at", { withTimezone: true }),
 }, (table) => ({
   // Attendee order history
   attendeeIdx:      index("orders_attendee_idx").on(table.attendeeId),
