@@ -1,4 +1,5 @@
 import { scheduleReminders } from "./reminder-scheduler";
+import { initLaunchDarkly } from "./launchdarkly";
 import express, { type Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
@@ -113,6 +114,7 @@ async function dropStaleConstraints() {
   }
 
   const port = parseInt(process.env.PORT || "5000", 10);
+  await initLaunchDarkly();
   httpServer.listen(
     {
       port,

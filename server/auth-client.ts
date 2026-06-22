@@ -1,5 +1,17 @@
 import type { Request, Response, NextFunction } from "express";
-import { MEHUser } from "@shared/schema";
+
+// MEHUser — shape returned by the external meh-auth service
+export interface MEHUser {
+  id: number | string;
+  username?: string;
+  role: string;
+  displayName?: string;
+  avatarUrl?: string;
+  email?: string;
+  isExpatMember?: boolean;
+  telegramId?: string | number | null;
+  [key: string]: unknown;
+}
 
 // Extend Express Request interface to include authenticated user
 declare global {
