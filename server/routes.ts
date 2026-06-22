@@ -340,7 +340,7 @@ export async function registerRoutes(
 
   app.get(api.events.get.path, async (req, res) => {
     try {
-      const id = parseInt(req.params.id, 10);
+      const id = parseInt(String(req.params.id), 10);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid event ID" });
       const event = await storage.getEvent(id);
       if (!event) return res.status(404).json({ message: "Event not found" });
@@ -371,7 +371,7 @@ export async function registerRoutes(
 
   app.patch(api.events.update.path, requireAuth, async (req, res) => {
     try {
-      const id = parseInt(req.params.id, 10);
+      const id = parseInt(String(req.params.id), 10);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid event ID" });
       const existing = await storage.getEvent(id);
       if (!existing) return res.status(404).json({ message: "Event not found" });
@@ -395,7 +395,7 @@ export async function registerRoutes(
 
   app.delete(api.events.delete.path, requireAuth, async (req, res) => {
     try {
-      const id = parseInt(req.params.id, 10);
+      const id = parseInt(String(req.params.id), 10);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid event ID" });
       const existing = await storage.getEvent(id);
       if (!existing) return res.status(404).json({ message: "Event not found" });
@@ -416,7 +416,7 @@ export async function registerRoutes(
   // ── Resend event notification ──────────────────────────────────────────────
   app.post("/api/events/:id/resend-notification", requireAuth, async (req, res) => {
     try {
-      const id = parseInt(req.params.id, 10);
+      const id = parseInt(String(req.params.id), 10);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid event ID" });
       const event = await storage.getEvent(id);
       if (!event) return res.status(404).json({ message: "Event not found" });
@@ -459,7 +459,7 @@ export async function registerRoutes(
   // ── Web RSVP (authenticated users from mini-app / website) ─────────────
   app.post("/api/events/:id/rsvp", requireAuth, async (req, res) => {
     try {
-      const eventId = parseInt(req.params.id, 10);
+      const eventId = parseInt(String(req.params.id), 10);
       if (isNaN(eventId)) return res.status(400).json({ error: "Invalid event ID" });
       const { status } = req.body;
       if (!status || !["going", "maybe", "no", "none"].includes(status)) {
@@ -520,7 +520,7 @@ export async function registerRoutes(
   // ── GET current user RSVP status ─────────────────────────────────────────
   app.get("/api/events/:id/rsvp", requireAuth, async (req, res) => {
     try {
-      const eventId = parseInt(req.params.id, 10);
+      const eventId = parseInt(String(req.params.id), 10);
       if (isNaN(eventId)) return res.status(400).json({ error: "Invalid event ID" });
       const userId = Number(req.user?.id);
       const [row] = await db
@@ -536,7 +536,7 @@ export async function registerRoutes(
   // ── GET RSVP counts for an event (public) ────────────────────────────────
   app.get("/api/events/:id/rsvp-counts", async (req, res) => {
     try {
-      const eventId = parseInt(req.params.id, 10);
+      const eventId = parseInt(String(req.params.id), 10);
       if (isNaN(eventId)) return res.status(400).json({ error: "Invalid event ID" });
       const countRows = await db.execute(
         sql`SELECT status, COUNT(*)::int AS count FROM rsvps
@@ -565,7 +565,7 @@ export async function registerRoutes(
 
   app.get(api.orders.get.path, requireAuth, async (req, res) => {
     try {
-      const id = parseInt(req.params.id, 10);
+      const id = parseInt(String(req.params.id), 10);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid order ID" });
       const order = await storage.getOrder(id);
       if (!order) return res.status(404).json({ message: "Order not found" });
@@ -610,7 +610,7 @@ export async function registerRoutes(
   // Visible to anyone (counts), full list to organiser or admin.
   app.get("/api/events/:id/attendees", async (req, res) => {
     try {
-      const eventId = parseInt(req.params.id, 10);
+      const eventId = parseInt(String(req.params.id), 10);
       if (isNaN(eventId)) return res.status(400).json({ error: "Invalid event ID" });
 
       const event = await storage.getEvent(eventId);
@@ -672,8 +672,8 @@ export async function registerRoutes(
   // Organiser marks a specific RSVP as attended=true/false.
   app.post("/api/events/:id/attendees/:userId/attended", requireAuth, async (req, res) => {
     try {
-      const eventId  = parseInt(req.params.id, 10);
-      const targetId = parseInt(req.params.userId, 10);
+      const eventId  = parseInt(String(req.params.id), 10);
+      const targetId = parseInt(String(req.params.userId), 10);
       if (isNaN(eventId) || isNaN(targetId)) return res.status(400).json({ error: "Invalid ID" });
 
       const event = await storage.getEvent(eventId);
@@ -702,7 +702,7 @@ export async function registerRoutes(
   // Public — returns all reviews with rating, comment, display name, avatar.
   app.get("/api/events/:id/reviews", async (req, res) => {
     try {
-      const eventId = parseInt(req.params.id, 10);
+      const eventId = parseInt(String(req.params.id), 10);
       if (isNaN(eventId)) return res.status(400).json({ error: "Invalid event ID" });
 
       const reviews = await db
@@ -725,7 +725,7 @@ export async function registerRoutes(
   // Submit or update a review. Caller must have RSVPd (going or maybe) or been marked attended.
   app.post("/api/events/:id/reviews", requireAuth, async (req, res) => {
     try {
-      const eventId = parseInt(req.params.id, 10);
+      const eventId = parseInt(String(req.params.id), 10);
       if (isNaN(eventId)) return res.status(400).json({ error: "Invalid event ID" });
 
       const userId = Number((req as any).user?.id);
@@ -781,7 +781,7 @@ export async function registerRoutes(
   // Returns safe public fields for any meh-auth user, proxied to meh-auth.
   app.get("/api/users/:userId/public", async (req, res) => {
     try {
-      const userId = parseInt(req.params.userId, 10);
+      const userId = parseInt(String(req.params.userId), 10);
       if (isNaN(userId)) return res.status(400).json({ error: "Invalid user ID" });
 
       // Proxy to meh-auth using service secret
@@ -804,7 +804,7 @@ export async function registerRoutes(
   // Returns public events organised by a given user (for profile page).
   app.get("/api/users/:userId/events", async (req, res) => {
     try {
-      const userId = parseInt(req.params.userId, 10);
+      const userId = parseInt(String(req.params.userId), 10);
       if (isNaN(userId)) return res.status(400).json({ error: "Invalid user ID" });
 
       const userEvents = await db
