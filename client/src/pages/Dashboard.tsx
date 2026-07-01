@@ -26,7 +26,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   Ticket, CalendarDays, PlusCircle, Pencil, Trash2, Plus, Eye, EyeOff,
   ShieldCheck, Sparkles, UsersRound, KeyRound, Search, ChevronDown, Check,
-  Archive, Users, CalendarCheck, LayoutGrid, RefreshCw, Zap, Upload, X, MapPin, Send,
+  Archive, Users, CalendarCheck, LayoutGrid, RefreshCw, Zap, Upload, X, MapPin, Send, BookOpen,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient as qc } from "@/lib/queryClient";
