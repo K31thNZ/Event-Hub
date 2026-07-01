@@ -896,8 +896,7 @@ export async function registerRoutes(
       const body_html = body
         .split(/\n{2,}/)
         .map((p: string) => `<p>${p.trim().replace(/\n/g, "<br>")}</p>`)
-        .join("
-");
+        .join("\n");
 
       await db.insert(guides).values({
         title:       title.trim(),
