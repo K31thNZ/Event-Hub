@@ -327,6 +327,7 @@ export default function EventDetails() {
                       )}
                     </div>
                   </div>
+                  {event.ticketTypes.length > 0 && (
                   <div className="flex items-start gap-3">
                     <Ticket className="w-4 h-4 text-primary mt-0.5 shrink-0" />
                     <div>
@@ -340,6 +341,7 @@ export default function EventDetails() {
                       </p>
                     </div>
                   </div>
+                  )}
                 </div>
 
                 {/* ── RSVP Buttons ─────────────────────────────── */}
