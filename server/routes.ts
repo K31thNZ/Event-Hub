@@ -825,6 +825,51 @@ export async function registerRoutes(
   // Queries the local Neon postgres guides table via Drizzle.
 
 
+
+  // ── Admin: Guide submissions ───────────────────────────────────────────────
+
+  // GET /api/admin/guides/pending — all unpublished community submissions
+  app.get("/api/admin/guides/pending", requireAuth, async (req, res) => {
+    if (req.user?.role !== "admin") return res.status(403).json({ error: "Forbidden" });
+    try {
+      const rows = await db
+        .select()
+        .from(guides)
+        .where(eq(guides.isPublished, false))
+        .orderBy(desc(guides.createdAt));
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // PATCH /api/admin/guides/:id/approve — publish a submitted guide
+  app.patch("/api/admin/guides/:id/approve", requireAuth, async (req, res) => {
+    if (req.user?.role !== "admin") return res.status(403).json({ error: "Forbidden" });
+    try {
+      await db
+        .update(guides)
+        .set({ isPublished: true, updatedAt: new Date() })
+        .where(eq(guides.id, Number(req.params.id)));
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // DELETE /api/admin/guides/:id — reject & delete a submission
+  app.delete("/api/admin/guides/:id", requireAuth, async (req, res) => {
+    if (req.user?.role !== "admin") return res.status(403).json({ error: "Forbidden" });
+    try {
+      await db
+        .delete(guides)
+        .where(eq(guides.id, Number(req.params.id)));
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // POST /api/guides/submit — community submission, saved unpublished for admin review
   app.post("/api/guides/submit", async (req, res) => {
     try {
