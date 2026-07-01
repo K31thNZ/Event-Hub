@@ -14,7 +14,7 @@ import { requireAuth, getUser } from "./auth-client";
 import { z } from "zod";
 import { db } from "./db";
 import { sql, desc, gt, eq, and } from "drizzle-orm";
-import { events, groups, rsvps, eventReviews } from "@shared/schema";
+import { events, groups, rsvps, eventReviews, guides } from "@shared/schema";
 import { inArray } from "drizzle-orm";
 import uploadRouter from "./routes/upload";
 
@@ -821,41 +821,37 @@ export async function registerRoutes(
   });
 
 
-  // ── Guides (Knowledge Base) ───────────────────────────────────────────────
-  // Guides are stored in Base44 Guide entity and proxied here so the React
-  // client doesn't need to know the Base44 API directly.
+    // ── Guides (Knowledge Base) ───────────────────────────────────────────────
+  // Queries the local Neon postgres guides table via Drizzle.
 
-  const BASE44_API = "https://api.base44.com/api/apps/6a06ce7352395d8df4f59e54/entities";
-  const BASE44_TOKEN = process.env.BASE44_SERVICE_TOKEN ?? "";
-
-  async function fetchGuides(query: Record<string, unknown> = {}) {
-    const body = JSON.stringify({ query, sort: "-pinned", limit: 100 });
-    const r = await fetch(`${BASE44_API}/Guide/list`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${BASE44_TOKEN}` },
-      body,
-    });
-    if (!r.ok) throw new Error(`Base44 Guide list failed: ${r.status}`);
-    return r.json();
-  }
-
-  // GET /api/guides — list all published guides
+  // GET /api/guides — list all published guides, pinned first
   app.get("/api/guides", async (_req, res) => {
     try {
-      const data = await fetchGuides({ is_published: true });
-      res.json(Array.isArray(data) ? data : data.items ?? []);
+      const rows = await db
+        .select()
+        .from(guides)
+        .where(eq(guides.isPublished, true))
+        .orderBy(desc(guides.pinned), desc(guides.createdAt));
+      res.json(rows);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
   });
 
-  // GET /api/guides/:slug — single guide by slug
+  // GET /api/guides/:slug — single guide by slug, increments view count
   app.get("/api/guides/:slug", async (req, res) => {
     try {
-      const data = await fetchGuides({ slug: req.params.slug, is_published: true });
-      const items = Array.isArray(data) ? data : data.items ?? [];
-      if (!items.length) return res.status(404).json({ error: "Guide not found" });
-      res.json(items[0]);
+      const rows = await db
+        .select()
+        .from(guides)
+        .where(and(eq(guides.slug, req.params.slug), eq(guides.isPublished, true)))
+        .limit(1);
+      if (!rows.length) return res.status(404).json({ error: "Guide not found" });
+      db.update(guides)
+        .set({ viewCount: rows[0].viewCount! + 1 })
+        .where(eq(guides.id, rows[0].id))
+        .catch(() => {});
+      res.json(rows[0]);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
