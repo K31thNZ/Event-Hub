@@ -824,6 +824,57 @@ export async function registerRoutes(
     // ── Guides (Knowledge Base) ───────────────────────────────────────────────
   // Queries the local Neon postgres guides table via Drizzle.
 
+
+  // POST /api/guides/submit — community submission, saved unpublished for admin review
+  app.post("/api/guides/submit", async (req, res) => {
+    try {
+      const { title, pillar, category, summary, body, sources } = req.body ?? {};
+      if (!title || !pillar || !category || !summary || !body) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+      if (summary.trim().length < 20 || body.trim().length < 100) {
+        return res.status(400).json({ error: "Summary or body too short" });
+      }
+
+      // Derive a URL-safe slug from the title
+      const baseSlug = title
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, "")
+        .trim()
+        .replace(/\s+/g, "-")
+        .slice(0, 80);
+
+      // Ensure uniqueness by appending a short timestamp suffix if needed
+      const slug = `${baseSlug}-${Date.now().toString(36)}`;
+
+      // Wrap plain-text body in basic HTML paragraphs
+      const body_html = body
+        .split(/\n{2,}/)
+        .map((p: string) => `<p>${p.trim().replace(/\n/g, "<br>")}</p>`)
+        .join("
+");
+
+      await db.insert(guides).values({
+        title:       title.trim(),
+        slug,
+        pillar,
+        category,
+        summary:     summary.trim(),
+        body_html,
+        sources:     sources?.trim() ?? null,
+        authorLabel: "Community Contributor",
+        isCommunity: true,
+        isPublished: false,   // pending admin review
+        pinned:      false,
+      });
+
+      res.json({ ok: true, message: "Guide submitted for review" });
+    } catch (err: any) {
+      console.error("Guide submit error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // GET /api/guides — list all published guides, pinned first
   app.get("/api/guides", async (_req, res) => {
     try {

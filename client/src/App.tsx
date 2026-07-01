@@ -112,6 +112,7 @@ function Router() {
             <ProtectedRoute component={CreateEvent} />
           </Route>
           <Route path="/events/:id" component={EventDetails} />
+          <Route path="/guides/submit" component={GuideSubmit} />
           <Route path="/guides/:slug" component={GuideArticle} />
           <Route path="/guides" component={Guides} />
 
