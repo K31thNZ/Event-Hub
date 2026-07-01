@@ -5,6 +5,7 @@ import AdminEventReview from "@/pages/AdminEventReview";
 import { Switch, Route, useLocation } from "wouter";
 import Guides from "./pages/Guides";
 import GuideArticle from "./pages/GuideArticle";
+import GuideSubmit from "./pages/GuideSubmit";
 import { useEffect } from "react";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
