@@ -23,7 +23,7 @@ interface Guide {
   is_community: boolean;
   pinned: boolean;
   view_count: number;
-  created_date: string;
+  createdAt: string;
 }
 
 const PILLARS = [
@@ -203,7 +203,7 @@ function GuideCard({ guide, index, featured = false }: { guide: Guide; index: nu
             <span>{guide.author_label}</span>
             <div className="flex items-center gap-1">
               <Clock className="w-3 h-3" />
-              {timeAgo(guide.created_date)}
+              {new Date(guide.createdAt).toLocaleDateString("en-GB", { month: "long", year: "numeric" })}
             </div>
           </div>
         </div>

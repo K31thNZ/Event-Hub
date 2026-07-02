@@ -77,20 +77,24 @@ export default function Home() {
     }
   }, [location]);
 
+  // The server now returns only upcoming events by default (date >= NOW),
+  // sorted ascending by date — no client-side date filtering needed.
+  // We pass includePast: true so the "Past events" section still works;
+  // the server returns everything and we split it here.
   const { data: events, isLoading } = useEvents({
     search: search || undefined,
     city: city !== "all" ? city : undefined,
     category: category !== "all" ? category : undefined,
+    includePast: true,
+    limit: 200,  // reasonable page size — avoids unbounded full-table fetch
   });
 
-  // Filter events: only published, then split into upcoming and past
+  // Split server results into upcoming vs past (server already filtered to published)
   const now = new Date();
-  const publishedEvents = (events || []).filter(event => event.published);
-  const upcomingEvents = publishedEvents.filter(event => new Date(event.date) >= now);
-  const pastEvents = publishedEvents.filter(event => new Date(event.date) < now);
-
-  upcomingEvents.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-  pastEvents.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const upcomingEvents = (events || []).filter(event => new Date(event.date) >= now)
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  const pastEvents = (events || []).filter(event => new Date(event.date) < now)
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   // Gather all visible event IDs
   const allVisibleIds = [...upcomingEvents, ...pastEvents].map(e => e.id);

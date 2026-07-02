@@ -63,13 +63,16 @@ export function EventCard({
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: index * 0.1 }}
+        transition={{ duration: 0.4, delay: Math.min(index * 0.05, 0.3) }}
         className="group relative h-full flex flex-col overflow-hidden rounded-2xl bg-card border border-border/60 shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1 cursor-pointer"
       >
         <div className="aspect-[4/3] w-full overflow-hidden relative">
           <img
             src={event.imageUrl || fallbackImage}
             alt={event.title}
+            loading="lazy"
+            width={400}
+            height={300}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
           />
           <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-60" />
