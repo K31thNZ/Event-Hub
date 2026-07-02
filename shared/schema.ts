@@ -109,6 +109,9 @@ export const orders = pgTable("orders", {
   attendeeEmail: text("attendee_email").notNull(),
   notes:         text("notes"),
   createdAt:     timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  // Tracks when (if ever) a Telegram reminder was sent for this order.
+  // NULL = not yet sent. Persisted so reminder dedup survives server restarts.
+  reminderSentAt: timestamp("reminder_sent_at", { withTimezone: true }),
 }, (table) => ({
   // Attendee order history
   attendeeIdx:      index("orders_attendee_idx").on(table.attendeeId),
@@ -392,6 +395,32 @@ export type CreateEventRequest = {
   recurrenceUntil?: Date | string | null;
   ticketTypes: { name: string; price: number; quantity: number; maxPerOrder: number }[];
 };
+
+
+// ── Guides (Knowledge Base) ───────────────────────────────────────────────────
+// Resident-written and community articles about living in Moscow.
+// Pillars: arrive | live | work | explore | connect
+export const guides = pgTable("guides", {
+  id:          serial("id").primaryKey(),
+  title:       text("title").notNull(),
+  slug:        text("slug").notNull().unique(),
+  pillar:      text("pillar").notNull(),
+  category:    text("category").notNull(),
+  summary:     text("summary"),
+  body_html:   text("body_html"),
+  authorLabel: text("author_label").default("Moscow Expat Hub Editorial"),
+  sources:     text("sources"),
+  isCommunity: boolean("is_community").default(false),
+  isPublished: boolean("is_published").default(true),
+  pinned:      boolean("pinned").default(false),
+  viewCount:   integer("view_count").default(0),
+  createdBy:   integer("created_by"),
+  createdAt:   timestamp("created_at",  { withTimezone: true }).defaultNow().notNull(),
+  updatedAt:   timestamp("updated_at",  { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type Guide    = typeof guides.$inferSelect;
+export type NewGuide = typeof guides.$inferInsert;
 
 export type UpdateEventRequest = Partial<Omit<CreateEventRequest, "organizerId">>;
 

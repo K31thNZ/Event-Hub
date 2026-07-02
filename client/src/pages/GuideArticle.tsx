@@ -20,7 +20,7 @@ interface Guide {
   sources: string;
   is_community: boolean;
   view_count: number;
-  created_date: string;
+  createdAt: string;
 }
 
 const PILLAR_ICONS: Record<string, React.ElementType> = {
@@ -100,7 +100,7 @@ export default function GuideArticle() {
           {/* Author row */}
           <div className="flex items-center gap-4 text-xs text-muted-foreground pb-6 border-b border-border mb-8">
             <span className="flex items-center gap-1"><BookOpen className="w-3.5 h-3.5" />{guide.author_label}</span>
-            <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" />{new Date(guide.created_date).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}</span>
+            <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" />{new Date(guide.createdAt).toLocaleDateString("en-GB", { month: "long", year: "numeric" })}</span>
             <span className="flex items-center gap-1"><Eye className="w-3.5 h-3.5" />{guide.view_count} views</span>
           </div>
 

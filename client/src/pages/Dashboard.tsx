@@ -26,7 +26,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   Ticket, CalendarDays, PlusCircle, Pencil, Trash2, Plus, Eye, EyeOff,
   ShieldCheck, Sparkles, UsersRound, KeyRound, Search, ChevronDown, Check,
-  Archive, Users, CalendarCheck, LayoutGrid, RefreshCw, Zap, Upload, X, MapPin, Send,
+  Archive, Users, CalendarCheck, LayoutGrid, RefreshCw, Zap, Upload, X, MapPin, Send, BookOpen,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient as qc } from "@/lib/queryClient";
@@ -577,7 +577,7 @@ function ChangePasswordTab() {
 
 function AdminPanel() {
   const { toast } = useToast();
-  const [activeSection, setActiveSection] = useState<"users" | "events" | "groups" | "sparks" | "langex">("users");
+  const [activeSection, setActiveSection] = useState<"users" | "events" | "groups" | "sparks" | "langex" | "guides">("users");
   const [search, setSearch] = useState("");
 
   const { data: usersData, refetch: refetchUsers } = useQuery({
@@ -697,11 +697,40 @@ function AdminPanel() {
     }
   };
 
+
+  // ── Guides admin ─────────────────────────────────────────────────────────
+  const { data: pendingGuides, refetch: refetchGuides } = useQuery<any[]>({
+    queryKey: ["/api/admin/guides/pending"],
+    queryFn: async () => { const res = await apiRequest("GET", "/api/admin/guides/pending"); return res.json(); },
+    enabled: activeSection === "guides",
+  });
+
+  const handleApproveGuide = async (id: number) => {
+    try {
+      await apiRequest("PATCH", `/api/admin/guides/${id}/approve`);
+      toast({ title: "Guide published" });
+      refetchGuides();
+    } catch (err: any) {
+      toast({ title: "Failed", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const handleRejectGuide = async (id: number) => {
+    try {
+      await apiRequest("DELETE", `/api/admin/guides/${id}`);
+      toast({ title: "Guide rejected & removed" });
+      refetchGuides();
+    } catch (err: any) {
+      toast({ title: "Failed", description: err.message, variant: "destructive" });
+    }
+  };
+
   const q = search.toLowerCase();
   const filteredUsers  = (usersData  ?? []).filter((u: any) => u.username?.toLowerCase().includes(q) || u.email?.toLowerCase().includes(q) || u.displayName?.toLowerCase().includes(q));
   const filteredEvents = (allEvents  ?? []).filter((e: any) => e.title?.toLowerCase().includes(q) || e.venueCity?.toLowerCase().includes(q));
   const filteredGroups = (allGroups  ?? []).filter((g: any) => g.name?.toLowerCase().includes(q) || g.description?.toLowerCase().includes(q));
   const filteredSparks = (adminSparks ?? []).filter((s: Spark) => s.title?.toLowerCase().includes(q) || s.activity?.toLowerCase().includes(q) || s.location?.toLowerCase().includes(q));
+  const filteredGuides  = (pendingGuides ?? []).filter((g: any) => g.title?.toLowerCase().includes(q) || g.category?.toLowerCase().includes(q));
   const filteredLeUsers = (leUsers ?? []).filter((u: any) => u.display_name?.toLowerCase().includes(q) || u.city?.toLowerCase().includes(q) || u.bio?.toLowerCase().includes(q) || u.native_language?.toLowerCase().includes(q));
   const sectionCounts  = {
     users: usersData?.length ?? "—",
@@ -709,20 +738,22 @@ function AdminPanel() {
     groups: allGroups?.length ?? "—",
     sparks: adminSparks?.length ?? "—",
     langex: leUsers?.length ?? "—",
+    guides: pendingGuides?.length ?? "—",
   };
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap gap-3">
-        {(["users", "events", "groups", "sparks", "langex"] as const).map(section => {
+        {(["users", "events", "groups", "sparks", "langex", "guides"] as const).map(section => {
           const Icon = {
             users: Users,
             events: CalendarCheck,
             groups: LayoutGrid,
             sparks: Zap,
             langex: UsersRound,
+            guides: BookOpen,
           }[section];
-          const label = { users: "Users", events: "Events", groups: "Groups", sparks: "Sparks", langex: "Lang Ex" }[section];
+          const label = { users: "Users", events: "Events", groups: "Groups", sparks: "Sparks", langex: "Lang Ex", guides: "Guides" }[section];
           return (
             <button key={section} onClick={() => { setActiveSection(section); setSearch(""); }}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-medium transition-all ${activeSection === section ? "bg-primary text-primary-foreground border-primary shadow-sm" : "border-border text-muted-foreground hover:border-primary/40 hover:text-primary"}`}>
@@ -738,6 +769,7 @@ function AdminPanel() {
           if (activeSection === "groups") refetchGroups();
           if (activeSection === "sparks") refetchSparks();
           if (activeSection === "langex") refetchLeUsers();
+          if (activeSection === "guides") refetchGuides();
         }}
           className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-3">
           <RefreshCw className="w-3.5 h-3.5" /> Refresh
@@ -907,6 +939,52 @@ function AdminPanel() {
             </AlertDialogContent>
           </AlertDialog>
         </>
+      )}
+
+
+      {activeSection === "guides" && (
+        <div className="space-y-3">
+          {(filteredGuides ?? []).length === 0 && (
+            <div className="text-center py-16 text-muted-foreground">
+              <BookOpen className="w-8 h-8 mx-auto mb-3 opacity-30" />
+              <p className="font-medium">No pending submissions</p>
+              <p className="text-sm mt-1">Community guide submissions will appear here for review.</p>
+            </div>
+          )}
+          {(filteredGuides ?? []).map((g: any) => (
+            <div key={g.id} className="bg-card border border-border rounded-2xl px-5 py-4 space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap mb-1">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-primary">{g.pillar}</span>
+                    <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">{g.category}</span>
+                  </div>
+                  <p className="font-semibold text-sm text-foreground leading-snug">{g.title}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{g.summary}</p>
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <Button size="sm" variant="outline" className="h-8 text-xs text-destructive border-destructive/30 hover:bg-destructive/10"
+                    onClick={() => handleRejectGuide(g.id)}>
+                    Reject
+                  </Button>
+                  <Button size="sm" className="h-8 text-xs"
+                    onClick={() => handleApproveGuide(g.id)}>
+                    Publish
+                  </Button>
+                </div>
+              </div>
+              {g.body_html && (
+                <div className="rounded-lg bg-muted/40 px-4 py-3 text-xs text-muted-foreground leading-relaxed max-h-32 overflow-y-auto"
+                  dangerouslySetInnerHTML={{ __html: g.body_html }} />
+              )}
+              <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                <span>Author: {g.author_label ?? "Community Contributor"}</span>
+                {g.sources && <span>Sources: {g.sources}</span>}
+                <span className="ml-auto">{new Date(g.created_at ?? g.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
+              </div>
+            </div>
+          ))}
+        </div>
       )}
 
       {activeSection === "langex" && (

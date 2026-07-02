@@ -68,6 +68,7 @@ export function MyGroupsTab() {
                   <img
                     src={group.imageUrl}
                     alt={group.name}
+                    loading="lazy"
                     style={{ width: 48, height: 48, objectFit: "cover", borderRadius: 12, display: "block" }}
                   />
                 ) : (

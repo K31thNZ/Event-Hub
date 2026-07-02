@@ -13,8 +13,8 @@ import { api, buildUrl } from "@shared/routes";
 import { requireAuth, getUser } from "./auth-client";
 import { z } from "zod";
 import { db } from "./db";
-import { sql, desc, gt, eq, and } from "drizzle-orm";
-import { events, groups, rsvps, eventReviews } from "@shared/schema";
+import { sql, desc, gt, gte, eq, and } from "drizzle-orm";
+import { events, groups, rsvps, eventReviews, guides } from "@shared/schema";
 import { inArray } from "drizzle-orm";
 import uploadRouter from "./routes/upload";
 
@@ -50,8 +50,15 @@ export async function registerRoutes(
         db
           .select({ id: events.id, updatedAt: events.createdAt })
           .from(events)
-          .where(sql`${events.published} = true`)
-          .orderBy(desc(events.createdAt))
+          .where(
+            // Only index upcoming published events — past events have near-zero
+            // SEO value and bloat the sitemap as the catalogue grows over time.
+            and(
+              eq(events.published, true),
+              gte(events.date, now),
+            )
+          )
+          .orderBy(desc(events.date))
           .limit(5000),
         db
           .select({ slug: groups.slug, updatedAt: groups.updatedAt })
@@ -315,11 +322,14 @@ export async function registerRoutes(
   // ── Events ────────────────────────────────────────────────────────
   app.get(api.events.list.path, async (req, res) => {
     try {
-      const { search, category, city } = req.query;
+      const { search, category, city, includePast, limit, offset } = req.query;
       const events = await storage.getEvents({
-        search: search as string | undefined,
-        category: category as string | undefined,
-        city: city as string | undefined,
+        search:      search      as string | undefined,
+        category:    category    as string | undefined,
+        city:        city        as string | undefined,
+        includePast: includePast === "true",
+        limit:       limit  ? parseInt(limit  as string, 10) : undefined,
+        offset:      offset ? parseInt(offset as string, 10) : undefined,
       });
       res.json(events);
     } catch (err) {
@@ -340,7 +350,7 @@ export async function registerRoutes(
 
   app.get(api.events.get.path, async (req, res) => {
     try {
-      const id = parseInt(req.params.id, 10);
+      const id = parseInt(String(req.params.id), 10);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid event ID" });
       const event = await storage.getEvent(id);
       if (!event) return res.status(404).json({ message: "Event not found" });
@@ -371,7 +381,7 @@ export async function registerRoutes(
 
   app.patch(api.events.update.path, requireAuth, async (req, res) => {
     try {
-      const id = parseInt(req.params.id, 10);
+      const id = parseInt(String(req.params.id), 10);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid event ID" });
       const existing = await storage.getEvent(id);
       if (!existing) return res.status(404).json({ message: "Event not found" });
@@ -395,7 +405,7 @@ export async function registerRoutes(
 
   app.delete(api.events.delete.path, requireAuth, async (req, res) => {
     try {
-      const id = parseInt(req.params.id, 10);
+      const id = parseInt(String(req.params.id), 10);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid event ID" });
       const existing = await storage.getEvent(id);
       if (!existing) return res.status(404).json({ message: "Event not found" });
@@ -416,7 +426,7 @@ export async function registerRoutes(
   // ── Resend event notification ──────────────────────────────────────────────
   app.post("/api/events/:id/resend-notification", requireAuth, async (req, res) => {
     try {
-      const id = parseInt(req.params.id, 10);
+      const id = parseInt(String(req.params.id), 10);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid event ID" });
       const event = await storage.getEvent(id);
       if (!event) return res.status(404).json({ message: "Event not found" });
@@ -459,7 +469,7 @@ export async function registerRoutes(
   // ── Web RSVP (authenticated users from mini-app / website) ─────────────
   app.post("/api/events/:id/rsvp", requireAuth, async (req, res) => {
     try {
-      const eventId = parseInt(req.params.id, 10);
+      const eventId = parseInt(String(req.params.id), 10);
       if (isNaN(eventId)) return res.status(400).json({ error: "Invalid event ID" });
       const { status } = req.body;
       if (!status || !["going", "maybe", "no", "none"].includes(status)) {
@@ -520,7 +530,7 @@ export async function registerRoutes(
   // ── GET current user RSVP status ─────────────────────────────────────────
   app.get("/api/events/:id/rsvp", requireAuth, async (req, res) => {
     try {
-      const eventId = parseInt(req.params.id, 10);
+      const eventId = parseInt(String(req.params.id), 10);
       if (isNaN(eventId)) return res.status(400).json({ error: "Invalid event ID" });
       const userId = Number(req.user?.id);
       const [row] = await db
@@ -536,7 +546,7 @@ export async function registerRoutes(
   // ── GET RSVP counts for an event (public) ────────────────────────────────
   app.get("/api/events/:id/rsvp-counts", async (req, res) => {
     try {
-      const eventId = parseInt(req.params.id, 10);
+      const eventId = parseInt(String(req.params.id), 10);
       if (isNaN(eventId)) return res.status(400).json({ error: "Invalid event ID" });
       const countRows = await db.execute(
         sql`SELECT status, COUNT(*)::int AS count FROM rsvps
@@ -565,7 +575,7 @@ export async function registerRoutes(
 
   app.get(api.orders.get.path, requireAuth, async (req, res) => {
     try {
-      const id = parseInt(req.params.id, 10);
+      const id = parseInt(String(req.params.id), 10);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid order ID" });
       const order = await storage.getOrder(id);
       if (!order) return res.status(404).json({ message: "Order not found" });
@@ -592,6 +602,37 @@ export async function registerRoutes(
       }
       const event = await storage.getEvent(parsed.data.eventId);
       if (!event) return res.status(404).json({ message: "Event not found" });
+
+      // ── Sold-out guard ────────────────────────────────────────────────
+      // Check each requested ticket type against remaining capacity BEFORE
+      // inserting the order. The actual decrement happens inside a DB
+      // transaction in storage.createOrder with a row-level lock, so two
+      // concurrent requests cannot both succeed for the last ticket.
+      for (const requested of parsed.data.tickets) {
+        const ticketType = event.ticketTypes.find(t => t.id === requested.ticketTypeId);
+        if (!ticketType) {
+          return res.status(400).json({ message: `Ticket type ${requested.ticketTypeId} not found for this event` });
+        }
+        // Count confirmed/paid orders for this ticket type
+        const soldRows = await db.execute(
+          sql`SELECT COALESCE(SUM(ot.quantity), 0)::int AS sold
+              FROM order_tickets ot
+              JOIN orders o ON o.id = ot.order_id
+              WHERE ot.ticket_type_id = ${ticketType.id}
+                AND o.status IN ('confirmed', 'paid')`
+        );
+        const sold = Number(((soldRows as any).rows?.[0] ?? (soldRows as any)[0])?.sold ?? 0);
+        const remaining = ticketType.quantity - sold;
+        if (requested.quantity > remaining) {
+          return res.status(409).json({
+            message: remaining <= 0
+              ? `Sorry, "${ticketType.name}" tickets are sold out.`
+              : `Only ${remaining} "${ticketType.name}" ticket${remaining === 1 ? "" : "s"} remaining.`,
+            remaining,
+          });
+        }
+      }
+
       const order = await storage.createOrder(Number(req.user?.id), parsed.data);
       res.status(201).json(order);
     } catch (err: any) {
@@ -610,7 +651,7 @@ export async function registerRoutes(
   // Visible to anyone (counts), full list to organiser or admin.
   app.get("/api/events/:id/attendees", async (req, res) => {
     try {
-      const eventId = parseInt(req.params.id, 10);
+      const eventId = parseInt(String(req.params.id), 10);
       if (isNaN(eventId)) return res.status(400).json({ error: "Invalid event ID" });
 
       const event = await storage.getEvent(eventId);
@@ -672,8 +713,8 @@ export async function registerRoutes(
   // Organiser marks a specific RSVP as attended=true/false.
   app.post("/api/events/:id/attendees/:userId/attended", requireAuth, async (req, res) => {
     try {
-      const eventId  = parseInt(req.params.id, 10);
-      const targetId = parseInt(req.params.userId, 10);
+      const eventId  = parseInt(String(req.params.id), 10);
+      const targetId = parseInt(String(req.params.userId), 10);
       if (isNaN(eventId) || isNaN(targetId)) return res.status(400).json({ error: "Invalid ID" });
 
       const event = await storage.getEvent(eventId);
@@ -702,7 +743,7 @@ export async function registerRoutes(
   // Public — returns all reviews with rating, comment, display name, avatar.
   app.get("/api/events/:id/reviews", async (req, res) => {
     try {
-      const eventId = parseInt(req.params.id, 10);
+      const eventId = parseInt(String(req.params.id), 10);
       if (isNaN(eventId)) return res.status(400).json({ error: "Invalid event ID" });
 
       const reviews = await db
@@ -725,7 +766,7 @@ export async function registerRoutes(
   // Submit or update a review. Caller must have RSVPd (going or maybe) or been marked attended.
   app.post("/api/events/:id/reviews", requireAuth, async (req, res) => {
     try {
-      const eventId = parseInt(req.params.id, 10);
+      const eventId = parseInt(String(req.params.id), 10);
       if (isNaN(eventId)) return res.status(400).json({ error: "Invalid event ID" });
 
       const userId = Number((req as any).user?.id);
@@ -781,7 +822,7 @@ export async function registerRoutes(
   // Returns safe public fields for any meh-auth user, proxied to meh-auth.
   app.get("/api/users/:userId/public", async (req, res) => {
     try {
-      const userId = parseInt(req.params.userId, 10);
+      const userId = parseInt(String(req.params.userId), 10);
       if (isNaN(userId)) return res.status(400).json({ error: "Invalid user ID" });
 
       // Proxy to meh-auth using service secret
@@ -804,7 +845,7 @@ export async function registerRoutes(
   // Returns public events organised by a given user (for profile page).
   app.get("/api/users/:userId/events", async (req, res) => {
     try {
-      const userId = parseInt(req.params.userId, 10);
+      const userId = parseInt(String(req.params.userId), 10);
       if (isNaN(userId)) return res.status(400).json({ error: "Invalid user ID" });
 
       const userEvents = await db
@@ -821,41 +862,132 @@ export async function registerRoutes(
   });
 
 
-  // ── Guides (Knowledge Base) ───────────────────────────────────────────────
-  // Guides are stored in Base44 Guide entity and proxied here so the React
-  // client doesn't need to know the Base44 API directly.
+    // ── Guides (Knowledge Base) ───────────────────────────────────────────────
+  // Queries the local Neon postgres guides table via Drizzle.
 
-  const BASE44_API = "https://api.base44.com/api/apps/6a06ce7352395d8df4f59e54/entities";
-  const BASE44_TOKEN = process.env.BASE44_SERVICE_TOKEN ?? "";
 
-  async function fetchGuides(query: Record<string, unknown> = {}) {
-    const body = JSON.stringify({ query, sort: "-pinned", limit: 100 });
-    const r = await fetch(`${BASE44_API}/Guide/list`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${BASE44_TOKEN}` },
-      body,
-    });
-    if (!r.ok) throw new Error(`Base44 Guide list failed: ${r.status}`);
-    return r.json();
-  }
 
-  // GET /api/guides — list all published guides
-  app.get("/api/guides", async (_req, res) => {
+  // ── Admin: Guide submissions ───────────────────────────────────────────────
+
+  // GET /api/admin/guides/pending — all unpublished community submissions
+  app.get("/api/admin/guides/pending", requireAuth, async (req, res) => {
+    if (req.user?.role !== "admin") return res.status(403).json({ error: "Forbidden" });
     try {
-      const data = await fetchGuides({ is_published: true });
-      res.json(Array.isArray(data) ? data : data.items ?? []);
+      const rows = await db
+        .select()
+        .from(guides)
+        .where(eq(guides.isPublished, false))
+        .orderBy(desc(guides.createdAt));
+      res.json(rows);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
   });
 
-  // GET /api/guides/:slug — single guide by slug
+  // PATCH /api/admin/guides/:id/approve — publish a submitted guide
+  app.patch("/api/admin/guides/:id/approve", requireAuth, async (req, res) => {
+    if (req.user?.role !== "admin") return res.status(403).json({ error: "Forbidden" });
+    try {
+      await db
+        .update(guides)
+        .set({ isPublished: true, updatedAt: new Date() })
+        .where(eq(guides.id, Number(req.params.id)));
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // DELETE /api/admin/guides/:id — reject & delete a submission
+  app.delete("/api/admin/guides/:id", requireAuth, async (req, res) => {
+    if (req.user?.role !== "admin") return res.status(403).json({ error: "Forbidden" });
+    try {
+      await db
+        .delete(guides)
+        .where(eq(guides.id, Number(req.params.id)));
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/guides/submit — community submission, saved unpublished for admin review
+  app.post("/api/guides/submit", async (req, res) => {
+    try {
+      const { title, pillar, category, summary, body, sources } = req.body ?? {};
+      if (!title || !pillar || !category || !summary || !body) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+      if (summary.trim().length < 20 || body.trim().length < 100) {
+        return res.status(400).json({ error: "Summary or body too short" });
+      }
+
+      // Derive a URL-safe slug from the title
+      const baseSlug = title
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, "")
+        .trim()
+        .replace(/\s+/g, "-")
+        .slice(0, 80);
+
+      // Ensure uniqueness by appending a short timestamp suffix if needed
+      const slug = `${baseSlug}-${Date.now().toString(36)}`;
+
+      // Wrap plain-text body in basic HTML paragraphs
+      const body_html = body
+        .split(/\n{2,}/)
+        .map((p: string) => `<p>${p.trim().replace(/\n/g, "<br>")}</p>`)
+        .join("\n");
+
+      await db.insert(guides).values({
+        title:       title.trim(),
+        slug,
+        pillar,
+        category,
+        summary:     summary.trim(),
+        body_html,
+        sources:     sources?.trim() ?? null,
+        authorLabel: "Community Contributor",
+        isCommunity: true,
+        isPublished: false,   // pending admin review
+        pinned:      false,
+      });
+
+      res.json({ ok: true, message: "Guide submitted for review" });
+    } catch (err: any) {
+      console.error("Guide submit error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/guides — list all published guides, pinned first
+  app.get("/api/guides", async (_req, res) => {
+    try {
+      const rows = await db
+        .select()
+        .from(guides)
+        .where(eq(guides.isPublished, true))
+        .orderBy(desc(guides.pinned), desc(guides.createdAt));
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/guides/:slug — single guide by slug, increments view count
   app.get("/api/guides/:slug", async (req, res) => {
     try {
-      const data = await fetchGuides({ slug: req.params.slug, is_published: true });
-      const items = Array.isArray(data) ? data : data.items ?? [];
-      if (!items.length) return res.status(404).json({ error: "Guide not found" });
-      res.json(items[0]);
+      const rows = await db
+        .select()
+        .from(guides)
+        .where(and(eq(guides.slug, req.params.slug), eq(guides.isPublished, true)))
+        .limit(1);
+      if (!rows.length) return res.status(404).json({ error: "Guide not found" });
+      db.update(guides)
+        .set({ viewCount: rows[0].viewCount! + 1 })
+        .where(eq(guides.id, rows[0].id))
+        .catch(() => {});
+      res.json(rows[0]);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

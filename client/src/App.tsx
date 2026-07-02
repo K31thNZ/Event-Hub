@@ -5,6 +5,7 @@ import AdminEventReview from "@/pages/AdminEventReview";
 import { Switch, Route, useLocation } from "wouter";
 import Guides from "./pages/Guides";
 import GuideArticle from "./pages/GuideArticle";
+import GuideSubmit from "./pages/GuideSubmit";
 import { useEffect } from "react";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -38,6 +39,8 @@ const FullPageLoader = () => (
     <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full" />
   </div>
 );
+
+import { PremiumRoute } from "@/components/auth/PremiumRoute";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { isAuthenticated, isLoading } = useAuth();
@@ -112,6 +115,7 @@ function Router() {
             <ProtectedRoute component={CreateEvent} />
           </Route>
           <Route path="/events/:id" component={EventDetails} />
+          <Route path="/guides/submit" component={GuideSubmit} />
           <Route path="/guides/:slug" component={GuideArticle} />
           <Route path="/guides" component={Guides} />
 
@@ -142,7 +146,7 @@ function Router() {
 
           {/* Spark */}
           <Route path="/sparks">
-            <ProtectedRoute component={Spark} />
+            <PremiumRoute component={Spark} />
           </Route>
 
           {/* Fallback */}
@@ -167,6 +171,8 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
 function App() {
   return (
+    // Top-level boundary — catches anything the page-level ones miss
+    // (e.g. errors in Providers, Toaster, AuthGate itself)
     <ErrorBoundary label="the app">
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
