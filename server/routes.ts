@@ -13,7 +13,7 @@ import { api, buildUrl } from "@shared/routes";
 import { requireAuth, getUser } from "./auth-client";
 import { z } from "zod";
 import { db } from "./db";
-import { sql, desc, gt, eq, and } from "drizzle-orm";
+import { sql, desc, gt, gte, eq, and } from "drizzle-orm";
 import { events, groups, rsvps, eventReviews, guides } from "@shared/schema";
 import { inArray } from "drizzle-orm";
 import uploadRouter from "./routes/upload";
@@ -50,8 +50,15 @@ export async function registerRoutes(
         db
           .select({ id: events.id, updatedAt: events.createdAt })
           .from(events)
-          .where(sql`${events.published} = true`)
-          .orderBy(desc(events.createdAt))
+          .where(
+            // Only index upcoming published events — past events have near-zero
+            // SEO value and bloat the sitemap as the catalogue grows over time.
+            and(
+              eq(events.published, true),
+              gte(events.date, now),
+            )
+          )
+          .orderBy(desc(events.date))
           .limit(5000),
         db
           .select({ slug: groups.slug, updatedAt: groups.updatedAt })
