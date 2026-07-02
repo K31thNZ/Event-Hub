@@ -13,7 +13,7 @@ import { api, buildUrl } from "@shared/routes";
 import { requireAuth, getUser } from "./auth-client";
 import { z } from "zod";
 import { db } from "./db";
-import { sql, desc, gt, eq, and } from "drizzle-orm";
+import { sql, desc, gt, gte, eq, and } from "drizzle-orm";
 import { events, groups, rsvps, eventReviews } from "@shared/schema";
 import { inArray } from "drizzle-orm";
 import uploadRouter from "./routes/upload";
