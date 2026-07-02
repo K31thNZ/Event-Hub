@@ -51,6 +51,7 @@ app.use(
           "core.telegram.org",
           "*.maps.yandex.net",
           "vec01.maps.yandex.net",
+          "*.r2.dev",
         ],
         connectSrc:     [
           "'self'",
