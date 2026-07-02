@@ -24,6 +24,22 @@ import uploadRouter from "./routes/upload";
 
 const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL ?? "https://auth.expatevents.org";
 
+
+// ── Guides fetcher — exported so static.ts can use it for OG meta ─────────
+const BASE44_API   = "https://api.base44.com/api/apps/6a06ce7352395d8df4f59e54/entities";
+const BASE44_TOKEN = () => process.env.BASE44_SERVICE_TOKEN ?? "";
+
+export async function fetchGuides(query: Record<string, unknown> = {}): Promise<any> {
+  const body = JSON.stringify({ query, sort: "-pinned", limit: 100 });
+  const r = await fetch(`${BASE44_API}/Guide/list`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${BASE44_TOKEN()}` },
+    body,
+  });
+  if (!r.ok) throw new Error(`Base44 Guide list failed: ${r.status}`);
+  return r.json();
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -46,7 +62,7 @@ export async function registerRoutes(
     try {
       const now = new Date();
 
-      const [allEvents, allGroups] = await Promise.all([
+      const [allEvents, allGroups, guideData] = await Promise.all([
         db
           .select({ id: events.id, updatedAt: events.createdAt })
           .from(events)
@@ -63,14 +79,20 @@ export async function registerRoutes(
         db
           .select({ slug: groups.slug, updatedAt: groups.updatedAt })
           .from(groups)
+          .where(sql`${groups.status} = 'active'`)
           .orderBy(desc(groups.updatedAt))
           .limit(1000),
+        fetchGuides({ is_published: true }).catch(() => ({ items: [] })),
       ]);
+      const allGuides: { slug: string }[] = Array.isArray(guideData)
+        ? guideData
+        : (guideData.items ?? []);
 
       const staticPages = [
-        { loc: `/`,         priority: "1.0", changefreq: "daily"   },
-        { loc: `/groups`,   priority: "0.8", changefreq: "daily"   },
-        { loc: `/language`, priority: "0.7", changefreq: "weekly"  },
+        { loc: `/`,                  priority: "1.0", changefreq: "daily"   },
+        { loc: `/groups`,            priority: "0.8", changefreq: "daily"   },
+        { loc: `/language-exchange`, priority: "0.7", changefreq: "weekly"  },
+        { loc: `/guides`,            priority: "0.8", changefreq: "weekly"  },
       ];
 
       const urls = [
@@ -82,6 +104,9 @@ export async function registerRoutes(
         ),
         ...allGroups.map(g =>
           `  <url>\n    <loc>${SITE_URL}/groups/${g.slug}</loc>\n    <lastmod>${(g.updatedAt ?? now).toISOString().split("T")[0]}</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>0.7</priority>\n  </url>`
+        ),
+        ...allGuides.map(g =>
+          `  <url>\n    <loc>${SITE_URL}/guides/${g.slug}</loc>\n    <changefreq>monthly</changefreq>\n    <priority>0.6</priority>\n  </url>`
         ),
       ];
 
@@ -865,7 +890,7 @@ export async function registerRoutes(
     // ── Guides (Knowledge Base) ───────────────────────────────────────────────
   // Queries the local Neon postgres guides table via Drizzle.
 
-
+  // fetchGuides is defined at module level and exported (see above)
 
   // ── Admin: Guide submissions ───────────────────────────────────────────────
 

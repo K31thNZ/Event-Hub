@@ -9,7 +9,7 @@ import { db } from "./db";
 import { sql } from "drizzle-orm";
 import cors from "cors";
 import helmet from "helmet";
-import { registerRoutes } from "./routes";
+import { registerRoutes, fetchGuides } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 
@@ -142,7 +142,7 @@ async function dropStaleConstraints() {
   await registerRoutes(httpServer, app);
 
   // Sentry must capture the error BEFORE the generic handler swallows it
-  if (process.env.SENTRY_DSN) app.use(Sentry.expressErrorHandler());
+  if (process.env.SENTRY_DSN) app.use(Sentry.expressErrorHandler() as unknown as express.ErrorRequestHandler);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
@@ -159,7 +159,7 @@ async function dropStaleConstraints() {
 
   // Static file serving / Vite dev server — always last
   if (process.env.NODE_ENV === "production") {
-    serveStatic(app);
+    serveStatic(app, fetchGuides);
   } else {
     const { setupVite } = await import("./vite");
     await setupVite(httpServer, app);

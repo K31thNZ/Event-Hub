@@ -35,8 +35,9 @@ if (dsn) {
     ],
     beforeSend(event) {
       // Strip any accidental PII from breadcrumbs
-      if (event.breadcrumbs?.values) {
-        event.breadcrumbs.values = event.breadcrumbs.values.map(b => ({
+      const values = event.breadcrumbs?.values;
+      if (Array.isArray(values)) {
+        (event.breadcrumbs as any).values = values.map((b: Sentry.Breadcrumb) => ({
           ...b,
           message: b.message?.replace(/email=[\w@.]+/gi, "email=[redacted]"),
         }));
