@@ -4,7 +4,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { EventCard } from "@/components/events/EventCard";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, MapPin, CalendarHeart, Sparkles, X, ArrowRight, History } from "lucide-react";
+import { Search, MapPin, CalendarHeart, Sparkles, X, ArrowRight, History, ChevronDown } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { motion, AnimatePresence } from "framer-motion";
@@ -12,6 +12,7 @@ import { EVENT_CATEGORIES } from "@shared/categories";
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 
+const PAGE_SIZE = 50;
 const BANNER_DISMISSED_KEY = "expat_interests_banner_dismissed";
 
 function useShowPersonalisationBanner(user: any): [boolean, () => void] {
@@ -45,11 +46,90 @@ function useRsvpCounts(eventIds: number[]) {
       return await res.json() as Record<number, { going: number; maybe: number; no: number }>;
     },
     enabled: eventIds.length > 0,
-    staleTime: 30_000,         // refresh every 30 seconds
-    refetchInterval: 60_000,   // keep updated while on screen
+    staleTime: 30_000,
+    refetchInterval: 60_000,
   });
 }
 
+// ── Paginated event grid ──────────────────────────────────────────────────────
+interface PaginatedEventsProps {
+  events: any[];
+  rsvpCounts?: Record<number, { going: number; maybe: number; no: number }>;
+  className?: string;
+}
+
+function PaginatedEventGrid({ events, rsvpCounts, className = "" }: PaginatedEventsProps) {
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+
+  // Reset to first page whenever the events list changes (filter/search)
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [events]);
+
+  const visible   = events.slice(0, visibleCount);
+  const remaining = events.length - visibleCount;
+  const hasMore   = remaining > 0;
+  const nextBatch = Math.min(remaining, PAGE_SIZE);
+
+  const showMoreRef = useRef<HTMLDivElement>(null);
+
+  const handleShowMore = () => {
+    const prevCount = visibleCount;
+    setVisibleCount(c => c + PAGE_SIZE);
+    // Scroll to first newly visible card after render
+    setTimeout(() => {
+      const grid = showMoreRef.current?.previousElementSibling;
+      if (grid) {
+        const cards = grid.querySelectorAll(":scope > *");
+        const firstNew = cards[prevCount];
+        if (firstNew) {
+          firstNew.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }
+      }
+    }, 50);
+  };
+
+  return (
+    <div className={className}>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+        {visible.map((event, i) => (
+          <EventCard
+            key={event.id}
+            event={event}
+            index={i}
+            rsvpCounts={rsvpCounts?.[event.id]}
+          />
+        ))}
+      </div>
+
+      {/* Counter + show more */}
+      <div ref={showMoreRef}>
+        <p className="text-center text-sm text-muted-foreground mt-8">
+          Showing {visible.length} of {events.length} event{events.length !== 1 ? "s" : ""}
+        </p>
+
+        {hasMore && (
+          <div className="flex justify-center mt-4">
+            <Button
+              variant="outline"
+              size="lg"
+              onClick={handleShowMore}
+              className="rounded-full gap-2 min-w-[220px]"
+            >
+              <ChevronDown className="w-4 h-4" />
+              Show {nextBatch} more event{nextBatch !== 1 ? "s" : ""}
+              <span className="text-muted-foreground text-xs font-normal">
+                ({remaining} remaining)
+              </span>
+            </Button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
 export default function Home() {
   const [search, setSearch] = useState("");
   const [city, setCity] = useState<string>("all");
@@ -77,26 +157,22 @@ export default function Home() {
     }
   }, [location]);
 
-  // The server now returns only upcoming events by default (date >= NOW),
-  // sorted ascending by date — no client-side date filtering needed.
-  // We pass includePast: true so the "Past events" section still works;
-  // the server returns everything and we split it here.
   const { data: events, isLoading } = useEvents({
     search: search || undefined,
     city: city !== "all" ? city : undefined,
     category: category !== "all" ? category : undefined,
     includePast: true,
-    limit: 200,  // reasonable page size — avoids unbounded full-table fetch
+    limit: 200,
   });
 
-  // Split server results into upcoming vs past (server already filtered to published)
   const now = new Date();
-  const upcomingEvents = (events || []).filter(event => new Date(event.date) >= now)
+  const upcomingEvents = (events || [])
+    .filter(event => new Date(event.date) >= now)
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-  const pastEvents = (events || []).filter(event => new Date(event.date) < now)
+  const pastEvents = (events || [])
+    .filter(event => new Date(event.date) < now)
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-  // Gather all visible event IDs
   const allVisibleIds = [...upcomingEvents, ...pastEvents].map(e => e.id);
   const { data: rsvpCounts } = useRsvpCounts(allVisibleIds);
 
@@ -247,7 +323,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Events listing with upcoming and past sections */}
+      {/* Events listing */}
       <section
         id="upcoming-events"
         ref={upcomingRef}
@@ -271,16 +347,10 @@ export default function Home() {
                       <p className="text-muted-foreground">Discover what's happening around you.</p>
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-                    {upcomingEvents.map((event, i) => (
-                      <EventCard
-                        key={event.id}
-                        event={event}
-                        index={i}
-                        rsvpCounts={rsvpCounts?.[event.id]}
-                      />
-                    ))}
-                  </div>
+                  <PaginatedEventGrid
+                    events={upcomingEvents}
+                    rsvpCounts={rsvpCounts}
+                  />
                 </div>
               )}
 
@@ -296,16 +366,11 @@ export default function Home() {
                       <p className="text-muted-foreground">Events that have already taken place.</p>
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8 opacity-80">
-                    {pastEvents.map((event, i) => (
-                      <EventCard
-                        key={event.id}
-                        event={event}
-                        index={i}
-                        rsvpCounts={rsvpCounts?.[event.id]}
-                      />
-                    ))}
-                  </div>
+                  <PaginatedEventGrid
+                    events={pastEvents}
+                    rsvpCounts={rsvpCounts}
+                    className="opacity-80"
+                  />
                 </div>
               )}
 
