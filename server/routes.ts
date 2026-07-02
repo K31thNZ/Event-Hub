@@ -315,11 +315,14 @@ export async function registerRoutes(
   // ── Events ────────────────────────────────────────────────────────
   app.get(api.events.list.path, async (req, res) => {
     try {
-      const { search, category, city } = req.query;
+      const { search, category, city, includePast, limit, offset } = req.query;
       const events = await storage.getEvents({
-        search: search as string | undefined,
-        category: category as string | undefined,
-        city: city as string | undefined,
+        search:      search      as string | undefined,
+        category:    category    as string | undefined,
+        city:        city        as string | undefined,
+        includePast: includePast === "true",
+        limit:       limit  ? parseInt(limit  as string, 10) : undefined,
+        offset:      offset ? parseInt(offset as string, 10) : undefined,
       });
       res.json(events);
     } catch (err) {
@@ -592,6 +595,37 @@ export async function registerRoutes(
       }
       const event = await storage.getEvent(parsed.data.eventId);
       if (!event) return res.status(404).json({ message: "Event not found" });
+
+      // ── Sold-out guard ────────────────────────────────────────────────
+      // Check each requested ticket type against remaining capacity BEFORE
+      // inserting the order. The actual decrement happens inside a DB
+      // transaction in storage.createOrder with a row-level lock, so two
+      // concurrent requests cannot both succeed for the last ticket.
+      for (const requested of parsed.data.tickets) {
+        const ticketType = event.ticketTypes.find(t => t.id === requested.ticketTypeId);
+        if (!ticketType) {
+          return res.status(400).json({ message: `Ticket type ${requested.ticketTypeId} not found for this event` });
+        }
+        // Count confirmed/paid orders for this ticket type
+        const soldRows = await db.execute(
+          sql`SELECT COALESCE(SUM(ot.quantity), 0)::int AS sold
+              FROM order_tickets ot
+              JOIN orders o ON o.id = ot.order_id
+              WHERE ot.ticket_type_id = ${ticketType.id}
+                AND o.status IN ('confirmed', 'paid')`
+        );
+        const sold = Number(((soldRows as any).rows?.[0] ?? (soldRows as any)[0])?.sold ?? 0);
+        const remaining = ticketType.quantity - sold;
+        if (requested.quantity > remaining) {
+          return res.status(409).json({
+            message: remaining <= 0
+              ? `Sorry, "${ticketType.name}" tickets are sold out.`
+              : `Only ${remaining} "${ticketType.name}" ticket${remaining === 1 ? "" : "s"} remaining.`,
+            remaining,
+          });
+        }
+      }
+
       const order = await storage.createOrder(Number(req.user?.id), parsed.data);
       res.status(201).json(order);
     } catch (err: any) {

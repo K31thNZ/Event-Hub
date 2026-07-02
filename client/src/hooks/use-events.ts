@@ -3,14 +3,25 @@ import { api, buildUrl } from "@shared/routes";
 import { type EventWithTickets } from "@shared/schema";
 import { z } from "zod";
 
-export function useEvents(params?: { search?: string; category?: string; city?: string; published?: boolean }) {
+export function useEvents(params?: {
+  search?:      string;
+  category?:    string;
+  city?:        string;
+  published?:   boolean;
+  includePast?: boolean;
+  limit?:       number;
+  offset?:      number;
+}) {
   return useQuery({
     queryKey: [api.events.list.path, params],
     queryFn: async () => {
       const url = new URL(api.events.list.path, window.location.origin);
-      if (params?.search) url.searchParams.set("search", params.search);
-      if (params?.category) url.searchParams.set("category", params.category);
-      if (params?.city) url.searchParams.set("city", params.city);
+      if (params?.search)      url.searchParams.set("search",      params.search);
+      if (params?.category)    url.searchParams.set("category",    params.category);
+      if (params?.city)        url.searchParams.set("city",        params.city);
+      if (params?.includePast) url.searchParams.set("includePast", "true");
+      if (params?.limit  != null) url.searchParams.set("limit",  String(params.limit));
+      if (params?.offset != null) url.searchParams.set("offset", String(params.offset));
 
       const res = await fetch(url.toString(), { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch events");
