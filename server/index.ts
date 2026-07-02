@@ -52,6 +52,17 @@ app.use(
           "*.maps.yandex.net",
           "vec01.maps.yandex.net",
           "*.r2.dev",
+          // Imported/scraped event sources + user-pasted image URLs
+          "media.kudago.com",
+          "base44.app",
+          "media.base44.com",
+          "dynamic-media-cdn.tripadvisor.com",
+          "assets.in-cdn.net",
+          "www.mixerseater.com",
+          "us.images.westend61.de",
+          "avatars.yandex.net",
+          "lh3.googleusercontent.com",
+          "i.postimg.cc",
         ],
         connectSrc:     [
           "'self'",
