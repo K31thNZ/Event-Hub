@@ -28,7 +28,10 @@ export function serveStatic(app: Express, fetchGuides: (q: Record<string, unknow
     );
   }
 
-  app.use(express.static(distPath));
+  // index: false — otherwise express.static auto-serves the raw index.html
+  // for "/" and other directory-style requests, bypassing our meta injector
+  // below and shipping the homepage with zero <title>/OG tags.
+  app.use(express.static(distPath, { index: false }));
 
   // ── Cache index.html in memory at startup ─────────────────────────────
   // No need to hit the disk on every request — the file only changes on deploy.
@@ -43,6 +46,9 @@ export function serveStatic(app: Express, fetchGuides: (q: Record<string, unknow
 
   // ── OG-injected catch-all ──────────────────────────────────────────────
   app.use("/{*path}", async (req, res) => {
+    // req.path is relative to this wildcard mount and collapses to "/" —
+    // use originalUrl (stripped of query string) for the real request path.
+    const reqPath = req.originalUrl.split("?")[0];
     let baseHtml: string;
     try {
       baseHtml = await getBaseHtml();
@@ -51,7 +57,7 @@ export function serveStatic(app: Express, fetchGuides: (q: Record<string, unknow
     }
 
     // /events/:id
-    const eventMatch = req.path.match(/^\/events\/(\d+)(?:\/|$)/);
+    const eventMatch = reqPath.match(/^\/events\/(\d+)(?:\/|$)/);
     if (eventMatch) {
       const html = await renderEventHtml(parseInt(eventMatch[1], 10), baseHtml);
       if (html) {
@@ -65,7 +71,7 @@ export function serveStatic(app: Express, fetchGuides: (q: Record<string, unknow
     }
 
     // /groups/:slug
-    const groupMatch = req.path.match(/^\/groups\/([^/]+)(?:\/|$)/);
+    const groupMatch = reqPath.match(/^\/groups\/([^/]+)(?:\/|$)/);
     if (groupMatch && groupMatch[1] !== "create") {
       const html = await renderGroupHtml(groupMatch[1], baseHtml);
       if (html) {
@@ -78,7 +84,7 @@ export function serveStatic(app: Express, fetchGuides: (q: Record<string, unknow
     }
 
     // /guides/:slug
-    const guideMatch = req.path.match(/^\/guides\/([^/]+)(?:\/|$)/);
+    const guideMatch = reqPath.match(/^\/guides\/([^/]+)(?:\/|$)/);
     if (guideMatch) {
       const html = await renderGuideHtml(guideMatch[1], baseHtml, fetchGuides);
       if (html) {

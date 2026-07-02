@@ -205,7 +205,6 @@ export default function EventDetails() {
   ).trim();
 
   const sourceUrl = (event as any).sourceUrl as string | undefined;
-  const hasLocation = !!(event as any).lat && !!(event as any).lng;
 
   return (
     <div className="min-h-screen bg-background">
@@ -272,7 +271,7 @@ export default function EventDetails() {
                 </div>
 
                 {/* "More info" button — shown only when no map location is available */}
-                {!hasLocation && sourceUrl && (
+                {sourceUrl && (
                   <a
                     href={sourceUrl}
                     target="_blank"
@@ -328,8 +327,21 @@ export default function EventDetails() {
                       )}
                     </div>
                   </div>
-                  {/* Ticket types info — hidden until ticketing is live */}
-                  {/* TODO: restore when ticketing is ready */}
+                  {event.ticketTypes.length > 0 && (
+                  <div className="flex items-start gap-3">
+                    <Ticket className="w-4 h-4 text-primary mt-0.5 shrink-0" />
+                    <div>
+                      <p className="font-semibold text-foreground">
+                        {event.ticketTypes.length} ticket type{event.ticketTypes.length !== 1 ? "s" : ""}
+                      </p>
+                      <p>
+                        from {Math.min(...event.ticketTypes.map(t => t.price)) === 0
+                          ? "Free"
+                          : `${Math.min(...event.ticketTypes.map(t => t.price))} ₽`}
+                      </p>
+                    </div>
+                  </div>
+                  )}
                 </div>
 
                 {/* ── RSVP Buttons ─────────────────────────────── */}

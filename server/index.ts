@@ -1,8 +1,14 @@
+// ── Sentry — must be imported before any other modules ─────────────────────
+import "./sentry";
+import * as Sentry from "@sentry/node";
+
 import { scheduleReminders } from "./reminder-scheduler";
+import { initLaunchDarkly } from "./launchdarkly";
 import express, { type Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 import cors from "cors";
+import helmet from "helmet";
 import { registerRoutes, fetchGuides } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
@@ -18,6 +24,50 @@ declare module "http" {
 
 // ── Trust Render's reverse proxy ──────────────────────────────────────────
 app.set("trust proxy", 1);
+
+// ── Security headers (helmet) ─────────────────────────────────────────────
+// Sets X-Frame-Options, X-Content-Type-Options, Strict-Transport-Security,
+// Referrer-Policy, and a sensible Content-Security-Policy.
+// CSP is configured to allow:
+//  - Our own origin for scripts/styles
+//  - Cloudinary + Unsplash for images (event cover photos)
+//  - Yandex Maps JS & tiles
+//  - meh-auth for the auth iframe/redirect flow
+//  - inline styles (needed by Radix UI / shadcn components)
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc:     ["'self'"],
+        scriptSrc:      ["'self'", "'unsafe-inline'", "api-maps.yandex.ru", "mc.yandex.ru"],
+        styleSrc:       ["'self'", "'unsafe-inline'", "fonts.googleapis.com"],
+        fontSrc:        ["'self'", "fonts.gstatic.com"],
+        imgSrc:         [
+          "'self'", "data:", "blob:",
+          "res.cloudinary.com",
+          "images.unsplash.com",
+          "avatars.githubusercontent.com",
+          "*.tile.openstreetmap.org",
+          "core.telegram.org",
+          "*.maps.yandex.net",
+          "vec01.maps.yandex.net",
+        ],
+        connectSrc:     [
+          "'self'",
+          process.env.AUTH_SERVICE_URL ?? "https://auth.expatevents.org",
+          "api-maps.yandex.ru",
+          "geocode-maps.yandex.ru",
+          "mc.yandex.ru",
+        ],
+        frameSrc:       ["'self'", process.env.AUTH_SERVICE_URL ?? "https://auth.expatevents.org"],
+        objectSrc:      ["'none'"],
+        upgradeInsecureRequests: [],
+      },
+    },
+    // crossOriginEmbedderPolicy breaks Yandex Maps iframe — disable it
+    crossOriginEmbedderPolicy: false,
+  })
+);
 
 // ── CORS — allow meh-auth and the frontend to call this API ───────────────
 app.use(cors({
@@ -91,6 +141,9 @@ async function dropStaleConstraints() {
   await dropStaleConstraints();
   await registerRoutes(httpServer, app);
 
+  // Sentry must capture the error BEFORE the generic handler swallows it
+  if (process.env.SENTRY_DSN) app.use(Sentry.expressErrorHandler() as unknown as express.ErrorRequestHandler);
+
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
@@ -113,6 +166,7 @@ async function dropStaleConstraints() {
   }
 
   const port = parseInt(process.env.PORT || "5000", 10);
+  await initLaunchDarkly();
   httpServer.listen(
     {
       port,

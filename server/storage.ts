@@ -8,7 +8,7 @@ import {
 // NOTE: No local "users" table in the Event-Hub DB — users live in meh-auth.
 // The User type here is only used for the IStorage interface signature.
 import type { User } from "@shared/models/auth";
-import { eq, desc, and, ilike, or } from "drizzle-orm";
+import { eq, desc, and, gte, ilike, or, sql } from "drizzle-orm";
 
 // ── Internal notification helper ──────────────────────────────────────────
 async function notifyNewEvent(event: EventWithTickets): Promise<void> {
@@ -56,7 +56,7 @@ async function notifyNewEvent(event: EventWithTickets): Promise<void> {
 // ── Storage interface ─────────────────────────────────────────────────────
 // All userId / organizerId / attendeeId parameters are numbers (meh-auth integer IDs).
 export interface IStorage {
-  getEvents(params?: { search?: string; category?: string; city?: string }): Promise<EventWithTickets[]>;
+  getEvents(params?: { search?: string; category?: string; city?: string; includePast?: boolean; limit?: number; offset?: number }): Promise<EventWithTickets[]>;
   getEvent(id: number): Promise<EventWithTickets | undefined>;
   getEventsByOrganizer(organizerId: number): Promise<EventWithTickets[]>;
   createEvent(organizerId: number, eventData: CreateEventRequest): Promise<EventWithTickets>;
@@ -81,11 +81,32 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
-  // ── getEvents — filters pushed down to Postgres, no JS-level scan ────────
-  async getEvents(params?: { search?: string; category?: string; city?: string }): Promise<EventWithTickets[]> {
-    // Build WHERE conditions at the DB level so Postgres can use indexes
-    // and we don't pull the whole table into Node memory.
-    const conditions = [];
+  // ── getEvents — filters pushed down to Postgres, no JS-level scan ──────────
+  // Params:
+  //   search      — full-text ILIKE on title + description
+  //   category    — exact match
+  //   city        — ILIKE on venueCity
+  //   includePast — if false (default), only events with date >= NOW() are returned
+  //   limit       — page size (default 100, max 500)
+  //   offset      — pagination offset (default 0)
+  async getEvents(params?: {
+    search?:      string;
+    category?:    string;
+    city?:        string;
+    includePast?: boolean;
+    limit?:       number;
+    offset?:      number;
+  }): Promise<EventWithTickets[]> {
+    const conditions: any[] = [
+      // Always filter to published events only
+      eq(events.published, true),
+    ];
+
+    // By default, exclude past events — keeps the payload small and
+    // prevents the list growing forever as old events accumulate.
+    if (!params?.includePast) {
+      conditions.push(gte(events.date, new Date()));
+    }
 
     if (params?.category) {
       conditions.push(eq(events.category, params.category));
@@ -105,10 +126,15 @@ export class DatabaseStorage implements IStorage {
       );
     }
 
+    const limit  = Math.min(params?.limit  ?? 100, 500);
+    const offset = params?.offset ?? 0;
+
     return await db.query.events.findMany({
-      where:   conditions.length > 0 ? and(...conditions) : undefined,
+      where:   and(...conditions),
       with:    { ticketTypes: true },
-      orderBy: [desc(events.createdAt)],
+      orderBy: [desc(events.date)],    // upcoming-first is more useful than creation-first
+      limit,
+      offset,
     });
   }
 

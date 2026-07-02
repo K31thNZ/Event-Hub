@@ -1,22 +1,17 @@
 // server/ticket-reminders.ts
-// Runs every hour and sends a friendly Telegram reminder to anyone who has
-// a ticket for an event starting within the next 24 hours, but hasn't been
-// reminded yet.
+// Runs every hour and sends a Telegram reminder to anyone who has a ticket
+// for an event starting within the next 24 hours, but hasn't been reminded yet.
+//
+// Reminder dedup is now persisted to the DB (`orders.reminder_sent_at`),
+// so server restarts (e.g. Render spin-down/up) never cause duplicate messages.
 //
 // Architecture:
 //   - Orders + events live in expatevents (Neon DB)
-//   - Telegram + user telegramId live in meh-auth
-//   - We call POST /api/internal/send-message on meh-auth to deliver the message
-//   - We track who has been reminded using the notifications table in meh-auth
-//     via a simple in-memory Set per server session (safe — reminders are
-//     one-per-event-per-user, and a server restart just means a harmless re-send)
+//   - Telegram delivery via meh-auth POST /api/internal/send-message
 
 import { db } from "./db";
 import { orders, events } from "@shared/schema";
-import { eq, and, gte, lte } from "drizzle-orm";
-
-// In-memory dedup: "userId:eventId" pairs already reminded this session
-const alreadyReminded = new Set<string>();
+import { eq, and, gte, lte, isNull, sql } from "drizzle-orm";
 
 async function sendReminderToUser(
   mehAuthUserId: string,
@@ -45,29 +40,30 @@ async function sendReminderToUser(
 }
 
 export async function runTicketReminders(): Promise<void> {
-  const now      = new Date();
-  const in24h    = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-  const in23h    = new Date(now.getTime() + 23 * 60 * 60 * 1000); // lower bound to avoid re-firing
+  const now   = new Date();
+  const in24h = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const in23h = new Date(now.getTime() + 23 * 60 * 60 * 1000);
 
   try {
-    // Find all orders for events starting in the next 23–24 hours
-    const upcoming = await db.query.orders.findMany({
+    // Fetch orders for events in the 23–24h window that have NOT been reminded yet.
+    // The reminderSentAt IS NULL check is the persistent dedup — survives restarts.
+    const toRemind = await db.query.orders.findMany({
       with: { event: true },
-    });
-
-    const toRemind = upcoming.filter(order => {
-      const eventDate = new Date(order.event.date);
-      return eventDate >= in23h && eventDate <= in24h && order.event.published;
+      where: and(
+        isNull(orders.reminderSentAt),              // not yet reminded
+        gte(events.date, in23h),                    // event starts > 23h from now
+        lte(events.date, in24h),                    // event starts < 24h from now
+        eq(events.published, true)
+      ),
     });
 
     if (toRemind.length === 0) return;
 
     let sent = 0;
     for (const order of toRemind) {
-      const key = `${order.attendeeId}:${order.eventId}`;
-      if (alreadyReminded.has(key)) continue;
-
       const event = order.event;
+      if (!event) continue;
+
       const dateStr = new Date(event.date).toLocaleDateString("en-GB", {
         weekday: "long", day: "numeric", month: "long",
         hour: "2-digit", minute: "2-digit",
@@ -84,7 +80,13 @@ export async function runTicketReminders(): Promise<void> {
       const ok = await sendReminderToUser(String(order.attendeeId), message);
 
       if (ok) {
-        alreadyReminded.add(key);
+        // Persist the timestamp so we never send this reminder again,
+        // even if the server restarts before the next hourly check.
+        await db
+          .update(orders)
+          .set({ reminderSentAt: new Date() })
+          .where(eq(orders.id, order.id));
+
         sent++;
         console.log(`[reminders] Sent reminder to user ${order.attendeeId} for event ${order.eventId}`);
       }
@@ -99,11 +101,9 @@ export async function runTicketReminders(): Promise<void> {
 }
 
 // ── Scheduler ─────────────────────────────────────────────────────────────
-// Runs once an hour. Call scheduleTicketReminders() from server/index.ts.
 export function scheduleTicketReminders(): void {
-  // Slight delay on startup so the server is fully ready
-  const INITIAL_DELAY_MS = 2 * 60 * 1000;   // 2 minutes after boot
-  const INTERVAL_MS      = 60 * 60 * 1000;  // every hour
+  const INITIAL_DELAY_MS = 2 * 60 * 1000;  // 2 min after boot
+  const INTERVAL_MS      = 60 * 60 * 1000; // hourly
 
   setTimeout(() => {
     runTicketReminders();

@@ -5,6 +5,7 @@ import AdminEventReview from "@/pages/AdminEventReview";
 import { Switch, Route, useLocation } from "wouter";
 import Guides from "./pages/Guides";
 import GuideArticle from "./pages/GuideArticle";
+import GuideSubmit from "./pages/GuideSubmit";
 import { useEffect } from "react";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -29,6 +30,7 @@ import DeepTalk from "@/pages/DeepTalk";
 import { useTelegramMiniAppAuth } from "@/hooks/use-telegram-miniapp-auth";
 import LanguageExchange from "@/pages/LanguageExchange";
 import PublicProfile from "@/pages/PublicProfile";
+import { ErrorBoundary } from "@/components/ui/error-boundary";
 
 const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? "https://auth.expatevents.org";
 
@@ -37,6 +39,8 @@ const FullPageLoader = () => (
     <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full" />
   </div>
 );
+
+import { PremiumRoute } from "@/components/auth/PremiumRoute";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { isAuthenticated, isLoading } = useAuth();
@@ -91,6 +95,7 @@ function Router() {
   }
 
   return (
+    <ErrorBoundary label="this page">
     <div className="min-h-screen flex flex-col bg-background font-sans">
       <Navbar />
       <main className="flex-1 flex flex-col">
@@ -110,6 +115,7 @@ function Router() {
             <ProtectedRoute component={CreateEvent} />
           </Route>
           <Route path="/events/:id" component={EventDetails} />
+          <Route path="/guides/submit" component={GuideSubmit} />
           <Route path="/guides/:slug" component={GuideArticle} />
           <Route path="/guides" component={Guides} />
 
@@ -140,7 +146,7 @@ function Router() {
 
           {/* Spark */}
           <Route path="/sparks">
-            <ProtectedRoute component={Spark} />
+            <PremiumRoute component={Spark} />
           </Route>
 
           {/* Fallback */}
@@ -148,6 +154,7 @@ function Router() {
         </Switch>
       </main>
     </div>
+    </ErrorBoundary>
   );
 }
 
@@ -164,14 +171,18 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <Toaster />
-        <AuthGate>
-          <Router />
-        </AuthGate>
-      </TooltipProvider>
-    </QueryClientProvider>
+    // Top-level boundary — catches anything the page-level ones miss
+    // (e.g. errors in Providers, Toaster, AuthGate itself)
+    <ErrorBoundary label="the app">
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <Toaster />
+          <AuthGate>
+            <Router />
+          </AuthGate>
+        </TooltipProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 
