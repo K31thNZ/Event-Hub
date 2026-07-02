@@ -1,26 +1,13 @@
 // client/src/components/ui/error-boundary.tsx
-// A React Error Boundary that catches unhandled render errors and shows a
-// friendly recovery UI instead of a blank white screen.
-//
-// Usage — wrap any subtree:
-//   <ErrorBoundary>
-//     <MyComponent />
-//   </ErrorBoundary>
-//
-// The top-level boundary in App.tsx catches everything. Additional boundaries
-// around individual pages give finer-grained recovery (e.g. a broken event
-// card doesn't take down the whole Home page).
-
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { Sentry } from "@/lib/sentry";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface Props {
-  children:    ReactNode;
-  /** Optional custom fallback — defaults to the full-page error card */
-  fallback?:   ReactNode;
-  /** Label shown in the error heading — e.g. "this event" */
-  label?:      string;
+  children:  ReactNode;
+  fallback?: ReactNode;
+  label?:    string;
 }
 
 interface State {
@@ -39,13 +26,14 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    // Log to console in dev; swap for Sentry / PostHog / etc. in prod
     console.error("[ErrorBoundary] Caught render error:", error, info.componentStack);
+    // Report to Sentry (no-op if VITE_SENTRY_DSN is not set)
+    Sentry.captureException(error, {
+      extra: { componentStack: info.componentStack },
+    });
   }
 
-  handleReset = () => {
-    this.setState({ hasError: false, error: null });
-  };
+  handleReset = () => this.setState({ hasError: false, error: null });
 
   render() {
     if (!this.state.hasError) return this.props.children;
@@ -58,7 +46,6 @@ export class ErrorBoundary extends Component<Props, State> {
         <div className="flex items-center justify-center w-16 h-16 rounded-full bg-destructive/10">
           <AlertTriangle className="w-8 h-8 text-destructive" />
         </div>
-
         <div className="space-y-2 max-w-sm">
           <h2 className="text-xl font-semibold">Something went wrong</h2>
           <p className="text-muted-foreground text-sm">
@@ -71,7 +58,6 @@ export class ErrorBoundary extends Component<Props, State> {
             </pre>
           )}
         </div>
-
         <div className="flex gap-3">
           <Button variant="outline" onClick={this.handleReset}>
             <RefreshCw className="w-4 h-4 mr-2" />

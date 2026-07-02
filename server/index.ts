@@ -1,3 +1,7 @@
+// ── Sentry — must be imported before any other modules ─────────────────────
+import "./sentry";
+import * as Sentry from "@sentry/node";
+
 import { scheduleReminders } from "./reminder-scheduler";
 import { initLaunchDarkly } from "./launchdarkly";
 import express, { type Request, Response, NextFunction } from "express";
@@ -136,6 +140,9 @@ async function dropStaleConstraints() {
 (async () => {
   await dropStaleConstraints();
   await registerRoutes(httpServer, app);
+
+  // Sentry must capture the error BEFORE the generic handler swallows it
+  if (process.env.SENTRY_DSN) app.use(Sentry.expressErrorHandler());
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

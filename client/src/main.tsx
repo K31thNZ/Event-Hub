@@ -1,3 +1,6 @@
+// ── Sentry — must be the very first import ─────────────────────────────────
+import "./lib/sentry";
+
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { asyncWithLDProvider } from "launchdarkly-react-client-sdk";
