@@ -177,8 +177,6 @@ export default function LiveMap() {
 
   // ── Init map ──────────────────────────────────────────────────────────────
 
-  const [mapError, setMapError] = useState<string | null>(null);
-
   useEffect(() => {
     const apiKey = import.meta.env.VITE_YANDEX_MAPS_API_KEY;
     loadYandexMaps(apiKey)
