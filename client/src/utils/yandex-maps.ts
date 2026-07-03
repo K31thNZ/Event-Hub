@@ -22,11 +22,11 @@ export function loadYandexMaps(apiKey: string): Promise<void> {
 
   yandexScriptPromise = new Promise<void>((resolve, reject) => {
     // Guard: script may have been injected by a previous (failed) attempt
-    const existing = document.querySelector(
-      'script[src*="api-maps.yandex.ru"]\'
-    );
+    const selector = "script[src*=\"api-maps.yandex.ru\"]";
+    const existing = document.querySelector(selector);
+
     if (existing) {
-      // Script tag exists — wait for ymaps to be ready
+      // Script tag exists — poll until ymaps is ready
       const poll = setInterval(() => {
         if (window.ymaps?.ready) {
           clearInterval(poll);
@@ -41,7 +41,7 @@ export function loadYandexMaps(apiKey: string): Promise<void> {
     }
 
     const script = document.createElement("script");
-    script.src = `https://api-maps.yandex.ru/2.1/?apikey=${apiKey}&lang=en_RU`;
+    script.src = "https://api-maps.yandex.ru/2.1/?apikey=" + apiKey + "&lang=en_RU";
     script.async = true;
 
     script.onload = () => {
@@ -53,13 +53,16 @@ export function loadYandexMaps(apiKey: string): Promise<void> {
     };
 
     // onerror receives a DOM ErrorEvent — convert to a proper Error
-    script.onerror = (_event) => {
+    script.onerror = () => {
       yandexScriptPromise = null; // Allow retry on next call
-      document.head.removeChild(script);
+      if (document.head.contains(script)) {
+        document.head.removeChild(script);
+      }
       reject(
         new Error(
           "Failed to load Yandex Maps script. " +
-          "Check that VITE_YANDEX_MAPS_API_KEY is valid and the domain is authorised in the Yandex Developer Console."
+          "Check that VITE_YANDEX_MAPS_API_KEY is valid and the domain is " +
+          "authorised in the Yandex Developer Console."
         )
       );
     };
