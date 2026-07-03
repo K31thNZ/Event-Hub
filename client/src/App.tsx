@@ -40,7 +40,6 @@ const FullPageLoader = () => (
   </div>
 );
 
-import { PremiumRoute } from "@/components/auth/PremiumRoute";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { isAuthenticated, isLoading } = useAuth();
@@ -146,7 +145,7 @@ function Router() {
 
           {/* Spark */}
           <Route path="/sparks">
-            <PremiumRoute component={Spark} />
+            <ProtectedRoute component={Spark} />
           </Route>
 
           {/* Fallback */}
