@@ -906,7 +906,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                         <Label>Cover Image</Label>
                         {watchedImageUrl ? (
                           <div className="relative rounded-xl overflow-hidden border border-border aspect-video w-full bg-muted">
-                            <img src={watchedImageUrl} alt="Cover" className="w-full h-full object-cover" />
+                            <img src={watchedImageUrl} alt="Cover" className="w-full h-full object-cover" loading="lazy" />
                             <button
                               type="button"
                               onClick={removeImage}
@@ -1018,7 +1018,7 @@ export default function CreateEvent({ groupSlug }: { groupSlug?: string } = {}) 
                     <CardContent className="p-8 space-y-6">
                       {allValues.imageUrl && (
                         <div className="rounded-2xl overflow-hidden aspect-video w-full">
-                          <img src={allValues.imageUrl} alt="Cover" className="w-full h-full object-cover" />
+                          <img src={allValues.imageUrl} alt="Cover" className="w-full h-full object-cover" loading="lazy" />
                         </div>
                       )}
 

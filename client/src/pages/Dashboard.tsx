@@ -231,7 +231,7 @@ function EditEventSheet({ event, open, onClose, adminMode = false }: {
             <Label>Cover Image</Label>
             {watchedImageUrl ? (
               <div className="relative rounded-xl overflow-hidden border border-border aspect-video w-full bg-muted">
-                <img src={watchedImageUrl} alt="Cover" className="w-full h-full object-cover" />
+                <img src={watchedImageUrl} alt="Cover" className="w-full h-full object-cover" loading="lazy" />
                 <button
                   type="button"
                   onClick={() => form.setValue("imageUrl", null, { shouldDirty: true })}
@@ -325,7 +325,7 @@ function EventRow({ event, onEdit, onDelete }: { event: EventWithTickets; onEdit
 
   return (
     <div className="flex items-center gap-4 bg-card border border-border rounded-2xl px-5 py-4 hover:shadow-md transition-shadow">
-      {event.imageUrl && <img src={event.imageUrl} alt={event.title} className="hidden sm:block w-16 h-16 rounded-xl object-cover shrink-0" />}
+      {event.imageUrl && <img src={event.imageUrl} alt={event.title} className="hidden sm:block w-16 h-16 rounded-xl object-cover shrink-0" loading="lazy" />}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <h3 className="font-semibold truncate">{event.title}</h3>
@@ -441,7 +441,7 @@ function CuratorTab() {
               return (
                 <button key={event.id} type="button" onClick={() => toggleEvent(event.id)}
                   className={`w-full flex items-center gap-3 p-3 rounded-xl text-left transition-colors ${selected ? "bg-primary/10 border border-primary/30" : "hover:bg-muted"}`}>
-                  {event.imageUrl && <img src={event.imageUrl} className="w-10 h-10 rounded-lg object-cover shrink-0" alt="" />}
+                  {event.imageUrl && <img src={event.imageUrl} className="w-10 h-10 rounded-lg object-cover shrink-0" alt="" loading="lazy" />}
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-sm truncate">{event.title}</p>
                     <p className="text-xs text-muted-foreground">{formatEventDateShort(event.date, event.venueCity)} · {event.venueCity}</p>
@@ -846,7 +846,7 @@ function AdminPanel() {
             {filteredGroups.length === 0 && <div className="text-center py-16 text-muted-foreground">No groups found</div>}
             {filteredGroups.map((group: any) => (
               <div key={group.id} className="flex items-center gap-4 bg-card border border-border rounded-2xl px-5 py-4 hover:shadow-md transition-shadow">
-                {group.imageUrl && <img src={group.imageUrl} alt={group.name} className="w-12 h-12 rounded-xl object-cover shrink-0" />}
+                {group.imageUrl && <img src={group.imageUrl} alt={group.name} className="w-12 h-12 rounded-xl object-cover shrink-0" loading="lazy" />}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <h3 className="font-semibold truncate">{group.name}</h3>

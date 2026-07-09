@@ -473,7 +473,7 @@ function EventRow({ event, past = false }: { event: EventItem; past?: boolean })
         <CardContent className="p-3 flex items-center gap-3">
           <div className="h-12 w-12 rounded-lg overflow-hidden bg-muted shrink-0 flex items-center justify-center">
             {event.imageUrl
-              ? <img src={event.imageUrl} alt="" className="w-full h-full object-cover" />
+              ? <img src={event.imageUrl} alt="" className="w-full h-full object-cover" loading="lazy" />
               : <span className="text-xl">{getCategoryIcon(event.category)}</span>
             }
           </div>

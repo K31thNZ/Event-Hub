@@ -86,7 +86,7 @@ export default function GroupProfile() {
       {/* Banner */}
       <div className="w-full h-56 md:h-72 relative bg-gradient-to-br from-primary/20 to-accent/20">
         {group.bannerUrl && (
-          <img src={group.bannerUrl} alt="" className="w-full h-full object-cover" />
+          <img src={group.bannerUrl} alt="" className="w-full h-full object-cover" loading="lazy" />
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-background via-background/20 to-transparent" />
       </div>
@@ -103,7 +103,7 @@ export default function GroupProfile() {
               <div className="flex items-start gap-5">
                 <div className="w-20 h-20 rounded-2xl border-4 border-card bg-card overflow-hidden shadow-xl shrink-0">
                   {group.imageUrl ? (
-                    <img src={group.imageUrl} alt={group.name} className="w-full h-full object-cover" />
+                    <img src={group.imageUrl} alt={group.name} className="w-full h-full object-cover" loading="lazy" />
                   ) : (
                     <div className="w-full h-full bg-primary/10 flex items-center justify-center">
                       <span className="font-display font-bold text-primary text-3xl">
@@ -205,7 +205,7 @@ export default function GroupProfile() {
                       <div className="group bg-card border border-border rounded-2xl p-5 flex gap-4 hover:shadow-lg hover:shadow-primary/5 transition-all hover:-translate-y-0.5 cursor-pointer">
                         {event.imageUrl && (
                           <div className="w-20 h-20 rounded-xl overflow-hidden shrink-0">
-                            <img src={event.imageUrl} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                            <img src={event.imageUrl} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" loading="lazy" />
                           </div>
                         )}
                         <div className="flex-1 min-w-0">

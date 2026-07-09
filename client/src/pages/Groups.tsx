@@ -132,13 +132,13 @@ export default function Groups() {
                     {/* Banner */}
                     <div className="h-28 bg-gradient-to-br from-primary/20 to-accent/20 relative overflow-hidden">
                       {group.bannerUrl && (
-                        <img src={group.bannerUrl} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                        <img src={group.bannerUrl} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy" />
                       )}
                       {/* Avatar */}
                       <div className="absolute -bottom-6 left-5">
                         <div className="w-14 h-14 rounded-2xl border-4 border-card bg-card overflow-hidden shadow-lg">
                           {group.imageUrl ? (
-                            <img src={group.imageUrl} alt={group.name} className="w-full h-full object-cover" />
+                            <img src={group.imageUrl} alt={group.name} className="w-full h-full object-cover" loading="lazy" />
                           ) : (
                             <div className="w-full h-full bg-primary/10 flex items-center justify-center">
                               <span className="font-display font-bold text-primary text-lg">

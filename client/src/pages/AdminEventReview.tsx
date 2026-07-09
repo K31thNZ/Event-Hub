@@ -218,7 +218,7 @@ function EditSheet({
           {/* ── Cover image preview ── */}
           {watchedImage && (
             <div className="rounded-xl overflow-hidden aspect-video bg-muted border border-border">
-              <img src={watchedImage} alt="" className="w-full h-full object-cover" />
+              <img src={watchedImage} alt="" className="w-full h-full object-cover" loading="lazy" />
             </div>
           )}
 
@@ -547,7 +547,7 @@ function EventDetailPanel({
         {/* Cover */}
         {event.imageUrl ? (
           <div className="aspect-video w-full overflow-hidden bg-muted">
-            <img src={event.imageUrl} alt={event.title} className="w-full h-full object-cover" />
+            <img src={event.imageUrl} alt={event.title} className="w-full h-full object-cover" loading="lazy" />
           </div>
         ) : (
           <div className="aspect-video w-full bg-gradient-to-br from-primary/10 to-primary/5 flex items-center justify-center">
@@ -707,7 +707,7 @@ function EventRow({
       {/* Thumbnail */}
       <div className="w-16 h-16 rounded-xl overflow-hidden bg-muted shrink-0 border border-border">
         {event.imageUrl ? (
-          <img src={event.imageUrl} alt="" className="w-full h-full object-cover" />
+          <img src={event.imageUrl} alt="" className="w-full h-full object-cover" loading="lazy" />
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-muted text-muted-foreground/30 text-2xl">
             📍
@@ -803,7 +803,7 @@ function EventCard({
       {/* Cover */}
       <div className="aspect-video bg-muted overflow-hidden relative">
         {event.imageUrl ? (
-          <img src={event.imageUrl} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+          <img src={event.imageUrl} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" loading="lazy" />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-4xl text-muted-foreground/20">📍</div>
         )}
