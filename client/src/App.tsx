@@ -10,7 +10,6 @@ import { Navbar } from "@/components/layout/Navbar";
 import { useAuth } from "@/hooks/use-auth";
 import { useTelegramMiniAppAuth } from "@/hooks/use-telegram-miniapp-auth";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
-import { PremiumRoute } from "@/components/auth/PremiumRoute";
 
 // ── Lazy-loaded pages ─────────────────────────────────────────────────────
 // Every page is split into its own chunk and only downloaded when visited.
@@ -163,7 +162,7 @@ function Router() {
 
               {/* Spark */}
               <Route path="/sparks">
-                <PremiumRoute component={Spark} />
+                <ProtectedRoute component={Spark} />
               </Route>
 
               {/* Fallback */}

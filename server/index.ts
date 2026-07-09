@@ -3,7 +3,6 @@ import "./sentry";
 import * as Sentry from "@sentry/node";
 
 import { scheduleReminders } from "./reminder-scheduler";
-import { initLaunchDarkly } from "./launchdarkly";
 import express, { type Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
@@ -39,9 +38,18 @@ app.use(
     contentSecurityPolicy: {
       directives: {
         defaultSrc:     ["'self'"],
-        scriptSrc:      ["'self'", "'unsafe-inline'", "api-maps.yandex.ru", "mc.yandex.ru"],
-        styleSrc:       ["'self'", "'unsafe-inline'", "fonts.googleapis.com"],
-        fontSrc:        ["'self'", "fonts.gstatic.com"],
+        scriptSrc:      [
+          "'self'",
+          "'unsafe-inline'",
+          // Yandex Maps 2.1 entry point
+          "api-maps.yandex.ru",
+          // Yandex Maps dynamically loads its full bundle from yastatic.net
+          "yastatic.net",
+          // Yandex analytics/counter
+          "mc.yandex.ru",
+        ],
+        styleSrc:       ["'self'", "'unsafe-inline'", "fonts.googleapis.com", "yastatic.net"],
+        fontSrc:        ["'self'", "fonts.gstatic.com", "yastatic.net"],
         imgSrc:         [
           "'self'", "data:", "blob:",
           "res.cloudinary.com",
@@ -49,8 +57,11 @@ app.use(
           "avatars.githubusercontent.com",
           "*.tile.openstreetmap.org",
           "core.telegram.org",
+          // Yandex Maps tile servers and sprite assets
           "*.maps.yandex.net",
           "vec01.maps.yandex.net",
+          "yastatic.net",
+          "avatars.yandex.net",
           "*.r2.dev",
           // Imported/scraped event sources + user-pasted image URLs
           "media.kudago.com",
@@ -60,17 +71,21 @@ app.use(
           "assets.in-cdn.net",
           "www.mixerseater.com",
           "us.images.westend61.de",
-          "avatars.yandex.net",
           "lh3.googleusercontent.com",
           "i.postimg.cc",
         ],
         connectSrc:     [
           "'self'",
           process.env.AUTH_SERVICE_URL ?? "https://auth.expatevents.org",
+          // Yandex Maps API + geocoding + tiles + search
           "api-maps.yandex.ru",
           "geocode-maps.yandex.ru",
+          "search-maps.yandex.ru",
           "mc.yandex.ru",
+          "yastatic.net",
+          "*.maps.yandex.net",
         ],
+        workerSrc:      ["'self'", "blob:", "yastatic.net"],
         frameSrc:       ["'self'", process.env.AUTH_SERVICE_URL ?? "https://auth.expatevents.org"],
         objectSrc:      ["'none'"],
         upgradeInsecureRequests: [],
@@ -178,7 +193,6 @@ async function dropStaleConstraints() {
   }
 
   const port = parseInt(process.env.PORT || "5000", 10);
-  await initLaunchDarkly();
   httpServer.listen(
     {
       port,

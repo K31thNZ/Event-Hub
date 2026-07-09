@@ -85,6 +85,7 @@ export default function LiveMap() {
   const [showFilter, setShowFilter] = useState(false);
   const [showLegend, setShowLegend] = useState(false);
   const [mapLoaded,  setMapLoaded]  = useState(false);
+  const [mapError,   setMapError]   = useState<string | null>(null);
 
   // Spark layer toggle
   const [showSparks, setShowSparks] = useState(true);
@@ -178,10 +179,6 @@ export default function LiveMap() {
 
   useEffect(() => {
     const apiKey = import.meta.env.VITE_YANDEX_MAPS_API_KEY;
-    if (!apiKey) {
-      console.error("Yandex Maps API key missing. Add VITE_YANDEX_MAPS_API_KEY to .env");
-      return;
-    }
     loadYandexMaps(apiKey)
       .then(() => {
         if (!mapContainerRef.current || mapRef.current) return;
@@ -196,7 +193,10 @@ export default function LiveMap() {
         );
         setMapLoaded(true);
       })
-      .catch(err => console.error("Failed to load Yandex Maps:", err));
+      .catch((err: Error) => {
+        console.error("Failed to load Yandex Maps:", err.message);
+        setMapError(err.message);
+      });
 
     return () => {
       if (mapRef.current) { mapRef.current.destroy(); mapRef.current = null; }
@@ -515,8 +515,23 @@ export default function LiveMap() {
       <div className="flex-1 relative">
         <div ref={mapContainerRef} className="absolute inset-0" style={{ width: "100%", height: "100%" }} />
 
+        {/* Map error state */}
+        {mapError && (
+          <div className="absolute inset-0 bg-background/90 backdrop-blur-sm flex items-center justify-center z-10">
+            <div className="text-center max-w-sm mx-4">
+              <div className="text-4xl mb-3">🗺️</div>
+              <h3 className="font-display font-bold text-lg mb-2">Map unavailable</h3>
+              <p className="text-muted-foreground text-sm leading-relaxed">
+                {mapError.includes("API key")
+                  ? "The map service isn't configured yet. Please add VITE_YANDEX_MAPS_API_KEY to your environment."
+                  : "Could not connect to the map service. Please try refreshing the page."}
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Loading */}
-        {(!mapLoaded || isLoading) && (
+        {!mapError && (!mapLoaded || isLoading) && (
           <div className="absolute inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-10">
             <div className="text-center">
               <div className="w-10 h-10 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-3" />
