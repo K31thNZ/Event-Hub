@@ -55,14 +55,22 @@ async function runReminderCheck(): Promise<void> {
     const in24h  = new Date(now.getTime() + 24 * 60 * 60 * 1000);
 
     // Find all orders for events starting in the next 24 hours
-    const upcomingOrders = await db.query.orders.findMany({
-      with: { event: true },
-      where: and(
-        gte(events.date, now),
-        lte(events.date, in24h),
-        eq(events.published, true)
-      ),
-    });
+    // Use an explicit join so the date/published filters land on the events
+    // table — orders has no date or published column.
+    const rows = await db
+      .select()
+      .from(orders)
+      .innerJoin(events, eq(orders.eventId, events.id))
+      .where(
+        and(
+          gte(events.date, now),
+          lte(events.date, in24h),
+          eq(events.published, true)
+        )
+      );
+
+    // Reshape into the shape the rest of the function expects
+    const upcomingOrders = rows.map(r => ({ ...r.orders, event: r.events }));
 
     if (upcomingOrders.length === 0) return;
 
