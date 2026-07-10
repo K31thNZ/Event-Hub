@@ -63,6 +63,8 @@ app.use(
           "yastatic.net",
           "avatars.yandex.net",
           "yandex.ru",
+          "*.timepad.ru",
+          "timepad.ru",
           "log.api-maps.yandex.ru",
           "*.r2.dev",
           // Imported/scraped event sources + user-pasted image URLs
