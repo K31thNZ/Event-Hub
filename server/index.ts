@@ -57,11 +57,13 @@ app.use(
           "avatars.githubusercontent.com",
           "*.tile.openstreetmap.org",
           "core.telegram.org",
-          // Yandex Maps tile servers and sprite assets
+          // Yandex Maps tile servers, sprite assets, and telemetry pixels
           "*.maps.yandex.net",
           "vec01.maps.yandex.net",
           "yastatic.net",
           "avatars.yandex.net",
+          "yandex.ru",
+          "log.api-maps.yandex.ru",
           "*.r2.dev",
           // Imported/scraped event sources + user-pasted image URLs
           "media.kudago.com",
