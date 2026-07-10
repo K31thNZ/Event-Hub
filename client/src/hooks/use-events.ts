@@ -11,9 +11,11 @@ export function useEvents(params?: {
   includePast?: boolean;
   limit?:       number;
   offset?:      number;
+  enabled?:     boolean;
 }) {
   return useQuery({
     queryKey: [api.events.list.path, params],
+    enabled: params?.enabled !== false,
     queryFn: async () => {
       const url = new URL(api.events.list.path, window.location.origin);
       if (params?.search)      url.searchParams.set("search",      params.search);

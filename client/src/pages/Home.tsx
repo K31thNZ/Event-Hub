@@ -157,23 +157,36 @@ export default function Home() {
     }
   }, [location]);
 
-  const { data: events, isLoading } = useEvents({
+  // Fetch only upcoming events on initial load (limit 50) — past events load lazily.
+  // This avoids shipping 200 full event rows on every page load.
+  const { data: upcomingRaw, isLoading } = useEvents({
+    search: search || undefined,
+    city: city !== "all" ? city : undefined,
+    category: category !== "all" ? category : undefined,
+    includePast: false,
+    limit: 50,
+  });
+
+  const [showPast, setShowPast] = useState(false);
+  const { data: pastRaw, isLoading: pastLoading } = useEvents({
     search: search || undefined,
     city: city !== "all" ? city : undefined,
     category: category !== "all" ? category : undefined,
     includePast: true,
-    limit: 200,
+    limit: 50,
+    enabled: showPast, // only fetch when user requests past events
   });
 
   const now = new Date();
-  const upcomingEvents = (events || [])
-    .filter(event => new Date(event.date) >= now)
+  const upcomingEvents = (upcomingRaw || [])
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-  const pastEvents = (events || [])
-    .filter(event => new Date(event.date) < now)
+  // Past = everything in pastRaw that has already happened and isn't in upcoming
+  const upcomingIds = new Set((upcomingRaw || []).map(e => e.id));
+  const pastEvents = (pastRaw || [])
+    .filter(event => new Date(event.date) < now && !upcomingIds.has(event.id))
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-  const allVisibleIds = [...upcomingEvents, ...pastEvents].map(e => e.id);
+  const allVisibleIds = [...upcomingEvents, ...(showPast ? pastEvents : [])].map(e => e.id);
   const { data: rsvpCounts } = useRsvpCounts(allVisibleIds);
 
   return (
@@ -354,8 +367,26 @@ export default function Home() {
                 </div>
               )}
 
-              {/* Past Events */}
-              {pastEvents.length > 0 && (
+              {/* Past Events — lazy loaded, revealed on demand */}
+              {!showPast ? (
+                <div className="flex justify-center mt-4 pb-8">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowPast(true)}
+                    className="rounded-full gap-2 text-muted-foreground hover:text-foreground"
+                  >
+                    <History className="w-4 h-4" />
+                    Show past events
+                  </Button>
+                </div>
+              ) : pastLoading ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 opacity-60 mt-8">
+                  {[1, 2, 3].map(i => (
+                    <div key={i} className="h-64 rounded-2xl bg-muted animate-pulse" />
+                  ))}
+                </div>
+              ) : pastEvents.length > 0 ? (
                 <div>
                   <div className="flex items-end justify-between mb-12">
                     <div>
@@ -372,7 +403,7 @@ export default function Home() {
                     className="opacity-80"
                   />
                 </div>
-              )}
+              ) : null}
 
               {upcomingEvents.length === 0 && pastEvents.length === 0 && (
                 <div className="text-center py-32 glass rounded-3xl">
