@@ -84,9 +84,9 @@ interface AdminEvent {
 const ticketSchema = z.object({
   id:           z.number().optional(),
   name:         z.string().min(1, "Required"),
-  price:        z.number().min(0),
-  quantity:     z.number().min(1),
-  maxPerOrder:  z.number().min(1),
+  price:        z.coerce.number().min(0),       // coerce: handles HTML input string → number
+  quantity:     z.coerce.number().min(1),
+  maxPerOrder:  z.coerce.number().min(1),
 });
 
 const editSchema = z.object({
@@ -213,7 +213,7 @@ function EditSheet({
           </SheetDescription>
         </SheetHeader>
 
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5 pb-10">
+        <form onSubmit={form.handleSubmit(onSubmit, (errors) => { console.error("[EditSheet] Validation errors:", errors); toast({ title: "Fix validation errors", description: Object.values(errors).map((e: any) => e?.message || JSON.stringify(e)).join(", "), variant: "destructive" }); })} className="space-y-5 pb-10">
 
           {/* ── Cover image preview ── */}
           {watchedImage && (
@@ -466,7 +466,7 @@ function EditSheet({
                   <div className="space-y-1.5">
                     <Label className="text-xs">Price (₽)</Label>
                     <Input
-                      {...form.register(`ticketTypes.${idx}.price`, { valueAsNumber: true })}
+                      {...form.register(`ticketTypes.${idx}.price`)}
                       className="h-9 rounded-lg text-sm"
                       type="number"
                       min={0}
@@ -476,7 +476,7 @@ function EditSheet({
                   <div className="space-y-1.5">
                     <Label className="text-xs">Total Qty</Label>
                     <Input
-                      {...form.register(`ticketTypes.${idx}.quantity`, { valueAsNumber: true })}
+                      {...form.register(`ticketTypes.${idx}.quantity`)}
                       className="h-9 rounded-lg text-sm"
                       type="number"
                       min={1}
@@ -486,7 +486,7 @@ function EditSheet({
                   <div className="space-y-1.5">
                     <Label className="text-xs">Max / Order</Label>
                     <Input
-                      {...form.register(`ticketTypes.${idx}.maxPerOrder`, { valueAsNumber: true })}
+                      {...form.register(`ticketTypes.${idx}.maxPerOrder`)}
                       className="h-9 rounded-lg text-sm"
                       type="number"
                       min={1}
