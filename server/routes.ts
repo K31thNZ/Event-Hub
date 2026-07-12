@@ -478,12 +478,16 @@ export async function registerRoutes(
           organizerId:  event.organizerId ?? undefined,
         }),
       });
+      const notifyBody = await notifyRes.json().catch(async () => {
+        const text = await notifyRes.text().catch(() => "");
+        return { error: text || `HTTP ${notifyRes.status}` };
+      });
       if (!notifyRes.ok) {
-        const body = await notifyRes.text();
-        return res.status(502).json({ message: `Notification service error: ${body}` });
+        const errMsg = notifyBody?.error ?? notifyBody?.message ?? `Notification service error ${notifyRes.status}`;
+        console.error("[resend-notification] meh-auth error:", notifyRes.status, notifyBody);
+        return res.status(502).json({ message: errMsg });
       }
-      const data = await notifyRes.json();
-      res.json({ ok: true, sent: data.sent, inApp: data.inApp });
+      res.json({ ok: true, sent: notifyBody.sent ?? 0, inApp: notifyBody.inApp ?? 0 });
     } catch (err: any) {
       console.error("[POST /api/events/:id/resend-notification]", err);
       res.status(500).json({ message: err.message ?? "Failed to resend notification" });

@@ -316,11 +316,23 @@ function EventRow({ event, onEdit, onDelete }: { event: EventWithTickets; onEdit
   const handleResend = async () => {
     setResending(true);
     try {
-      const res = await apiRequest("POST", `/api/events/${event.id}/resend-notification`);
-      const data = await res.json();
-      toast({ title: "Notification sent", description: `Reached ${data.sent ?? 0} Telegram user${data.sent === 1 ? "" : "s"}.` });
+      const res = await fetch(`/api/events/${event.id}/resend-notification`, {
+        method: "POST",
+        credentials: "include",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg = data?.message ?? data?.error ?? `Server error ${res.status}`;
+        toast({ title: "Failed to notify", description: msg, variant: "destructive" });
+        return;
+      }
+      if (data.sent === 0 && data.inApp === 0) {
+        toast({ title: "Sent for approval", description: "The notification is awaiting admin approval in Telegram." });
+      } else {
+        toast({ title: "Notification sent", description: `Reached ${data.sent ?? 0} Telegram user${data.sent === 1 ? "" : "s"}${data.inApp ? ` + ${data.inApp} in-app` : ""}.` });
+      }
     } catch (err: any) {
-      toast({ title: "Failed to resend", description: err.message, variant: "destructive" });
+      toast({ title: "Failed to notify", description: err.message ?? "Network error", variant: "destructive" });
     } finally { setResending(false); }
   };
 
