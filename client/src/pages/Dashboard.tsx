@@ -12,7 +12,7 @@ import { z } from "zod";
 import { EVENT_CATEGORIES, EVENT_CATEGORY_VALUES } from "@shared/categories";
 import { type EventWithTickets } from "@shared/schema";
 import { format, startOfWeek } from "date-fns";
-import { formatEventDateTime, formatEventCompact, formatEventDateShort } from "@/lib/date-utils";
+import { formatEventDateTime, formatEventCompact, formatEventDateShort, formatEventCardDate, isThisWeek } from "@/lib/date-utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -475,7 +475,7 @@ function CuratorTab() {
                   {event.imageUrl && <img src={event.imageUrl} className="w-10 h-10 rounded-lg object-cover shrink-0" alt="" loading="lazy" />}
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-sm truncate">{event.title}</p>
-                    <p className="text-xs text-muted-foreground">{formatEventDateShort(event.date, user?.city ?? event.venueCity)} · {event.venueCity}</p>
+                    <p className="text-xs text-muted-foreground">{formatEventCardDate(event.date, user?.city ?? event.venueCity)} · {event.venueCity}</p>
                   </div>
                   {selected && <Check className="w-4 h-4 text-primary shrink-0" />}
                 </button>

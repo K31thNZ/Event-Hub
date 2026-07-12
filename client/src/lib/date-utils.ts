@@ -139,3 +139,46 @@ export function localToUtc(dateStr: string, timeStr: string, city?: string | nul
   // Apply the offset: wall-clock - offset = UTC
   return new Date(naive - offsetMs);
 }
+
+/**
+ * Returns true if the given date falls within the current calendar week
+ * (Mon–Sun, based on the viewer's local wall clock).
+ */
+export function isThisWeek(date: string | Date): boolean {
+  const d = typeof date === "string" ? new Date(date) : date;
+  const now = new Date();
+  // Start of this week: Monday at 00:00 local time
+  const day = now.getDay(); // 0=Sun … 6=Sat
+  const diffToMon = (day === 0 ? -6 : 1 - day);
+  const monday = new Date(now);
+  monday.setHours(0, 0, 0, 0);
+  monday.setDate(now.getDate() + diffToMon);
+  // End of this week: Sunday at 23:59:59.999 local time
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  sunday.setHours(23, 59, 59, 999);
+  return d >= monday && d <= sunday;
+}
+
+/** "Monday", "Tuesday", … — full weekday name for the event's local timezone */
+export function formatEventDayOfWeek(date: string | Date, city?: string | null): string {
+  const d = typeof date === "string" ? new Date(date) : date;
+  return formatter(city, { weekday: "long" }).format(d);
+}
+
+/**
+ * Smart date label for event cards:
+ * - This week  → "Monday · 7 PM"  (no date, day name instead)
+ * - Otherwise  → "07 Jun · 7 PM"
+ */
+export function formatEventCardDate(date: string | Date, city?: string | null): string {
+  const d = typeof date === "string" ? new Date(date) : date;
+  const timePart = formatter(city, { hour: "numeric", minute: "2-digit", hour12: true }).format(d);
+  if (isThisWeek(d)) {
+    const dayName = formatter(city, { weekday: "long" }).format(d);
+    return `${dayName} · ${timePart}`;
+  }
+  const datePart = formatter(city, { day: "2-digit", month: "short" }).format(d);
+  return `${datePart} · ${timePart}`;
+}
+
