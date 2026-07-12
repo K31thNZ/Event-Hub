@@ -443,3 +443,23 @@ export type CreateGroupRequest = {
   visibility?: "public" | "private";
   membershipType?: "open" | "invite_only";
 };
+
+// ── MEHUser — shape returned by meh-auth /api/user ─────────────────────────
+export interface MEHUser {
+  id:            number;
+  username:      string;
+  role:          string;
+  displayName?:  string | null;
+  avatarUrl?:    string | null;
+  email?:        string | null;
+  interests?:    string[];
+  telegramId?:   string | number | null;
+  isExpatMember: boolean;
+  isGamesMember: boolean;
+  dice:          number;
+  googleId?:     string | null;
+  yandexId?:     string | null;
+  isAdmin?:      boolean;
+  city?:         string | null;
+}
+

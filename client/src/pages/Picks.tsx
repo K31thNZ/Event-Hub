@@ -3,12 +3,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { getQueryFn } from "@/lib/queryClient";
 import { Link } from "wouter";
-import { format } from "date-fns";
 import { motion } from "framer-motion";
 import { Sparkles, Calendar, MapPin, ArrowRight, Bot, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import type { EventWithTickets } from "@shared/schema";
+import { useAuth } from "@/hooks/use-auth";
+import { formatEventCompact } from "@/lib/date-utils";
 
 const ROLE_COLORS: Record<string, string> = {
   networking: "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200",
@@ -24,6 +25,7 @@ function categoryColor(cat: string) {
 }
 
 export default function Picks() {
+  const { user } = useAuth();
   const { data: events, isLoading } = useQuery<EventWithTickets[]>({
     queryKey: ["/api/events/recommendations"],
     queryFn: getQueryFn({ on401: "returnNull" }),
@@ -126,7 +128,7 @@ export default function Picks() {
                   <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
                     <span className="flex items-center gap-1.5">
                       <Calendar className="w-4 h-4 text-primary/70" />
-                      {format(new Date(event.date), "EEE, MMM d · h:mm a")}
+                      {formatEventCompact(event.date, user?.city ?? event.venueCity)}
                     </span>
                     <span className="flex items-center gap-1.5">
                       <MapPin className="w-4 h-4 text-primary/70" />

@@ -237,13 +237,13 @@ export default function EventDetails() {
                   <div className="w-10 h-10 rounded-full bg-primary/5 flex items-center justify-center">
                     <Calendar className="w-4 h-4 text-primary" />
                   </div>
-                  <p className="font-semibold text-foreground">{formatEventDate(event.date, event.venueCity)}</p>
+                  <p className="font-semibold text-foreground">{formatEventDate(event.date, user?.city ?? event.venueCity)}</p>
                 </div>
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-primary/5 flex items-center justify-center">
                     <Clock className="w-4 h-4 text-primary" />
                   </div>
-                  <p className="font-semibold text-foreground">{formatEventTime(event.date, event.venueCity)}</p>
+                  <p className="font-semibold text-foreground">{formatEventTime(event.date, user?.city ?? event.venueCity)}</p>
                 </div>
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-primary/5 flex items-center justify-center">
@@ -308,8 +308,8 @@ export default function EventDetails() {
                   <div className="flex items-start gap-3">
                     <Calendar className="w-4 h-4 text-primary mt-0.5 shrink-0" />
                     <div>
-                      <p className="font-semibold text-foreground">{formatEventDate(event.date, event.venueCity)}</p>
-                      <p>{formatEventTime(event.date, event.venueCity)}</p>
+                      <p className="font-semibold text-foreground">{formatEventDate(event.date, user?.city ?? event.venueCity)}</p>
+                      <p>{formatEventTime(event.date, user?.city ?? event.venueCity)}</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-3">
@@ -419,7 +419,7 @@ export default function EventDetails() {
                 </div>
                 <h3 className="text-xl font-display font-bold">Event has ended</h3>
                 <p className="text-sm text-muted-foreground">
-                  This event took place on {formatEventDate(event.date, event.venueCity)}.
+                  This event took place on {formatEventDate(event.date, user?.city ?? event.venueCity)}.
                 </p>
               </div>
             </div>

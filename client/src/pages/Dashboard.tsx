@@ -310,6 +310,7 @@ function EditEventSheet({ event, open, onClose, adminMode = false }: {
 
 function EventRow({ event, onEdit, onDelete }: { event: EventWithTickets; onEdit: (e: EventWithTickets) => void; onDelete: (e: EventWithTickets) => void }) {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [resending, setResending] = useState(false);
 
   const handleResend = async () => {
@@ -331,7 +332,7 @@ function EventRow({ event, onEdit, onDelete }: { event: EventWithTickets; onEdit
           <h3 className="font-semibold truncate">{event.title}</h3>
           <Badge variant={event.published ? "default" : "secondary"} className="text-xs shrink-0">{event.published ? "Published" : "Draft"}</Badge>
         </div>
-        <p className="text-sm text-muted-foreground mt-0.5">{formatEventDateTime(event.date, event.venueCity)} · {event.venueCity}</p>
+        <p className="text-sm text-muted-foreground mt-0.5">{formatEventDateTime(event.date, user?.city ?? event.venueCity)} · {event.venueCity}</p>
       </div>
       <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
         <Button variant="outline" size="sm" onClick={handleResend} disabled={resending} className="rounded-lg gap-1.5 text-xs" title="Resend Telegram notification">
@@ -349,6 +350,7 @@ function EventRow({ event, onEdit, onDelete }: { event: EventWithTickets; onEdit
 
 function CuratorTab() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const { data: events } = useEvents();
   const { data: myPicks, refetch } = useQuery({
     queryKey: ["/api/curator/picks"],
@@ -444,7 +446,7 @@ function CuratorTab() {
                   {event.imageUrl && <img src={event.imageUrl} className="w-10 h-10 rounded-lg object-cover shrink-0" alt="" loading="lazy" />}
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-sm truncate">{event.title}</p>
-                    <p className="text-xs text-muted-foreground">{formatEventDateShort(event.date, event.venueCity)} · {event.venueCity}</p>
+                    <p className="text-xs text-muted-foreground">{formatEventDateShort(event.date, user?.city ?? event.venueCity)} · {event.venueCity}</p>
                   </div>
                   {selected && <Check className="w-4 h-4 text-primary shrink-0" />}
                 </button>
@@ -1211,7 +1213,7 @@ export default function Dashboard() {
                         <span className="font-mono text-muted-foreground text-sm">#{order.id}</span>
                       </div>
                       <h3 className="font-display font-bold text-xl mb-1 line-clamp-1">{order.event.title}</h3>
-                      <p className="text-muted-foreground text-sm mb-6">{formatEventDateTime(order.event.date, order.event.venueCity)}</p>
+                      <p className="text-muted-foreground text-sm mb-6">{formatEventDateTime(order.event.date, user?.city ?? order.event.venueCity)}</p>
                       <div className="mt-auto pt-4 border-t border-border flex justify-between items-center">
                         <span className="font-bold">{order.totalAmount} ₽</span>
                         <Button asChild variant="secondary" size="sm" className="rounded-lg"><Link href={`/orders/${order.id}`}>View Ticket</Link></Button>
@@ -1234,7 +1236,7 @@ export default function Dashboard() {
                               <span className="font-mono text-muted-foreground text-sm">#{order.id}</span>
                             </div>
                             <h3 className="font-display font-bold text-xl mb-1 line-clamp-1 text-muted-foreground">{order.event.title}</h3>
-                            <p className="text-muted-foreground text-sm mb-6">{formatEventDateTime(order.event.date, order.event.venueCity)}</p>
+                            <p className="text-muted-foreground text-sm mb-6">{formatEventDateTime(order.event.date, user?.city ?? order.event.venueCity)}</p>
                             <div className="mt-auto pt-4 border-t border-border flex justify-between items-center">
                               <span className="font-bold text-muted-foreground">{order.totalAmount} ₽</span>
                               <Button asChild variant="outline" size="sm" className="rounded-lg"><Link href={`/orders/${order.id}`}>View</Link></Button>
