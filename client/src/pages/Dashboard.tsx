@@ -1,6 +1,6 @@
 // client/src/pages/Dashboard.tsx
 import { useState, useEffect, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMyEvents, useUpdateEvent, useDeleteEvent, useEvents } from "@/hooks/use-events";
 import { MyGroupsTab } from "@/components/groups/MyGroupsTab";
 import { useMyOrders } from "@/hooks/use-orders";
@@ -83,6 +83,7 @@ function EditEventSheet({ event, open, onClose, adminMode = false }: {
   event: EventWithTickets | null; open: boolean; onClose: () => void; adminMode?: boolean;
 }) {
   const updateEvent = useUpdateEvent();
+  const qc = useQueryClient();
   const { toast } = useToast();
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -126,16 +127,30 @@ function EditEventSheet({ event, open, onClose, adminMode = false }: {
     if (!event) return;
     try {
       if (adminMode) {
-        await apiRequest("PATCH", `/api/admin/events/${event.id}`, data);
-        qc.invalidateQueries({ queryKey: ["/api/events"] });
+        const res = await fetch(`/api/admin/events/${event.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify(data),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body?.message ?? `Server error ${res.status}`);
+        await qc.invalidateQueries({ queryKey: ["/api/events"] });
+        await qc.invalidateQueries({ queryKey: ["/api/admin/events"] });
       } else {
         await updateEvent.mutateAsync({ id: event.id, data });
       }
       toast({ title: "Event updated ✓" });
       onClose();
     } catch (err: any) {
-      toast({ title: "Failed", description: err.message, variant: "destructive" });
+      toast({ title: "Save failed", description: err.message ?? "Unknown error", variant: "destructive" });
     }
+  };
+
+  const onInvalid = (errors: any) => {
+    const firstError = Object.values(errors as Record<string, any>)[0];
+    const msg = firstError?.message ?? firstError?.root?.message ?? "Please check the form for errors";
+    toast({ title: "Validation error", description: String(msg), variant: "destructive" });
   };
 
   return (
@@ -145,7 +160,7 @@ function EditEventSheet({ event, open, onClose, adminMode = false }: {
           <SheetTitle className="text-2xl font-display">{adminMode ? "Edit Event (Admin)" : "Edit Event"}</SheetTitle>
           <SheetDescription>Make changes and save to update the event.</SheetDescription>
         </SheetHeader>
-        <form onSubmit={form.handleSubmit(onSubmit as any)} className="space-y-5">
+        <form onSubmit={form.handleSubmit(onSubmit, onInvalid)} className="space-y-5">
 
           {/* ── Title & Description ── */}
           <div className="space-y-1.5"><Label>Title</Label><Input {...form.register("title")} className="h-11 rounded-xl" /></div>
@@ -1104,7 +1119,7 @@ function SparkEditSheet({ spark, open, onClose }: { spark: Spark | null; open: b
           <SheetTitle className="text-2xl font-display">Edit Spark (Admin)</SheetTitle>
           <SheetDescription>Modify the spark details. Changes save immediately.</SheetDescription>
         </SheetHeader>
-        <form onSubmit={form.handleSubmit(onSubmit as any)} className="space-y-5">
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
           <div className="space-y-1.5"><Label>Title</Label><Input {...form.register("title")} className="h-11 rounded-xl" /></div>
           <div className="space-y-1.5"><Label>Description</Label><Textarea {...form.register("description")} className="rounded-xl min-h-[80px]" /></div>
           <div className="grid grid-cols-2 gap-4">
