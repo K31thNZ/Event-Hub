@@ -75,7 +75,7 @@ const editEventSchema = z.object({
   ticketTypes:  z.array(z.object({
     name: z.string().min(1), price: z.coerce.number().min(0),
     quantity: z.coerce.number().min(1), maxPerOrder: z.coerce.number().min(1),
-  })).min(1),
+  })),
 });
 type EditFormValues = z.infer<typeof editEventSchema>;
 
@@ -100,9 +100,11 @@ function EditEventSheet({ event, open, onClose, adminMode = false }: {
       lat: (event as any).lat ?? null,
       lng: (event as any).lng ?? null,
       imageUrl: (event as any).imageUrl ?? null, published: event.published,
-      ticketTypes: event.ticketTypes.map(t => ({
-        name: t.name, price: t.price, quantity: t.quantity, maxPerOrder: t.maxPerOrder,
-      })),
+      ticketTypes: event.ticketTypes.length
+        ? event.ticketTypes.map(t => ({
+            name: t.name, price: t.price, quantity: t.quantity, maxPerOrder: t.maxPerOrder,
+          }))
+        : [{ name: "General Admission", price: 0, quantity: 50, maxPerOrder: 4 }],
     } : undefined,
   });
   const { fields, append, remove } = useFieldArray({ control: form.control, name: "ticketTypes" });
