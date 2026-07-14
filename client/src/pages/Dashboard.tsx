@@ -12,7 +12,7 @@ import { z } from "zod";
 import { EVENT_CATEGORIES, EVENT_CATEGORY_VALUES } from "@shared/categories";
 import { type EventWithTickets } from "@shared/schema";
 import { format, startOfWeek } from "date-fns";
-import { formatEventDateTime, formatEventCompact, formatEventDateShort, formatEventCardDate, isThisWeek } from "@/lib/date-utils";
+import { formatEventDateTime, formatEventCompact, formatEventDateShort, formatEventCardDate } from "@/lib/date-utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
